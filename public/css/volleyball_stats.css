@@ -340,109 +340,6 @@
   pointer-events: none;
   z-index: 3;
 }
-.score-modal .timeout-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-.score-modal .timeout-container {
-  --timeout-accent: rgba(13, 110, 253, 0.12);
-  --timeout-border: rgba(13, 110, 253, 0.35);
-  --timeout-foreground: #0b5ed7;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  flex: 1 1 12rem;
-  padding: 0.75rem 1rem;
-  border-radius: 0.85rem;
-  border: 1px solid var(--timeout-border);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), var(--timeout-accent));
-  color: var(--timeout-foreground);
-  box-shadow: inset 0 0.25rem 0.75rem rgba(13, 110, 253, 0.08);
-}
-.score-modal .timeout-boxes {
-  display: inline-flex;
-  gap: 0.75rem;
-  align-items: center;
-  flex: 0 0 auto;
-}
-.score-modal .timeout-container[data-team="opp"] {
-  --timeout-accent: rgba(220, 53, 69, 0.12);
-  --timeout-border: rgba(220, 53, 69, 0.35);
-  --timeout-foreground: #b02a37;
-  flex-direction: row-reverse;
-  text-align: right;
-  box-shadow: inset 0 0.25rem 0.75rem rgba(220, 53, 69, 0.08);
-}
-.score-modal .timeout-container[data-team="opp"] .timeout-boxes {
-  flex-direction: row-reverse;
-}
-.score-modal .timeout-box {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 0.65rem;
-  border: 2px solid var(--timeout-foreground);
-  background-color: rgba(255, 255, 255, 0.9);
-  color: var(--timeout-foreground);
-  font-weight: 700;
-  font-family: 'Courier New', Courier, monospace;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.score-modal .timeout-box .timeout-box-text {
-  transition: opacity 0.2s ease;
-}
-.score-modal .timeout-box.used {
-  background-color: rgba(255, 255, 255, 0.4);
-  color: var(--timeout-foreground);
-}
-.score-modal .timeout-box.used .timeout-box-text {
-  opacity: 0;
-}
-.score-modal .timeout-box.active {
-  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
-}
-.score-modal .timeout-box:hover,
-.score-modal .timeout-box:focus-visible {
-  background-color: #fff;
-  color: var(--timeout-foreground);
-  outline: none;
-}
-.score-modal .timeout-timer {
-  min-width: 3.5rem;
-  font-family: 'Courier New', Courier, monospace;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  font-variant-numeric: tabular-nums;
-  text-align: left;
-}
-.score-modal .timeout-container[data-team="opp"] .timeout-timer {
-  text-align: right;
-}
-.score-modal .timeout-timer,
-.score-modal .timeout-box {
-  color: var(--timeout-foreground);
-}
-.score-modal .timeout-timer.running {
-  font-weight: 700;
-}
-
-@media (max-width: 420px) {
-  .score-modal .timeout-timer {
-    flex-basis: 100%;
-    text-align: left;
-    margin-top: 0.5rem;
-  }
-  .score-modal .timeout-container[data-team="opp"] .timeout-timer {
-    text-align: right;
-  }
-}
 .score-modal .score-team-label {
   position: absolute;
   top: 1rem;
@@ -469,4 +366,95 @@
   .score-modal .scoreboard-wrapper {
     min-height: 360px;
   }
+}
+
+.score-modal .timeout-row {
+  margin-top: 1.5rem;
+}
+
+.score-modal .timeout-row .col {
+  display: flex;
+}
+
+.score-modal .timeout-row .col > .timeout-container {
+  flex: 1 1 auto;
+}
+
+.score-modal .timeout-container {
+  width: 100%;
+  border-width: 2px !important;
+  border-radius: 0.75rem;
+}
+
+.score-modal .timeout-container .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+@media (min-width: 576px) {
+  .score-modal .timeout-container .card-body {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.score-modal .timeout-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+@media (min-width: 576px) {
+  .score-modal .timeout-boxes {
+    justify-content: flex-start;
+  }
+}
+
+.score-modal .timeout-box {
+  min-width: 3.25rem;
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.score-modal .timeout-box .timeout-box-text {
+  display: inline-block;
+}
+
+.score-modal .timeout-box.used {
+  opacity: 0.45;
+}
+
+.score-modal .timeout-box.used .timeout-box-text {
+  opacity: 0;
+}
+
+.score-modal .timeout-box.active {
+  box-shadow: 0 0.5rem 1rem rgba(13, 110, 253, 0.18);
+}
+
+.score-modal .timeout-container[data-team="opp"] .timeout-box.active {
+  box-shadow: 0 0.5rem 1rem rgba(220, 53, 69, 0.2);
+}
+
+.score-modal .timeout-timer {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (min-width: 576px) {
+  .score-modal .timeout-timer {
+    text-align: right;
+  }
+}
+
+.score-modal .timeout-timer.running {
+  font-weight: 700;
 }
