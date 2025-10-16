@@ -141,6 +141,19 @@
 .set-inputs input { flex: 1; max-width: 100px; text-align: center; font-size: 1.5em; padding: 10px; }
 .swap-btn { text-align: center; width: 100%; }
 .swap-btn::after { content: "↔"; font-size: 1.5em; }
+.score-game-btn {
+  font-weight: 600;
+}
+[data-bs-theme="dark"] .score-game-btn.btn-outline-dark {
+  color: var(--bs-light);
+  border-color: var(--bs-light);
+}
+[data-bs-theme="dark"] .score-game-btn.btn-outline-dark:hover,
+[data-bs-theme="dark"] .score-game-btn.btn-outline-dark:focus-visible {
+  color: var(--bs-dark);
+  background-color: var(--bs-light);
+  border-color: var(--bs-light);
+}
 .header-cell { transition: all 0.3s ease; }
 #matchIndexModal .modal-body {
   max-height: min(70vh, 400px);
