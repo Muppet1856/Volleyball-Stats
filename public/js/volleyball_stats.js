@@ -102,10 +102,22 @@ let players = [];
     let currentMatchId = null;
     let scoreGameModalInstance = null;
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
+    const TIMEOUT_COUNT = 2;
+    const TIMEOUT_DURATION_SECONDS = 60;
     const scoreGameState = {
       setNumber: null,
       sc: null,
-      opp: null
+      opp: null,
+      timeouts: {
+        sc: Array(TIMEOUT_COUNT).fill(false),
+        opp: Array(TIMEOUT_COUNT).fill(false)
+      },
+      activeTimeout: { sc: null, opp: null },
+      timeoutTimers: { sc: null, opp: null },
+      timeoutRemainingSeconds: {
+        sc: TIMEOUT_DURATION_SECONDS,
+        opp: TIMEOUT_DURATION_SECONDS
+      }
     };
     const finalizeButtonPopoverTimers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
@@ -371,6 +383,124 @@ let players = [];
       if (oppDisplay) oppDisplay.textContent = formatScoreDisplay(scoreGameState.opp);
     }
 
+    function formatTimeoutDisplay(seconds) {
+      const safeSeconds = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0;
+      const minutes = Math.floor(safeSeconds / 60);
+      const remainingSeconds = safeSeconds % 60;
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
+    function getTimeoutTeamName(team) {
+      return team === 'opp'
+        ? getTeamHeaderName('oppHeader', 'Opponent')
+        : getTeamHeaderName('scHeader', 'Stoney Creek');
+    }
+
+    function getTimeoutOrdinalLabel(index) {
+      return index === 0 ? 'first' : 'second';
+    }
+
+    function stopTimeoutTimer(team) {
+      const timerId = scoreGameState.timeoutTimers[team];
+      if (timerId) {
+        clearInterval(timerId);
+        scoreGameState.timeoutTimers[team] = null;
+      }
+    }
+
+    function updateTimeoutTimerDisplay(team) {
+      const timerElement = document.querySelector(`#scoreGameModal .timeout-timer[data-team="${team}"]`);
+      if (!timerElement) return;
+      timerElement.textContent = formatTimeoutDisplay(scoreGameState.timeoutRemainingSeconds[team]);
+      timerElement.classList.toggle('running', Boolean(scoreGameState.timeoutTimers[team]));
+    }
+
+    function updateTimeoutUI(team) {
+      const container = document.querySelector(`#scoreGameModal .timeout-container[data-team="${team}"]`);
+      if (container) {
+        const buttons = container.querySelectorAll('.timeout-box');
+        const teamName = getTimeoutTeamName(team);
+        const isRunning = Boolean(scoreGameState.timeoutTimers[team]);
+        const activeIndex = scoreGameState.activeTimeout[team];
+        buttons.forEach(button => {
+          const index = parseInt(button.getAttribute('data-timeout-index'), 10);
+          if (Number.isNaN(index)) return;
+          const used = Boolean(scoreGameState.timeouts[team][index]);
+          const isActive = activeIndex === index;
+          const textSpan = button.querySelector('.timeout-box-text');
+          if (textSpan) {
+            textSpan.textContent = used ? '' : 'TO';
+          }
+          button.classList.toggle('used', used);
+          button.classList.toggle('active', isActive && isRunning);
+          button.setAttribute('aria-pressed', used ? 'true' : 'false');
+          let label = `${teamName} ${getTimeoutOrdinalLabel(index)} timeout ${used ? 'used' : 'available'}`;
+          if (isActive && isRunning) {
+            label += `. ${formatTimeoutDisplay(scoreGameState.timeoutRemainingSeconds[team])} remaining`;
+          }
+          button.setAttribute('aria-label', label);
+        });
+      }
+      updateTimeoutTimerDisplay(team);
+    }
+
+    function refreshAllTimeoutDisplays() {
+      updateTimeoutUI('sc');
+      updateTimeoutUI('opp');
+    }
+
+    function handleTimeoutSelection(team, index) {
+      if (!scoreGameState.timeouts[team] || index < 0 || index >= scoreGameState.timeouts[team].length) {
+        return;
+      }
+      const used = scoreGameState.timeouts[team][index];
+      const isActive = scoreGameState.activeTimeout[team] === index;
+
+      if (used) {
+        if (isActive) {
+          stopTimeoutTimer(team);
+          scoreGameState.activeTimeout[team] = null;
+          scoreGameState.timeoutRemainingSeconds[team] = TIMEOUT_DURATION_SECONDS;
+        } else if (scoreGameState.activeTimeout[team] === null) {
+          scoreGameState.timeoutRemainingSeconds[team] = TIMEOUT_DURATION_SECONDS;
+        }
+        scoreGameState.timeouts[team][index] = false;
+        updateTimeoutUI(team);
+        return;
+      }
+
+      stopTimeoutTimer(team);
+      scoreGameState.activeTimeout[team] = null;
+      scoreGameState.timeoutRemainingSeconds[team] = TIMEOUT_DURATION_SECONDS;
+
+      scoreGameState.timeouts[team][index] = true;
+      scoreGameState.activeTimeout[team] = index;
+      updateTimeoutUI(team);
+
+      scoreGameState.timeoutTimers[team] = window.setInterval(() => {
+        scoreGameState.timeoutRemainingSeconds[team] = Math.max(0, scoreGameState.timeoutRemainingSeconds[team] - 1);
+        updateTimeoutUI(team);
+        if (scoreGameState.timeoutRemainingSeconds[team] <= 0) {
+          stopTimeoutTimer(team);
+          scoreGameState.activeTimeout[team] = null;
+          updateTimeoutUI(team);
+        }
+      }, 1000);
+    }
+
+    function resetTeamTimeouts(team) {
+      stopTimeoutTimer(team);
+      scoreGameState.timeouts[team] = Array(TIMEOUT_COUNT).fill(false);
+      scoreGameState.activeTimeout[team] = null;
+      scoreGameState.timeoutRemainingSeconds[team] = TIMEOUT_DURATION_SECONDS;
+      updateTimeoutUI(team);
+    }
+
+    function resetAllTimeouts() {
+      resetTeamTimeouts('sc');
+      resetTeamTimeouts('opp');
+    }
+
     function updateScoreModalLabels() {
       const leftLabel = document.getElementById('scoreGameLeftLabel');
       const rightLabel = document.getElementById('scoreGameRightLabel');
@@ -386,6 +516,7 @@ let players = [];
       if (scDecrementZone) scDecrementZone.setAttribute('aria-label', `Decrease ${leftName} score`);
       if (oppIncrementZone) oppIncrementZone.setAttribute('aria-label', `Increase ${rightName} score`);
       if (oppDecrementZone) oppDecrementZone.setAttribute('aria-label', `Decrease ${rightName} score`);
+      refreshAllTimeoutDisplays();
     }
 
     function applyScoreModalToInputs({ triggerSave = true } = {}) {
@@ -958,6 +1089,7 @@ let players = [];
           }
         }
       };
+      resetAllTimeouts();
       if (matchId) {
         try {
           const match = await apiClient.getMatch(matchId);
@@ -1139,6 +1271,7 @@ let players = [];
         cb.checked = false;
       });
 
+      resetAllTimeouts();
       scoreGameState.sc = null;
       scoreGameState.opp = null;
       updateScoreModalDisplay();
@@ -1217,6 +1350,7 @@ let players = [];
           scoreGameState.sc = null;
           scoreGameState.opp = null;
           updateScoreModalDisplay();
+          refreshAllTimeoutDisplays();
         });
         window.addEventListener('resize', handleScoreModalResize);
         const scoreZones = scoreGameModalElement.querySelectorAll('.score-zone');
@@ -1238,6 +1372,14 @@ let players = [];
             }
           });
         });
+        const timeoutButtons = scoreGameModalElement.querySelectorAll('.timeout-box');
+        timeoutButtons.forEach(button => {
+          const team = button.getAttribute('data-team');
+          const index = parseInt(button.getAttribute('data-timeout-index'), 10);
+          if (!team || Number.isNaN(index)) return;
+          button.addEventListener('click', () => handleTimeoutSelection(team, index));
+        });
+        resetAllTimeouts();
       }
       document.querySelectorAll('.score-game-btn').forEach(button => {
         button.addEventListener('click', () => {
