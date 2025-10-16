@@ -1,3 +1,15 @@
+:root {
+  color-scheme: light dark;
+}
+
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+}
+
+[data-bs-theme="light"] {
+  color-scheme: light;
+}
+
 #playerList {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -8,9 +20,9 @@
   align-items: center;
   margin: 0;
   padding: 5px 10px;
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--bs-border-color);
   border-radius: 4px;
-  background-color: #f8f9fa;
+  background-color: var(--bs-tertiary-bg);
 }
 .player-item .form-check-input {
   margin-right: 10px;
@@ -48,8 +60,8 @@
   flex-shrink: 0;
   border-radius: 50%;
   border: 2px solid transparent;
-  background-color: #0d6efd;
-  color: #fff;
+  background-color: var(--bs-primary);
+  color: var(--bs-white);
   font-weight: 600;
   font-size: 0.85rem;
   line-height: 1;
@@ -181,26 +193,26 @@
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 50%;
-  background-color: #ffc107;
-  color: #212529;
+  background-color: var(--bs-warning);
+  color: var(--bs-warning-text-emphasis);
   font-size: 0.85rem;
   display: none;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0.15rem 0.35rem rgba(102, 77, 3, 0.35);
+  box-shadow: 0 0.15rem 0.35rem rgba(var(--bs-warning-rgb), 0.35);
 }
 .finalize-btn-error {
-  background-color: #fff8e1 !important;
-  border-color: #ffe69c !important;
-  color: #664d03 !important;
+  background-color: var(--bs-warning-bg-subtle) !important;
+  border-color: var(--bs-warning-border-subtle) !important;
+  color: var(--bs-warning-text-emphasis) !important;
 }
 .finalize-btn-error .finalize-button-hazard {
   display: inline-flex;
 }
 .finalize-error-popover .popover-header {
-  background-color: #fff3cd;
-  border-bottom-color: #ffe69c;
-  color: #664d03;
+  background-color: var(--bs-warning-bg-subtle);
+  border-bottom-color: var(--bs-warning-border-subtle);
+  color: var(--bs-warning-text-emphasis);
 }
 .result-summary {
   display: flex;
@@ -227,7 +239,7 @@
   padding: 0 0.25rem;
 }
 .finalize-error-popover .popover-body {
-  color: #664d03;
+  color: var(--bs-warning-text-emphasis);
 }
 .jersey-option {
   display: flex;
@@ -235,7 +247,7 @@
   padding: 2px 5px;
 }
 .jersey-option:hover {
-  background-color: #f8f9fa; /* Light hover effect for contrast */
+  background-color: var(--bs-tertiary-bg);
 }
 .set-actions {
   width: 8rem;
@@ -405,7 +417,7 @@
 .score-modal .score-instruction {
   text-align: center;
   font-size: 0.95rem;
-  color: #6c757d;
+  color: var(--bs-secondary-color);
 }
 @media (max-width: 576px) {
   .score-modal .scoreboard-wrapper {
