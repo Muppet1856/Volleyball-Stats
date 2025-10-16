@@ -230,6 +230,18 @@
   flex-direction: column;
   max-height: 100dvh;
 }
+
+.score-modal .modal-header {
+  flex-wrap: nowrap;
+}
+
+.score-modal .modal-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .score-modal .modal-body {
   display: flex;
   flex-direction: column;
