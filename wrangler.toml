@@ -1,0 +1,9 @@
+name = "hello-world"
+main = "src/index.js"
+compatibility_date = "2024-04-03"
+
+# Environment-specific overrides (optional, e.g., for production)
+[env.production]
+name = "hello-world-prod"
+
+# D1 binding will be appended by the workflow here if not present
