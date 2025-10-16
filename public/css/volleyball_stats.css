@@ -130,11 +130,35 @@
 .swap-btn { text-align: center; width: 100%; }
 .swap-btn::after { content: "↔"; font-size: 1.5em; }
 .header-cell { transition: all 0.3s ease; }
-#playerModal .modal-body,
 #matchIndexModal .modal-body {
-  max-height: 70vh;
   max-height: min(70vh, 400px);
   overflow-y: auto;
+}
+
+#playerModal .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: min(75vh, 520px);
+  overflow: hidden;
+}
+
+#playerModal .player-form-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+}
+
+#playerModal .player-form-controls .row > [class^="col"],
+#playerModal .player-form-controls .row > [class*=" col"] {
+  min-width: 0;
+}
+
+#playerModal .modal-player-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
 }
 .finalized-btn { background-color: #28a745 !important; color: white !important; }
 .finalize-button {
