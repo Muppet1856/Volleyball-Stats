@@ -1,5 +1,6 @@
 import { methodNotAllowed } from './responses.js';
 import { deserializeMatchRow, normalizeMatchPayload } from './matches/utils.js';
+import { getDatabase } from './database.js';
 
 export function routeMatches(request, env) {
   switch (request.method.toUpperCase()) {
@@ -27,7 +28,8 @@ export function routeMatchById(request, env, id) {
 
 async function listMatches(env) {
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       'SELECT id, date, opponent FROM matches ORDER BY date ASC, opponent ASC, id ASC'
     );
     const { results } = await statement.all();
@@ -48,7 +50,8 @@ async function createMatch(request, env) {
 
   const payload = normalizeMatchPayload(body);
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       `INSERT INTO matches (
         date,
         location,
@@ -90,7 +93,8 @@ async function createMatch(request, env) {
 
 async function getMatch(env, id) {
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       'SELECT * FROM matches WHERE id = ?'
     ).bind(id);
     const { results } = await statement.all();
@@ -114,7 +118,8 @@ async function updateMatch(request, env, id) {
   }
   const payload = normalizeMatchPayload(body);
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       `UPDATE matches SET
         date = ?,
         location = ?,
@@ -159,7 +164,8 @@ async function updateMatch(request, env, id) {
 
 async function deleteMatch(env, id) {
   try {
-    const result = await env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const result = await db.prepare(
       'DELETE FROM matches WHERE id = ?'
     ).bind(id).run();
     if (!result?.meta || result.meta.changes === 0) {
