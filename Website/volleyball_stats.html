@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volleyball Game Stats</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="volleyball_stats.css">
+  
+</head>
+<body>
+  <form id="matchForm" class="needs-validation" novalidate>
+  <div class="container mt-4">
+    <div class="section mb-3 d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matchIndexModal">Saved Matches</button>
+      <button type="button" class="btn btn-outline-success" id="newGameButton" onclick="startNewMatch()">New Game</button>
+    </div>
+    <div class="accordion mb-3" id="gameInfoAccordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="headingGameInfo">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseGameInfo" aria-expanded="true" aria-controls="collapseGameInfo">
+            Game Information
+          </button>
+        </h2>
+        <div id="collapseGameInfo" class="accordion-collapse collapse show" aria-labelledby="headingGameInfo">
+          <div class="accordion-body">
+            <div class="game-info-grid row g-4 border rounded-3 p-3">
+              <div class="col-12 col-lg-6">
+                <label for="date" class="form-label">Date</label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text"><i class="bi bi-calendar-event"></i></span>
+                  <input type="datetime-local" class="form-control" id="date" required aria-describedby="dateHelp">
+                  <div class="invalid-feedback">Please choose the match date and time.</div>
+                </div>
+                <div id="dateHelp" class="form-text">A valid date and time are required before saving.</div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="location" class="form-label">Location</label>
+                <input type="text" class="form-control" id="location">
+              </div>
+              <div class="col-12 col-xl-6">
+                <fieldset class="mb-0">
+                  <legend class="form-label pt-0 mb-2">Type</legend>
+                  <div class="d-flex flex-column gap-2">
+                    <div class="form-check">
+                      <input type="radio" class="form-check-input" id="tournament" name="gameType" value="tournament">
+                      <label class="form-check-label" for="tournament">Tournament</label>
+                    </div>
+                    <div class="form-check">
+                      <input type="radio" class="form-check-input" id="league" name="gameType" value="league">
+                      <label class="form-check-label" for="league">League</label>
+                    </div>
+                    <div class="form-check">
+                      <input type="radio" class="form-check-input" id="postSeason" name="gameType" value="postSeason">
+                      <label class="form-check-label" for="postSeason">Post-Season</label>
+                    </div>
+                    <div class="form-check">
+                      <input type="radio" class="form-check-input" id="nonLeague" name="gameType" value="nonLeague">
+                      <label class="form-check-label" for="nonLeague">Non-League</label>
+                    </div>
+                  </div>
+                </fieldset>
+              </div>
+              <div class="col-12 col-xl-6">
+                <label for="opponent" class="form-label">Opponent</label>
+                <input type="text" class="form-control" id="opponent" oninput="updateOpponentName(); updateFirstServeOptions(); updateSetHeaders()">
+              </div>
+              <div class="col-12 col-md-6 col-xl-4">
+                <label for="jerseyColorSC" class="form-label">Jersey Color (Stoney Creek)</label>
+                <select class="form-select" id="jerseyColorSC">
+                  <option class="jersey-option" value="white" style="background-color: white;">White</option>
+                  <option class="jersey-option" value="grey" style="background-color: grey;">Grey</option>
+                  <option class="jersey-option" value="black" style="background-color: black; color: white;">Black</option>
+                  <option class="jersey-option" value="yellow" style="background-color: yellow;">Yellow</option>
+                  <option class="jersey-option" value="orange" style="background-color: orange;">Orange</option>
+                  <option class="jersey-option" value="red" style="background-color: red; color: white;">Red</option>
+                  <option class="jersey-option" value="green" style="background-color: green;">Green</option>
+                  <option class="jersey-option" value="blue" style="background-color: blue; color: white;">Blue</option>
+                  <option class="jersey-option" value="purple" style="background-color: purple; color: white;">Purple</option>
+                  <option class="jersey-option" value="pink" style="background-color: pink;">Pink</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6 col-xl-4">
+                <label for="jerseyColorOpp" id="jerseyColorOppLabel" class="form-label">Jersey Color (Opponent)</label>
+                <select class="form-select" id="jerseyColorOpp">
+                  <option class="jersey-option" value="white" style="background-color: white;">White</option>
+                  <option class="jersey-option" value="grey" style="background-color: grey;">Grey</option>
+                  <option class="jersey-option" value="black" style="background-color: black; color: white;">Black</option>
+                  <option class="jersey-option" value="yellow" style="background-color: yellow;">Yellow</option>
+                  <option class="jersey-option" value="orange" style="background-color: orange;">Orange</option>
+                  <option class="jersey-option" value="red" style="background-color: red; color: white;">Red</option>
+                  <option class="jersey-option" value="green" style="background-color: green;">Green</option>
+                  <option class="jersey-option" value="blue" style="background-color: blue; color: white;">Blue</option>
+                  <option class="jersey-option" value="purple" style="background-color: purple; color: white;">Purple</option>
+                  <option class="jersey-option" value="pink" style="background-color: pink;">Pink</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <p class="text-muted small mb-0">Note: If both teams have the same color, choose the libero color.</p>
+              </div>
+              <div class="col-12 col-xl-6">
+                <fieldset class="mb-0">
+                  <legend class="form-label fs-6 mb-2">Result of Game</legend>
+                  <div class="result-summary">
+                    <div class="result-team">
+                      <label for="resultSC" class="form-label mb-0" id="resultSCLabel">Stoney Creek</label>
+                      <select class="form-select w-auto text-center" id="resultSC">
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                      </select>
+                    </div>
+                    <span class="result-vs">vs</span>
+                    <div class="result-team">
+                      <label for="resultOpp" class="form-label mb-0" id="resultOppLabel">Opponent</label>
+                      <select class="form-select w-auto text-center" id="resultOpp">
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                      </select>
+                    </div>
+                  </div>
+                </fieldset>
+              </div>
+              <div class="col-12 col-xl-6">
+                <label for="firstServer" class="form-label">First Serve</label>
+                <select class="form-select" id="firstServer"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion mb-4" id="playersAccordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="headingPlayers">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePlayers" aria-expanded="true" aria-controls="collapsePlayers">
+            Players Appearing in Match (Stoney Creek)
+          </button>
+        </h2>
+        <div id="collapsePlayers" class="accordion-collapse collapse show" aria-labelledby="headingPlayers">
+          <div class="accordion-body">
+            <button type="button" class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#playerModal">Manage Roster</button>
+            <div id="playerList" class="border p-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 class="mb-3">Set-by-Set Scoring</h2>
+      <div class="mb-2 text-center">
+        <button type="button" class="btn btn-secondary swap-btn" onclick="swapScores()"></button>
+      </div>
+      <table class="table table-bordered set-table">
+        <tr>
+          <th class="set-index-header">Set</th>
+          <th class="left-score header-cell" id="scHeader">
+            <button type="button" class="team-name-button" data-team-header="sc" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Stoney Creek">Stoney Creek</button>
+          </th>
+          <th class="right-score header-cell" id="oppHeader">
+            <button type="button" class="team-name-button" data-team-header="opp" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Opponent">Opponent</button>
+          </th>
+          <th></th>
+        </tr>
+        <tr>
+          <th scope="row" class="set-index-cell">
+            <i class="bi bi-1-circle-fill" aria-hidden="true"></i>
+            <span class="visually-hidden">Set 1</span>
+          </th>
+          <td><input type="number" class="form-control left-score" id="set1SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control right-score" id="set1Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td class="set-actions">
+            <div class="set-actions-stack">
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="1">Score Game</button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" class="set-index-cell">
+            <i class="bi bi-2-circle" aria-hidden="true"></i>
+            <span class="visually-hidden">Set 2</span>
+          </th>
+          <td><input type="number" class="form-control left-score" id="set2SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control right-score" id="set2Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td class="set-actions">
+            <div class="set-actions-stack">
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="2">Score Game</button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" class="set-index-cell">
+            <i class="bi bi-3-circle-fill" aria-hidden="true"></i>
+            <span class="visually-hidden">Set 3</span>
+          </th>
+          <td><input type="number" class="form-control left-score" id="set3SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control right-score" id="set3Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td class="set-actions">
+            <div class="set-actions-stack">
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="3">Score Game</button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" class="set-index-cell">
+            <i class="bi bi-4-circle" aria-hidden="true"></i>
+            <span class="visually-hidden">Set 4</span>
+          </th>
+          <td><input type="number" class="form-control left-score" id="set4SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control right-score" id="set4Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td class="set-actions">
+            <div class="set-actions-stack">
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="4">Score Game</button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" class="set-index-cell">
+            <i class="bi bi-5-circle-fill" aria-hidden="true"></i>
+            <span class="visually-hidden">Set 5</span>
+          </th>
+          <td><input type="number" class="form-control left-score" id="set5SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control right-score" id="set5Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td class="set-actions">
+            <div class="set-actions-stack">
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="5">Score Game</button>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div id="scoreGameModal" class="modal fade" tabindex="-1" aria-labelledby="scoreGameModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-content score-modal">
+          <div class="modal-header">
+            <h5 class="modal-title" id="scoreGameModalLabel">Score Game</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="score-instruction mb-0">Tap or click the top half to add a point and the bottom half to remove a point.</p>
+            <div class="scoreboard-wrapper">
+              <div class="team-panel team-blue">
+                <span class="score-team-label" id="scoreGameLeftLabel">Stoney Creek</span>
+                <div class="score-zone increment" role="button" tabindex="0" data-team="sc" data-action="increment" aria-label="Increase Stoney Creek score"></div>
+                <div class="score-zone decrement" role="button" tabindex="0" data-team="sc" data-action="decrement" aria-label="Decrease Stoney Creek score"></div>
+                <div class="score-value" id="scoreGameScDisplay">00</div>
+              </div>
+              <div class="team-panel team-red">
+                <span class="score-team-label" id="scoreGameRightLabel">Opponent</span>
+                <div class="score-zone increment" role="button" tabindex="0" data-team="opp" data-action="increment" aria-label="Increase opponent score"></div>
+                <div class="score-zone decrement" role="button" tabindex="0" data-team="opp" data-action="decrement" aria-label="Decrease opponent score"></div>
+                <div class="score-value" id="scoreGameOppDisplay">00</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <span id="autoSaveStatus" class="text-muted d-none" aria-live="polite"></span>
+    </div>
+
+    <div id="playerModal" class="modal fade" tabindex="-1" aria-labelledby="playerModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="playerModalLabel">Manage Roster</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row mb-3">
+              <div class="col"><input type="number" class="form-control" id="number" placeholder="Number" min="0" inputmode="numeric" pattern="[0-9]*"></div>
+              <div class="col"><input type="text" class="form-control" id="lastName" placeholder="Lastname"></div>
+              <div class="col"><input type="text" class="form-control" id="initial" placeholder="Initial (optional)"></div>
+            </div>
+            <button type="button" class="btn btn-primary" id="savePlayerBtn" onclick="submitPlayer()">Add Player</button>
+            <button type="button" class="btn btn-outline-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEdit()">Cancel</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <div id="modalPlayerList" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="matchIndexModal" class="modal fade" tabindex="-1" aria-labelledby="matchIndexModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="matchIndexModalLabel">Saved Matches</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <ul id="matchList" class="list-group"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </form>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="volleyball_stats.js" defer></script>
+
+</body>
+</html>
