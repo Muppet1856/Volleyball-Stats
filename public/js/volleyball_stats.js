@@ -118,7 +118,9 @@ let playerSortMode = 'number';
       timeoutRemainingSeconds: {
         sc: TIMEOUT_DURATION_SECONDS,
         opp: TIMEOUT_DURATION_SECONDS
-      }
+      },
+      timeoutPopoverInstance: null,
+      timeoutPopoverVisible: false
     };
     const finalizeButtonPopoverTimers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
@@ -450,6 +452,40 @@ let playerSortMode = 'number';
       return index === 0 ? 'first' : 'second';
     }
 
+    function ensureTimeoutPopover(anchor) {
+      if (!anchor) return null;
+      const container = anchor.closest('.timeout-row');
+      if (!container) return null;
+      if (!scoreGameState.timeoutPopoverInstance) {
+        scoreGameState.timeoutPopoverInstance = new bootstrap.Popover(anchor, {
+          trigger: 'manual',
+          placement: 'top',
+          html: true,
+          sanitize: false,
+          customClass: 'timeout-timer-popover',
+          container
+        });
+        scoreGameState.timeoutPopoverVisible = false;
+      }
+      return scoreGameState.timeoutPopoverInstance;
+    }
+
+    function hideTimeoutPopover() {
+      if (scoreGameState.timeoutPopoverInstance && scoreGameState.timeoutPopoverVisible) {
+        scoreGameState.timeoutPopoverInstance.hide();
+        scoreGameState.timeoutPopoverVisible = false;
+      }
+    }
+
+    function disposeTimeoutPopover() {
+      if (scoreGameState.timeoutPopoverInstance) {
+        scoreGameState.timeoutPopoverInstance.hide();
+        scoreGameState.timeoutPopoverInstance.dispose();
+        scoreGameState.timeoutPopoverInstance = null;
+      }
+      scoreGameState.timeoutPopoverVisible = false;
+    }
+
     function stopTimeoutTimer(team) {
       const timerId = scoreGameState.timeoutTimers[team];
       if (timerId) {
@@ -458,11 +494,67 @@ let playerSortMode = 'number';
       }
     }
 
-    function updateTimeoutTimerDisplay(team) {
-      const timerElement = document.querySelector(`#scoreGameModal .timeout-timer[data-team="${team}"]`);
-      if (!timerElement) return;
-      timerElement.textContent = formatTimeoutDisplay(scoreGameState.timeoutRemainingSeconds[team]);
-      timerElement.classList.toggle('running', Boolean(scoreGameState.timeoutTimers[team]));
+    function updateTimeoutTimerDisplay() {
+      const anchor = document.getElementById('scoreGameTimeoutAnchor');
+      const statusElement = document.getElementById('scoreGameTimeoutSrStatus');
+      const modalElement = document.getElementById('scoreGameModal');
+      const runningTeam = ['sc', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team]));
+      const fallbackTeam = ['sc', 'opp'].find(team => scoreGameState.activeTimeout[team] !== null);
+      const displayTeam = runningTeam || fallbackTeam || null;
+      const seconds = displayTeam
+        ? scoreGameState.timeoutRemainingSeconds[displayTeam]
+        : TIMEOUT_DURATION_SECONDS;
+
+      const formatted = formatTimeoutDisplay(seconds);
+      const statusText = runningTeam
+        ? `${getTimeoutTeamName(runningTeam)} timeout running`
+        : displayTeam
+          ? `${getTimeoutTeamName(displayTeam)} timeout paused`
+          : 'No timeout running';
+      const srAnnouncement = runningTeam
+        ? `${getTimeoutTeamName(runningTeam)} timeout running. ${formatted} remaining.`
+        : displayTeam
+          ? `${getTimeoutTeamName(displayTeam)} timeout paused. ${formatted} remaining.`
+          : 'No timeout running.';
+
+      if (statusElement) {
+        statusElement.textContent = srAnnouncement;
+      }
+
+      if (!modalElement || !modalElement.classList.contains('show')) {
+        hideTimeoutPopover();
+        return;
+      }
+
+      const popover = ensureTimeoutPopover(anchor);
+      if (!popover || !anchor) {
+        return;
+      }
+
+      const bodyHtml = `
+        <div class="timeout-timer${runningTeam ? ' running' : ''}">${formatted}</div>
+        <div class="timeout-timer-status${displayTeam ? '' : ' text-muted'}">${statusText}</div>
+      `.trim();
+      anchor.setAttribute('data-bs-content', bodyHtml);
+
+      if (!scoreGameState.timeoutPopoverVisible) {
+        popover.show();
+        scoreGameState.timeoutPopoverVisible = true;
+      }
+
+      const tip = typeof popover.getTipElement === 'function'
+        ? popover.getTipElement()
+        : (popover.tip || null);
+
+      if (tip) {
+        tip.setAttribute('data-team', displayTeam || '');
+        const body = tip.querySelector('.popover-body');
+        if (body) {
+          body.innerHTML = bodyHtml;
+        }
+      }
+
+      popover.update();
     }
 
     function updateTimeoutUI(team) {
@@ -491,7 +583,7 @@ let playerSortMode = 'number';
           button.setAttribute('aria-label', label);
         });
       }
-      updateTimeoutTimerDisplay(team);
+      updateTimeoutTimerDisplay();
     }
 
     function refreshAllTimeoutDisplays() {
@@ -1415,13 +1507,20 @@ let playerSortMode = 'number';
             updateScoreGameModalLayout();
           }
         };
-        scoreGameModalElement.addEventListener('show.bs.modal', updateScoreGameModalLayout);
-        scoreGameModalElement.addEventListener('shown.bs.modal', updateScoreGameModalLayout);
+        scoreGameModalElement.addEventListener('show.bs.modal', () => {
+          scoreGameState.timeoutPopoverVisible = false;
+          updateScoreGameModalLayout();
+        });
+        scoreGameModalElement.addEventListener('shown.bs.modal', () => {
+          updateScoreGameModalLayout();
+          updateTimeoutTimerDisplay();
+        });
         scoreGameModalElement.addEventListener('hidden.bs.modal', () => {
           scoreGameState.setNumber = null;
           scoreGameState.sc = null;
           scoreGameState.opp = null;
           updateScoreModalDisplay();
+          disposeTimeoutPopover();
           refreshAllTimeoutDisplays();
         });
         window.addEventListener('resize', handleScoreModalResize);
