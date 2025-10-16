@@ -785,6 +785,20 @@ let playerSortMode = 'number';
       updateScoreModalLabels();
     }
 
+    function syncScoreGameModalAfterSwap() {
+      const modalElement = document.getElementById('scoreGameModal');
+      if (!modalElement || !modalElement.classList.contains('show')) return;
+      updateScoreModalLabels();
+      const { setNumber } = scoreGameState;
+      if (!setNumber) return;
+      const scInput = document.getElementById(`set${setNumber}SC`);
+      const oppInput = document.getElementById(`set${setNumber}Opp`);
+      if (!scInput || !oppInput) return;
+      scoreGameState.sc = parseScoreValue(scInput.value);
+      scoreGameState.opp = parseScoreValue(oppInput.value);
+      updateScoreModalDisplay();
+    }
+
     function swapScores() {
       isSwapped = !isSwapped;
       const opponentInput = document.getElementById('opponent').value.trim();
@@ -810,6 +824,7 @@ let playerSortMode = 'number';
         calculateResult();
       }
       scheduleAutoSave();
+      syncScoreGameModalAfterSwap();
     }
 
     
@@ -1436,6 +1451,10 @@ let playerSortMode = 'number';
           if (!team || Number.isNaN(index)) return;
           button.addEventListener('click', () => handleTimeoutSelection(team, index));
         });
+        const modalSwapButton = document.getElementById('scoreModalSwapBtn');
+        if (modalSwapButton) {
+          modalSwapButton.addEventListener('click', swapScores);
+        }
         resetAllTimeouts();
       }
       document.querySelectorAll('.score-game-btn').forEach(button => {
