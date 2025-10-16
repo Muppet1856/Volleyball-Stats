@@ -1,4 +1,4 @@
-import { notFound } from './api/responses.js';
+import { notFound, unauthorized } from './api/responses.js';
 import { routeMatchById, routeMatches } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
 
@@ -10,6 +10,11 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/api/')) {
+      const authFailure = await authenticate(request, env);
+      if (authFailure) {
+        return authFailure;
+      }
+
       return handleApiRequest(request, env, url.pathname);
     }
 
@@ -37,4 +42,61 @@ function handleApiRequest(request, env, pathname) {
   }
 
   return notFound();
+}
+
+async function authenticate(request, env) {
+  const expectedUsername = String(env.BASIC_AUTH_USERNAME || '').trim();
+  const expectedPassword = String(env.BASIC_AUTH_PASSWORD || '').trim();
+
+  if (!expectedUsername || !expectedPassword) {
+    return null;
+  }
+
+  const authorization = request.headers.get('Authorization') || '';
+  if (!authorization.startsWith('Basic ')) {
+    return unauthorized();
+  }
+
+  const encodedCredentials = authorization.slice('Basic '.length);
+  let decodedCredentials;
+  try {
+    decodedCredentials = atob(encodedCredentials);
+  } catch (error) {
+    console.warn('Failed to decode Authorization header', error);
+    return unauthorized();
+  }
+
+  const separatorIndex = decodedCredentials.indexOf(':');
+  if (separatorIndex === -1) {
+    return unauthorized();
+  }
+
+  const providedUsername = decodedCredentials.slice(0, separatorIndex);
+  const providedPassword = decodedCredentials.slice(separatorIndex + 1);
+
+  const usernameMatches = await timingSafeEqual(providedUsername, expectedUsername);
+  const passwordMatches = await timingSafeEqual(providedPassword, expectedPassword);
+
+  if (!usernameMatches || !passwordMatches) {
+    return unauthorized();
+  }
+
+  return null;
+}
+
+async function timingSafeEqual(a, b) {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+
+  if (aBytes.length !== bBytes.length) {
+    return false;
+  }
+
+  try {
+    return await crypto.subtle.timingSafeEqual(aBytes, bBytes);
+  } catch (error) {
+    console.warn('Failed to perform timing safe comparison', error);
+    return false;
+  }
 }
