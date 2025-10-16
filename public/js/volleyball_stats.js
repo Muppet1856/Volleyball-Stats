@@ -43,32 +43,55 @@ function loadFileData(filename) {
   return gk_fileData[filename] || "";
 }
 
-let db;
-    const request = indexedDB.open("VolleyballDB", 2);
+const apiClient = (() => {
+  const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
-    request.onupgradeneeded = function(event) {
-      db = event.target.result;
-      if (!db.objectStoreNames.contains("players")) {
-        db.createObjectStore("players", { keyPath: "id", autoIncrement: true });
+  async function request(path, { method = 'GET', body, headers = {} } = {}) {
+    const init = { method, headers: body !== undefined ? { ...JSON_HEADERS, ...headers } : headers };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+      if (!init.headers['Content-Type']) {
+        init.headers['Content-Type'] = 'application/json';
       }
-      if (!db.objectStoreNames.contains("matches")) {
-        db.createObjectStore("matches", { keyPath: "id", autoIncrement: true });
+    }
+    const response = await fetch(path, init);
+    if (!response.ok) {
+      let errorMessage = `${method} ${path} failed with status ${response.status}`;
+      try {
+        const errorText = await response.text();
+        if (errorText) {
+          errorMessage += `: ${errorText}`;
+        }
+      } catch (readError) {
+        // Ignore read errors when constructing the message
       }
-    };
+      throw new Error(errorMessage);
+    }
+    if (response.status === 204) {
+      return null;
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await response.json();
+    }
+    return await response.text();
+  }
 
-    request.onsuccess = function(event) {
-      db = event.target.result;
-      seedDemoPlayersIfEmpty()
-        .catch(error => {
-          console.error('Failed to seed demo players', error);
-        })
-        .finally(() => {
-          loadPlayers();
-          loadMatchFromUrl();
-        });
-    };
+  return {
+    getPlayers: () => request('/api/players'),
+    createPlayer: (player) => request('/api/players', { method: 'POST', body: player }),
+    updatePlayer: (id, player) => request(`/api/players/${id}`, { method: 'PUT', body: player }),
+    deletePlayer: (id) => request(`/api/players/${id}`, { method: 'DELETE' }),
+    listMatches: () => request('/api/matches'),
+    getMatch: (id) => request(`/api/matches/${id}`),
+    createMatch: (match) => request('/api/matches', { method: 'POST', body: match }),
+    updateMatch: (id, match) => request(`/api/matches/${id}`, { method: 'PUT', body: match }),
+    deleteMatch: (id) => request(`/api/matches/${id}`, { method: 'DELETE' })
+  };
+})();
 
-    let players = [];
+let playerRecords = [];
+let players = [];
     let finalizedSets = {};
     let isSwapped = false;
     let editingPlayerId = null;
@@ -113,58 +136,58 @@ let db;
       return [number, lastName, initial].filter(Boolean).join(' ');
     }
 
-    function loadPlayers() {
-      const transaction = db.transaction(["players"], "readonly");
-      const store = transaction.objectStore("players");
-      const request = store.getAll();
-      request.onsuccess = function(event) {
-        const records = event.target.result.slice();
-        records.sort((a, b) => {
-          const numberA = parseInt(a.number, 10);
-          const numberB = parseInt(b.number, 10);
-          if (!Number.isNaN(numberA) && !Number.isNaN(numberB)) {
-            return numberA - numberB;
-          }
-          return formatPlayerRecord(a).localeCompare(formatPlayerRecord(b));
-        });
-        players = records.map(formatPlayerRecord);
+    
+    async function loadPlayers() {
+      try {
+        const records = await apiClient.getPlayers();
+        const sortedRecords = Array.isArray(records)
+          ? records.slice().sort((a, b) => {
+              const numberA = parseInt(a.number, 10);
+              const numberB = parseInt(b.number, 10);
+              if (!Number.isNaN(numberA) && !Number.isNaN(numberB) && numberA !== numberB) {
+                return numberA - numberB;
+              }
+              const nameA = formatPlayerRecord(a);
+              const nameB = formatPlayerRecord(b);
+              return nameA.localeCompare(nameB);
+            })
+          : [];
+        playerRecords = sortedRecords;
+        players = sortedRecords.map(formatPlayerRecord);
         updatePlayerList();
         updateModalPlayerList();
-      };
+      } catch (error) {
+        console.error('Failed to load players', error);
+      }
     }
 
-    function seedDemoPlayersIfEmpty() {
-      return new Promise((resolve, reject) => {
-        if (!db) {
-          resolve(false);
-          return;
+
+    
+    async function seedDemoPlayersIfEmpty() {
+      try {
+        const existing = await apiClient.getPlayers();
+        if (Array.isArray(existing) && existing.length > 0) {
+          return false;
         }
-        const countTransaction = db.transaction(["players"], "readonly");
-        const countStore = countTransaction.objectStore("players");
-        const countRequest = countStore.count();
-        countRequest.onsuccess = function() {
-          if (countRequest.result > 0) {
-            resolve(false);
-            return;
-          }
-          const demoPlayers = [
-            { number: 2, lastName: 'Anderson', initial: 'L' },
-            { number: 4, lastName: 'Bennett', initial: 'K' },
-            { number: 6, lastName: 'Chen', initial: 'M' },
-            { number: 7, lastName: 'Diaz', initial: 'R' },
-            { number: 9, lastName: 'Ellis', initial: 'S' },
-            { number: 10, lastName: 'Foster', initial: 'J' },
-            { number: 12, lastName: 'Garcia', initial: 'T' }
-          ];
-          const seedTransaction = db.transaction(["players"], "readwrite");
-          const seedStore = seedTransaction.objectStore("players");
-          demoPlayers.forEach(player => seedStore.add(player));
-          seedTransaction.oncomplete = () => resolve(true);
-          seedTransaction.onerror = event => reject(event.target.error);
-        };
-        countRequest.onerror = event => reject(event.target.error);
-      });
+        const demoPlayers = [
+          { number: 2, lastName: 'Anderson', initial: 'L' },
+          { number: 4, lastName: 'Bennett', initial: 'K' },
+          { number: 6, lastName: 'Chen', initial: 'M' },
+          { number: 7, lastName: 'Diaz', initial: 'R' },
+          { number: 9, lastName: 'Ellis', initial: 'S' },
+          { number: 10, lastName: 'Foster', initial: 'J' },
+          { number: 12, lastName: 'Garcia', initial: 'T' }
+        ];
+        for (const player of demoPlayers) {
+          await apiClient.createPlayer(player);
+        }
+        return true;
+      } catch (error) {
+        console.error('Failed to seed demo players', error);
+        throw error;
+      }
     }
+
 
     function setAutoSaveStatus(message, className = 'text-muted', timeout = 2000) {
       const statusElement = document.getElementById('autoSaveStatus');
@@ -186,12 +209,16 @@ let db;
     }
 
     function scheduleAutoSave() {
-      if (!db || suppressAutoSave) return;
+      if (suppressAutoSave) return;
       if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
       setAutoSaveStatus('Saving…', 'text-warning', null);
-      autoSaveTimeout = setTimeout(() => {
+      autoSaveTimeout = setTimeout(async () => {
         autoSaveTimeout = null;
-        saveMatch({ showAlert: false });
+        try {
+          await saveMatch({ showAlert: false });
+        } catch (error) {
+          // Errors handled within saveMatch
+        }
       }, 500);
     }
 
@@ -412,29 +439,41 @@ let db;
       }
     }
 
-    function savePlayer(number, lastName, initial, id = null) {
-      const transaction = db.transaction(["players"], "readwrite");
-      const store = transaction.objectStore("players");
-      const player = { number: number, lastName: lastName, initial: initial || '' };
-      if (id !== null) {
-        player.id = id;
-      }
-      const request = (id !== null) ? store.put(player) : store.add(player);
-      request.onsuccess = function(event) {
-        loadPlayers();
+    
+    async function savePlayer(number, lastName, initial, id = null) {
+      const payload = {
+        number: number,
+        lastName: lastName,
+        initial: initial || ''
       };
+      try {
+        if (id !== null) {
+          await apiClient.updatePlayer(id, payload);
+        } else {
+          await apiClient.createPlayer(payload);
+        }
+        await loadPlayers();
+      } catch (error) {
+        console.error('Failed to save player', error);
+        alert('Unable to save player. Please try again.');
+      }
     }
 
-    function deletePlayer(id) {
-      const transaction = db.transaction(["players"], "readwrite");
-      const store = transaction.objectStore("players");
-      store.delete(id).onsuccess = function() {
+
+    
+    async function deletePlayer(id) {
+      try {
+        await apiClient.deletePlayer(id);
         if (editingPlayerId === id) {
           resetPlayerForm();
         }
-        loadPlayers();
-      };
+        await loadPlayers();
+      } catch (error) {
+        console.error('Failed to delete player', error);
+        alert('Unable to delete player. Please try again.');
+      }
     }
+
 
     function getTeamHeaderButton(headerId) {
       const header = document.getElementById(headerId);
@@ -592,16 +631,18 @@ let db;
       scheduleAutoSave();
     }
 
-    function submitPlayer() {
+    
+    async function submitPlayer() {
       const number = document.getElementById('number').value.trim();
       const lastName = document.getElementById('lastName').value.trim();
       const initial = document.getElementById('initial').value.trim() || '';
       if (number && lastName) {
         const idToSave = editingPlayerId !== null ? editingPlayerId : null;
-        savePlayer(number, lastName, initial, idToSave);
+        await savePlayer(number, lastName, initial, idToSave);
       }
       resetPlayerForm();
     }
+
 
     function updatePlayerList() {
       const list = document.getElementById('playerList');
@@ -689,53 +730,46 @@ let db;
       return fragment;
     }
 
+    
     function updateModalPlayerList() {
       const list = document.getElementById('modalPlayerList');
       list.innerHTML = '';
-      const transaction = db.transaction(["players"], "readonly");
-      const store = transaction.objectStore("players");
-      const request = store.openCursor();
-      request.onsuccess = function(event) {
-        const cursor = event.target.result;
-        if (cursor) {
-          const playerData = { ...cursor.value };
-          const div = document.createElement('div');
-          div.className = 'd-flex justify-content-between align-items-center mb-2';
+      playerRecords.forEach(playerData => {
+        const div = document.createElement('div');
+        div.className = 'd-flex justify-content-between align-items-center mb-2';
 
-          const displayContainer = document.createElement('div');
-          displayContainer.className = 'd-flex align-items-center';
-          const playerDisplay = createPlayerDisplay(
-            `${playerData.number} ${playerData.lastName} ${playerData.initial || ''}`
-          );
-          displayContainer.appendChild(playerDisplay);
+        const displayContainer = document.createElement('div');
+        displayContainer.className = 'd-flex align-items-center';
+        const playerDisplay = createPlayerDisplay(
+          formatPlayerRecord(playerData)
+        );
+        displayContainer.appendChild(playerDisplay);
 
-          const buttonGroup = document.createElement('div');
-          buttonGroup.className = 'btn-group btn-group-sm';
+        const buttonGroup = document.createElement('div');
+        buttonGroup.className = 'btn-group btn-group-sm';
 
-          const editBtn = document.createElement('button');
-          editBtn.type = 'button';
-          editBtn.className = 'btn btn-outline-primary';
-          editBtn.textContent = 'Edit';
-          editBtn.onclick = () => startEditPlayer(playerData);
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-outline-primary';
+        editBtn.textContent = 'Edit';
+        editBtn.onclick = () => startEditPlayer(playerData);
 
-          const deleteBtn = document.createElement('button');
-          deleteBtn.type = 'button';
-          deleteBtn.className = 'btn btn-danger';
-          deleteBtn.textContent = 'Delete';
-          deleteBtn.onclick = () => deletePlayer(playerData.id);
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn btn-danger';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = async () => deletePlayer(playerData.id);
 
-          buttonGroup.appendChild(editBtn);
-          buttonGroup.appendChild(deleteBtn);
+        buttonGroup.appendChild(editBtn);
+        buttonGroup.appendChild(deleteBtn);
 
-          div.appendChild(displayContainer);
-          div.appendChild(buttonGroup);
-          list.appendChild(div);
-          cursor.continue();
-        } else {
-          applyJerseyColorToNumbers();
-        }
-      };
+        div.appendChild(displayContainer);
+        div.appendChild(buttonGroup);
+        list.appendChild(div);
+      });
+      applyJerseyColorToNumbers();
     }
+
 
     function startEditPlayer(player) {
       editingPlayerId = player.id;
@@ -809,16 +843,21 @@ let db;
       document.getElementById('resultOpp').value = Math.min(oppWins, 3);
     }
 
-    function saveMatch({ showAlert = false } = {}) {
-      if (!db) return;
+    
+    async function saveMatch({ showAlert = false } = {}) {
+      if (suppressAutoSave) return null;
       const form = document.getElementById('matchForm');
       if (form && !form.checkValidity()) {
         form.classList.add('was-validated');
         setAutoSaveStatus('Unable to save due to validation errors.', 'text-danger', 4000);
-        return;
+        return null;
       }
-      const transaction = db.transaction(["matches"], "readwrite");
-      const store = transaction.objectStore("matches");
+      const parseResultValue = (elementId) => {
+        const element = document.getElementById(elementId);
+        if (!element) return null;
+        const value = parseInt(element.value, 10);
+        return Number.isNaN(value) ? null : value;
+      };
       const match = {
         date: document.getElementById('date').value,
         location: document.getElementById('location').value,
@@ -831,8 +870,8 @@ let db;
         opponent: document.getElementById('opponent').value.trim() || 'Opponent',
         jerseyColorSC: document.getElementById('jerseyColorSC').value,
         jerseyColorOpp: document.getElementById('jerseyColorOpp').value,
-        resultSC: document.getElementById('resultSC').value,
-        resultOpp: document.getElementById('resultOpp').value,
+        resultSC: parseResultValue('resultSC'),
+        resultOpp: parseResultValue('resultOpp'),
         firstServer: document.getElementById('firstServer').value,
         players: Array.from(document.querySelectorAll('#playerList input[type="checkbox"]:checked')).map(cb => cb.value),
         sets: {
@@ -846,14 +885,13 @@ let db;
         isSwapped: isSwapped
       };
       const matchId = currentMatchId;
-      if (matchId !== null) {
-        match.id = matchId;
-      }
       loadedMatchPlayers = [...match.players];
-      const request = matchId !== null ? store.put(match) : store.add(match);
-      request.onsuccess = function(event) {
-        const savedId = matchId !== null ? matchId : event.target.result;
-        if (currentMatchId !== savedId) {
+      try {
+        const response = matchId !== null
+          ? await apiClient.updateMatch(matchId, match)
+          : await apiClient.createMatch(match);
+        const savedId = response?.id ?? matchId ?? null;
+        if (savedId !== null && currentMatchId !== savedId) {
           currentMatchId = savedId;
           const newUrl = `${window.location.pathname}?matchId=${savedId}`;
           window.history.replaceState(null, '', newUrl);
@@ -865,31 +903,38 @@ let db;
           setAutoSaveStatus('All changes saved.', 'text-success');
         }
         populateMatchIndexModal();
-      };
-      request.onerror = function() {
-        if (!showAlert) {
+        return savedId;
+      } catch (error) {
+        console.error('Failed to save match', error);
+        if (showAlert) {
+          alert('Unable to save match. Please try again.');
+        } else {
           setAutoSaveStatus('Error saving changes.', 'text-danger', 4000);
         }
-      };
+        throw error;
+      }
     }
-
-    function deleteMatch(matchId) {
+    
+    async function deleteMatch(matchId) {
       if (!confirm('Delete this match?')) return;
-      const transaction = db.transaction(["matches"], "readwrite");
-      const store = transaction.objectStore("matches");
-      const request = store.delete(matchId);
-      request.onsuccess = function() {
+      try {
+        await apiClient.deleteMatch(matchId);
         const urlParams = new URLSearchParams(window.location.search);
-        const currentMatchId = urlParams.get('matchId');
-        if (currentMatchId && parseInt(currentMatchId) === matchId) {
+        const currentMatchIdParam = urlParams.get('matchId');
+        if (currentMatchIdParam && parseInt(currentMatchIdParam, 10) === matchId) {
           window.location.href = window.location.href.split('?')[0];
         } else {
-          populateMatchIndexModal();
+          await populateMatchIndexModal();
         }
-      };
+      } catch (error) {
+        console.error('Failed to delete match', error);
+        alert('Unable to delete match. Please try again.');
+      }
     }
 
-    function loadMatchFromUrl() {
+
+    
+    async function loadMatchFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       const matchId = urlParams.get('matchId');
       suppressAutoSave = true;
@@ -905,28 +950,33 @@ let db;
       if (form) {
         form.classList.remove('was-validated');
       }
-      if (matchId && db) {
-        const transaction = db.transaction(["matches"], "readonly");
-        const store = transaction.objectStore("matches");
-        const request = store.get(parseInt(matchId));
-        request.onsuccess = function(event) {
-          const match = event.target.result;
+      const resetFinalizeButtons = () => {
+        for (let i = 1; i <= 5; i++) {
+          const button = document.getElementById(`finalizeButton${i}`);
+          if (button) {
+            button.classList.remove('finalized-btn');
+          }
+        }
+      };
+      if (matchId) {
+        try {
+          const match = await apiClient.getMatch(matchId);
           if (match) {
             currentMatchId = match.id;
-            loadedMatchPlayers = match.players || [];
-            document.getElementById('date').value = match.date;
-            document.getElementById('location').value = match.location;
-            document.getElementById('tournament').checked = match.types.tournament;
-            document.getElementById('league').checked = match.types.league;
-            document.getElementById('postSeason').checked = match.types.postSeason;
-            document.getElementById('nonLeague').checked = match.types.nonLeague;
-            document.getElementById('opponent').value = match.opponent;
-            document.getElementById('jerseyColorSC').value = match.jerseyColorSC;
-            document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp;
+            loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
+            document.getElementById('date').value = match.date || '';
+            document.getElementById('location').value = match.location || '';
+            document.getElementById('tournament').checked = Boolean(match.types?.tournament);
+            document.getElementById('league').checked = Boolean(match.types?.league);
+            document.getElementById('postSeason').checked = Boolean(match.types?.postSeason);
+            document.getElementById('nonLeague').checked = Boolean(match.types?.nonLeague);
+            document.getElementById('opponent').value = match.opponent || '';
+            document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
+            document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
             applyJerseyColorToNumbers();
-            document.getElementById('resultSC').value = match.resultSC;
-            document.getElementById('resultOpp').value = match.resultOpp;
-            document.getElementById('firstServer').value = match.firstServer;
+            document.getElementById('resultSC').value = match.resultSC ?? 0;
+            document.getElementById('resultOpp').value = match.resultOpp ?? 0;
+            document.getElementById('firstServer').value = match.firstServer || '';
             updateOpponentName();
             updatePlayerList();
             for (let i = 1; i <= 5; i++) {
@@ -939,92 +989,110 @@ let db;
                 oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
               }
             }
-            finalizedSets = { ...match.finalizedSets };
-            isSwapped = match.isSwapped;
+            finalizedSets = { ...(match.finalizedSets || {}) };
+            isSwapped = Boolean(match.isSwapped);
+            resetFinalizeButtons();
             for (let i = 1; i <= 5; i++) {
               if (finalizedSets[i]) {
-                document.getElementById(`finalizeButton${i}`).classList.add('finalized-btn');
+                const button = document.getElementById(`finalizeButton${i}`);
+                if (button) {
+                  button.classList.add('finalized-btn');
+                }
               }
             }
             updateAllFinalizeButtonStates();
             if (isSwapped) swapScores();
             calculateResult();
           } else {
+            currentMatchId = null;
             loadedMatchPlayers = [];
+            finalizedSets = {};
+            resetFinalizeButtons();
+            updatePlayerList();
           }
-          suppressAutoSave = false;
-        };
-        request.onerror = function() {
-          suppressAutoSave = false;
-        };
+        } catch (error) {
+          console.error('Failed to load match', error);
+          setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
+          currentMatchId = null;
+          loadedMatchPlayers = [];
+          finalizedSets = {};
+          resetFinalizeButtons();
+          updatePlayerList();
+        }
       } else {
-        currentMatchId = matchId ? parseInt(matchId) : null;
+        currentMatchId = matchId ? parseInt(matchId, 10) : null;
         loadedMatchPlayers = [];
-        suppressAutoSave = false;
+        finalizedSets = {};
+        resetFinalizeButtons();
+        updatePlayerList();
       }
+      suppressAutoSave = false;
     }
 
-    function populateMatchIndexModal() {
+
+    
+    async function populateMatchIndexModal() {
       const modal = document.getElementById('matchIndexModal');
       const matchList = document.getElementById('matchList');
       matchList.innerHTML = '';
-      const transaction = db.transaction(["matches"], "readonly");
-      const store = transaction.objectStore("matches");
-      const request = store.openCursor();
-      const matches = [];
-      request.onsuccess = function(event) {
-        const cursor = event.target.result;
-        if (cursor) {
-          matches.push(cursor.value);
-          cursor.continue();
+      try {
+        const matches = await apiClient.listMatches();
+        const sortedMatches = Array.isArray(matches)
+          ? matches.slice().sort((a, b) => {
+              const dateA = a.date ? new Date(a.date) : new Date(0);
+              const dateB = b.date ? new Date(b.date) : new Date(0);
+              if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
+              return (a.opponent || '').localeCompare(b.opponent || '');
+            })
+          : [];
+        if (sortedMatches.length === 0) {
+          const emptyItem = document.createElement('li');
+          emptyItem.className = 'list-group-item text-center text-muted';
+          emptyItem.textContent = 'No matches saved yet.';
+          matchList.appendChild(emptyItem);
         } else {
-          matches.sort((a, b) => {
-            const dateA = new Date(a.date);
-            const dateB = new Date(b.date);
-            if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
-            return a.opponent.localeCompare(b.opponent);
+          sortedMatches.forEach(match => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.style.cursor = 'pointer';
+            const date = match.date ? new Date(match.date).toLocaleString() : 'Unknown date';
+            const opponentName = match.opponent || 'Opponent';
+            const matchInfo = document.createElement('span');
+            matchInfo.className = 'flex-grow-1 me-3';
+            matchInfo.textContent = `${date} - ${opponentName}`;
+            li.appendChild(matchInfo);
+
+            li.onclick = () => {
+              window.location.href = `${window.location.href.split('?')[0]}?matchId=${match.id}`;
+              closeMatchIndexModal();
+            };
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-danger btn-sm';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.onclick = async (event) => {
+              event.stopPropagation();
+              await deleteMatch(match.id);
+            };
+            li.appendChild(deleteBtn);
+
+            matchList.appendChild(li);
           });
-          if (matches.length === 0) {
-            const emptyItem = document.createElement('li');
-            emptyItem.className = 'list-group-item text-center text-muted';
-            emptyItem.textContent = 'No matches saved yet.';
-            matchList.appendChild(emptyItem);
-          } else {
-            matches.forEach(match => {
-              const li = document.createElement('li');
-              li.className = 'list-group-item d-flex justify-content-between align-items-center';
-              li.style.cursor = 'pointer';
-              const date = match.date ? new Date(match.date).toLocaleString() : 'Unknown date';
-              const matchInfo = document.createElement('span');
-              matchInfo.className = 'flex-grow-1 me-3';
-              matchInfo.textContent = `${date} - ${match.opponent}`;
-              li.appendChild(matchInfo);
-
-              li.onclick = () => {
-                window.location.href = `${window.location.href.split('?')[0]}?matchId=${match.id}`;
-                closeMatchIndexModal();
-              };
-
-              const deleteBtn = document.createElement('button');
-              deleteBtn.type = 'button';
-              deleteBtn.className = 'btn btn-danger btn-sm';
-              deleteBtn.textContent = 'Delete';
-              deleteBtn.onclick = (event) => {
-                event.stopPropagation();
-                deleteMatch(match.id);
-              };
-              li.appendChild(deleteBtn);
-
-              matchList.appendChild(li);
-            });
-          }
-          const modalInstance = bootstrap.Modal.getInstance(modal);
-          if (modalInstance) {
-            modalInstance.handleUpdate();
-          }
         }
-      };
+        const modalInstance = modal ? bootstrap.Modal.getInstance(modal) : null;
+        if (modalInstance) {
+          modalInstance.handleUpdate();
+        }
+      } catch (error) {
+        console.error('Failed to load matches', error);
+        const errorItem = document.createElement('li');
+        errorItem.className = 'list-group-item text-center text-danger';
+        errorItem.textContent = 'Unable to load matches. Please try again later.';
+        matchList.appendChild(errorItem);
+      }
     }
+
 
     function closeMatchIndexModal() {
       const modalElement = document.getElementById('matchIndexModal');
@@ -1200,4 +1268,14 @@ let db;
         stack.appendChild(button);
       }
       updateAllFinalizeButtonStates();
+
+      (async () => {
+        try {
+          await seedDemoPlayersIfEmpty();
+        } catch (error) {
+          console.error('Failed during initial player seeding', error);
+        }
+        await loadPlayers();
+        await loadMatchFromUrl();
+      })();
     });
