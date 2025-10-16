@@ -441,9 +441,12 @@ let playerSortMode = 'number';
     }
 
     function getTimeoutTeamName(team) {
-      return team === 'opp'
-        ? getTeamHeaderName('oppHeader', 'Opponent')
-        : getTeamHeaderName('scHeader', 'Stoney Creek');
+      const stoneyHeaderId = isSwapped ? 'oppHeader' : 'scHeader';
+      const opponentHeaderId = isSwapped ? 'scHeader' : 'oppHeader';
+      if (team === 'opp') {
+        return getTeamHeaderName(opponentHeaderId, 'Opponent');
+      }
+      return getTeamHeaderName(stoneyHeaderId, 'Stoney Creek');
     }
 
     function getTimeoutOrdinalLabel(index) {
