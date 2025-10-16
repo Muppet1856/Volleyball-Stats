@@ -7,7 +7,9 @@ export function normalizeMatchPayload(input = {}) {
   });
 
   const coercePlayers = (players) =>
-    Array.isArray(players) ? players.map((player) => String(player ?? '').trim()).filter(Boolean) : [];
+    Array.isArray(players)
+      ? players.map((player) => String(player ?? '').trim()).filter(Boolean)
+      : [];
 
   const coerceSets = (sets = {}) => {
     const normalized = {};
