@@ -90,11 +90,17 @@ jobs:
           done
           # Verify table creation
           echo "Verifying table creation"
-          TABLES=$(npx wrangler d1 execute "$DB_NAME" --command="SELECT name FROM sqlite_master WHERE type='table' AND name='greetings'" --json --remote)
-          if echo "$TABLES" | grep -q '"name": "greetings"'; then
-            echo "Table 'greetings' confirmed in database"
+          TABLES=$(npx wrangler d1 execute "$DB_NAME" --command="SELECT name FROM sqlite_master WHERE type='table' AND name='players' OR name='matches'" --json --remote)
+          if echo "$TABLES" | grep -q '"name": "players"'; then
+            echo "Table 'players' confirmed in database"
+            if echo "$TABLES" | grep -q '"name": "matches"'; then
+              echo "Table 'matches' confirmed in database"
+            else
+              echo "Table 'matches' not found in database" >&2
+              exit 1
+            fi
           else
-            echo "Table 'greetings' not found in database" >&2
+            echo "Table 'players' not found in database" >&2
             exit 1
           fi
 
