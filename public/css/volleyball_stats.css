@@ -444,39 +444,50 @@
   position: relative;
 }
 
-.score-modal .timeout-row .col {
+.score-modal .timeout-row {
   display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.score-modal .timeout-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 1rem;
+  width: 100%;
+  flex: 1 1 auto;
 }
 
 .score-modal .timeout-container {
-  flex: 1 1 auto;
-  width: 100%;
-  border-width: 2px !important;
-  border-radius: 0.75rem;
-}
-
-.score-modal .timeout-container .card-body {
+  flex: 1 1 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: center;
-  width: 100%;
+  align-items: stretch;
+  justify-content: center;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0.5rem 1.2rem rgba(0, 0, 0, 0.08);
+  text-align: center;
 }
 
-@media (min-width: 576px) {
-  .score-modal .timeout-container .card-body {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
+.score-modal .timeout-container[data-team="sc"] {
+  background: linear-gradient(135deg, #0b5ed7, #0d6efd);
+  color: #fff;
+}
+
+.score-modal .timeout-container[data-team="opp"] {
+  background: linear-gradient(135deg, #c82333, #dc3545);
+  color: #fff;
 }
 
 .score-modal .timeout-boxes {
   display: flex;
-  flex-wrap: nowrap;
-  width: 100%;
-  justify-content: space-evenly;
   align-items: stretch;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
 }
 
 .score-modal .timeout-box {
@@ -488,8 +499,22 @@
   font-family: 'Courier New', Courier, monospace;
   font-weight: 600;
   letter-spacing: 0.05em;
-  padding-top: 0.75rem;
-  padding-bottom: 0.75rem;
+  padding: 0.75rem 0.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 0.5rem;
+  color: inherit;
+  background-color: rgba(255, 255, 255, 0.08);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.score-modal .timeout-box:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 2px;
+}
+
+.score-modal .timeout-box:hover,
+.score-modal .timeout-box:focus-visible {
+  background-color: rgba(255, 255, 255, 0.18);
 }
 
 .score-modal .timeout-box .timeout-box-text {
@@ -497,7 +522,8 @@
 }
 
 .score-modal .timeout-box.used {
-  opacity: 0.45;
+  opacity: 0.4;
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 .score-modal .timeout-box.used .timeout-box-text {
@@ -505,11 +531,8 @@
 }
 
 .score-modal .timeout-box.active {
-  box-shadow: 0 0.5rem 1rem rgba(13, 110, 253, 0.18);
-}
-
-.score-modal .timeout-container[data-team="opp"] .timeout-box.active {
-  box-shadow: 0 0.5rem 1rem rgba(220, 53, 69, 0.2);
+  background-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.18);
 }
 
 .score-modal .timeout-timer-anchor {

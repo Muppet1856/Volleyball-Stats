@@ -276,33 +276,27 @@
                 <div class="score-value" id="scoreGameOppDisplay">00</div>
               </div>
             </div>
-            <div class="timeout-row row row-cols-1 row-cols-sm-2 g-3 position-relative" role="group" aria-label="Timeout controls">
+            <div class="timeout-row position-relative" role="group" aria-label="Timeout controls">
               <button type="button" class="timeout-timer-anchor btn p-0" id="scoreGameTimeoutAnchor" data-bs-toggle="popover" data-bs-trigger="manual" data-bs-placement="top" data-bs-html="true" tabindex="-1" aria-hidden="true"></button>
-              <div class="col d-flex">
-                <div class="card timeout-container border-2 border-primary bg-light text-primary shadow-sm" data-team="sc" aria-label="Stoney Creek timeouts">
-                  <div class="card-body text-center text-sm-start">
-                    <div class="timeout-boxes">
-                      <button type="button" class="timeout-box btn btn-outline-primary" data-team="sc" data-timeout-index="0" aria-pressed="false" aria-label="Stoney Creek first timeout available">
-                        <span class="timeout-box-text">TO</span>
-                      </button>
-                      <button type="button" class="timeout-box btn btn-outline-primary" data-team="sc" data-timeout-index="1" aria-pressed="false" aria-label="Stoney Creek second timeout available">
-                        <span class="timeout-box-text">TO</span>
-                      </button>
-                    </div>
+              <div class="timeout-bar">
+                <div class="timeout-container" data-team="sc" aria-label="Stoney Creek timeouts">
+                  <div class="timeout-boxes">
+                    <button type="button" class="timeout-box btn" data-team="sc" data-timeout-index="0" aria-pressed="false" aria-label="Stoney Creek first timeout available">
+                      <span class="timeout-box-text">TO</span>
+                    </button>
+                    <button type="button" class="timeout-box btn" data-team="sc" data-timeout-index="1" aria-pressed="false" aria-label="Stoney Creek second timeout available">
+                      <span class="timeout-box-text">TO</span>
+                    </button>
                   </div>
                 </div>
-              </div>
-              <div class="col d-flex">
-                <div class="card timeout-container border-2 border-danger bg-light text-danger shadow-sm" data-team="opp" aria-label="Opponent timeouts">
-                  <div class="card-body text-center text-sm-start">
-                    <div class="timeout-boxes">
-                      <button type="button" class="timeout-box btn btn-outline-danger" data-team="opp" data-timeout-index="0" aria-pressed="false" aria-label="Opponent first timeout available">
-                        <span class="timeout-box-text">TO</span>
-                      </button>
-                      <button type="button" class="timeout-box btn btn-outline-danger" data-team="opp" data-timeout-index="1" aria-pressed="false" aria-label="Opponent second timeout available">
-                        <span class="timeout-box-text">TO</span>
-                      </button>
-                    </div>
+                <div class="timeout-container" data-team="opp" aria-label="Opponent timeouts">
+                  <div class="timeout-boxes">
+                    <button type="button" class="timeout-box btn" data-team="opp" data-timeout-index="0" aria-pressed="false" aria-label="Opponent first timeout available">
+                      <span class="timeout-box-text">TO</span>
+                    </button>
+                    <button type="button" class="timeout-box btn" data-team="opp" data-timeout-index="1" aria-pressed="false" aria-label="Opponent second timeout available">
+                      <span class="timeout-box-text">TO</span>
+                    </button>
                   </div>
                 </div>
               </div>
