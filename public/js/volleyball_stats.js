@@ -92,6 +92,7 @@ const apiClient = (() => {
 
 let playerRecords = [];
 let players = [];
+let playerSortMode = 'number';
     let finalizedSets = {};
     let isSwapped = false;
     let editingPlayerId = null;
@@ -148,26 +149,75 @@ let players = [];
       return [number, lastName, initial].filter(Boolean).join(' ');
     }
 
-    
+
+    function comparePlayersByNumber(a, b) {
+      const numberA = parseInt(a.number, 10);
+      const numberB = parseInt(b.number, 10);
+      if (!Number.isNaN(numberA) && !Number.isNaN(numberB) && numberA !== numberB) {
+        return numberA - numberB;
+      }
+      if (!Number.isNaN(numberA) && Number.isNaN(numberB)) {
+        return -1;
+      }
+      if (Number.isNaN(numberA) && !Number.isNaN(numberB)) {
+        return 1;
+      }
+      const nameA = formatPlayerRecord(a);
+      const nameB = formatPlayerRecord(b);
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    }
+
+    function comparePlayersByName(a, b) {
+      const lastA = String(a.lastName ?? '').trim().toLocaleLowerCase();
+      const lastB = String(b.lastName ?? '').trim().toLocaleLowerCase();
+      if (lastA !== lastB) {
+        return lastA.localeCompare(lastB, undefined, { sensitivity: 'base' });
+      }
+      const firstA = String(a.initial ?? '').trim().toLocaleLowerCase();
+      const firstB = String(b.initial ?? '').trim().toLocaleLowerCase();
+      if (firstA !== firstB) {
+        return firstA.localeCompare(firstB, undefined, { sensitivity: 'base' });
+      }
+      return comparePlayersByNumber(a, b);
+    }
+
+    function sortPlayerRecords(records) {
+      const comparer = playerSortMode === 'name' ? comparePlayersByName : comparePlayersByNumber;
+      return records.slice().sort(comparer);
+    }
+
+    function updatePlayerSortToggle() {
+      const button = document.getElementById('playerSortToggleBtn');
+      if (!button) return;
+      const isNameSort = playerSortMode === 'name';
+      button.textContent = `Sort: ${isNameSort ? 'Name' : 'Number'}`;
+      button.setAttribute('aria-pressed', String(isNameSort));
+      const description = isNameSort
+        ? 'Sorted alphabetically by last name, then first initial and number.'
+        : 'Sorted numerically by jersey number.';
+      button.setAttribute('title', description);
+    }
+
+    function setPlayerRecords(records) {
+      const safeRecords = Array.isArray(records) ? records : [];
+      const sortedRecords = sortPlayerRecords(safeRecords);
+      playerRecords = sortedRecords;
+      players = sortedRecords.map(formatPlayerRecord);
+      updatePlayerList();
+      updateModalPlayerList();
+      updatePlayerSortToggle();
+    }
+
+    function togglePlayerSortMode() {
+      playerSortMode = playerSortMode === 'number' ? 'name' : 'number';
+      setPlayerRecords(playerRecords);
+    }
+
+
     async function loadPlayers() {
       try {
         const records = await apiClient.getPlayers();
-        const sortedRecords = Array.isArray(records)
-          ? records.slice().sort((a, b) => {
-              const numberA = parseInt(a.number, 10);
-              const numberB = parseInt(b.number, 10);
-              if (!Number.isNaN(numberA) && !Number.isNaN(numberB) && numberA !== numberB) {
-                return numberA - numberB;
-              }
-              const nameA = formatPlayerRecord(a);
-              const nameB = formatPlayerRecord(b);
-              return nameA.localeCompare(nameB);
-            })
-          : [];
-        playerRecords = sortedRecords;
-        players = sortedRecords.map(formatPlayerRecord);
-        updatePlayerList();
-        updateModalPlayerList();
+        setPlayerRecords(Array.isArray(records) ? records.slice() : []);
       } catch (error) {
         console.error('Failed to load players', error);
       }
@@ -1317,6 +1367,13 @@ let players = [];
           scheduleAutoSave();
         });
         applyJerseyColorToNumbers();
+      }
+      const sortToggleBtn = document.getElementById('playerSortToggleBtn');
+      if (sortToggleBtn) {
+        sortToggleBtn.addEventListener('click', () => {
+          togglePlayerSortMode();
+        });
+        updatePlayerSortToggle();
       }
       const autoSaveTargets = document.querySelector('.container');
       if (autoSaveTargets) {

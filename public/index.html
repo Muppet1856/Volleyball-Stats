@@ -144,7 +144,10 @@
         </h2>
         <div id="collapsePlayers" class="accordion-collapse collapse show" aria-labelledby="headingPlayers">
           <div class="accordion-body">
-            <button type="button" class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#playerModal">Manage Roster</button>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#playerModal">Manage Roster</button>
+              <button type="button" class="btn btn-outline-secondary" id="playerSortToggleBtn" aria-pressed="false" title="Sorted numerically by jersey number.">Sort: Number</button>
+            </div>
             <div id="playerList" class="border p-2"></div>
           </div>
         </div>
