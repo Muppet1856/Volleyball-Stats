@@ -411,7 +411,7 @@
 }
 
 .score-modal .timeout-row {
-  margin-top: 1.5rem;
+  margin-top: 0.75rem;
   flex-wrap: nowrap;
   --bs-gutter-x: 0.5rem;
 }
