@@ -328,6 +328,87 @@
   pointer-events: none;
   z-index: 3;
 }
+.score-modal .timeout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.score-modal .timeout-container {
+  --timeout-accent: rgba(13, 110, 253, 0.12);
+  --timeout-border: rgba(13, 110, 253, 0.35);
+  --timeout-foreground: #0b5ed7;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1 1 12rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--timeout-border);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), var(--timeout-accent));
+  color: var(--timeout-foreground);
+  box-shadow: inset 0 0.25rem 0.75rem rgba(13, 110, 253, 0.08);
+}
+.score-modal .timeout-container[data-team="opp"] {
+  --timeout-accent: rgba(220, 53, 69, 0.12);
+  --timeout-border: rgba(220, 53, 69, 0.35);
+  --timeout-foreground: #b02a37;
+  flex-direction: row-reverse;
+  text-align: right;
+  box-shadow: inset 0 0.25rem 0.75rem rgba(220, 53, 69, 0.08);
+}
+.score-modal .timeout-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.65rem;
+  border: 2px solid var(--timeout-foreground);
+  background-color: rgba(255, 255, 255, 0.9);
+  color: var(--timeout-foreground);
+  font-weight: 700;
+  font-family: 'Courier New', Courier, monospace;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.score-modal .timeout-box .timeout-box-text {
+  transition: opacity 0.2s ease;
+}
+.score-modal .timeout-box.used {
+  background-color: rgba(255, 255, 255, 0.4);
+  color: var(--timeout-foreground);
+}
+.score-modal .timeout-box.used .timeout-box-text {
+  opacity: 0;
+}
+.score-modal .timeout-box.active {
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
+}
+.score-modal .timeout-box:hover,
+.score-modal .timeout-box:focus-visible {
+  background-color: #fff;
+  color: var(--timeout-foreground);
+  outline: none;
+}
+.score-modal .timeout-timer {
+  min-width: 3.5rem;
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+.score-modal .timeout-container[data-team="opp"] .timeout-timer {
+  text-align: right;
+}
+.score-modal .timeout-timer,
+.score-modal .timeout-box {
+  color: var(--timeout-foreground);
+}
+.score-modal .timeout-timer.running {
+  font-weight: 700;
+}
 .score-modal .score-team-label {
   position: absolute;
   top: 1rem;
