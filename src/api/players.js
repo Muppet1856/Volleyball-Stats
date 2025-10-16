@@ -1,4 +1,5 @@
 import { methodNotAllowed } from './responses.js';
+import { getDatabase } from './database.js';
 
 export function routePlayers(request, env) {
   switch (request.method.toUpperCase()) {
@@ -24,7 +25,8 @@ export function routePlayerById(request, env, id) {
 
 async function listPlayers(env) {
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       'SELECT id, number, last_name AS lastName, initial FROM players ORDER BY CAST(number AS INTEGER) ASC, last_name ASC, id ASC'
     );
     const { results } = await statement.all();
@@ -52,7 +54,8 @@ async function createPlayer(request, env) {
   }
 
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       'INSERT INTO players (number, last_name, initial) VALUES (?, ?, ?)'
     ).bind(number, lastName, initial);
     const result = await statement.run();
@@ -81,7 +84,8 @@ async function updatePlayer(request, env, id) {
   }
 
   try {
-    const statement = env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const statement = db.prepare(
       'UPDATE players SET number = ?, last_name = ?, initial = ? WHERE id = ?'
     ).bind(number, lastName, initial, id);
     const result = await statement.run();
@@ -97,7 +101,8 @@ async function updatePlayer(request, env, id) {
 
 async function deletePlayer(env, id) {
   try {
-    const result = await env.VOLLEYBALL_STATS_DB.prepare(
+    const db = getDatabase(env);
+    const result = await db.prepare(
       'DELETE FROM players WHERE id = ?'
     ).bind(id).run();
     if (!result?.meta || result.meta.changes === 0) {
