@@ -340,6 +340,8 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
   flex: 1 1 12rem;
   padding: 0.75rem 1rem;
   border-radius: 0.85rem;
@@ -348,6 +350,12 @@
   color: var(--timeout-foreground);
   box-shadow: inset 0 0.25rem 0.75rem rgba(13, 110, 253, 0.08);
 }
+.score-modal .timeout-boxes {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex: 0 0 auto;
+}
 .score-modal .timeout-container[data-team="opp"] {
   --timeout-accent: rgba(220, 53, 69, 0.12);
   --timeout-border: rgba(220, 53, 69, 0.35);
@@ -355,6 +363,9 @@
   flex-direction: row-reverse;
   text-align: right;
   box-shadow: inset 0 0.25rem 0.75rem rgba(220, 53, 69, 0.08);
+}
+.score-modal .timeout-container[data-team="opp"] .timeout-boxes {
+  flex-direction: row-reverse;
 }
 .score-modal .timeout-box {
   display: inline-flex;
@@ -408,6 +419,17 @@
 }
 .score-modal .timeout-timer.running {
   font-weight: 700;
+}
+
+@media (max-width: 420px) {
+  .score-modal .timeout-timer {
+    flex-basis: 100%;
+    text-align: left;
+    margin-top: 0.5rem;
+  }
+  .score-modal .timeout-container[data-team="opp"] .timeout-timer {
+    text-align: right;
+  }
 }
 .score-modal .score-team-label {
   position: absolute;
