@@ -441,7 +441,6 @@
 .score-modal .timeout-row {
   margin-top: 0.75rem;
   --bs-gutter-x: 0.75rem;
-  position: relative;
 }
 
 .score-modal .timeout-row {
@@ -528,87 +527,50 @@
   box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.18);
 }
 
-.score-modal .timeout-timer-anchor {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: none;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.score-modal .timeout-timer-popover {
-  --bs-popover-border-radius: 0.75rem;
-  --bs-popover-body-padding-x: 1rem;
-  --bs-popover-body-padding-y: 0.75rem;
-  --bs-popover-box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08);
-  text-align: center;
-  z-index: 1085;
-}
-
-.score-modal .timeout-timer-popover .popover-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.score-modal .timeout-timer-popover .timeout-timer-dismiss {
-  align-self: stretch;
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.25rem;
-}
-
-.score-modal .timeout-timer-popover .timeout-timer-dismiss-button {
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
-
-.score-modal .timeout-timer-popover .timeout-timer-dismiss-button:hover,
-.score-modal .timeout-timer-popover .timeout-timer-dismiss-button:focus-visible {
-  opacity: 1;
-}
-
-.score-modal .timeout-timer-popover .timeout-timer {
+.score-modal .timeout-timer-display {
+  display: none;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
   font-family: 'Courier New', Courier, monospace;
   font-weight: 600;
   letter-spacing: 0.05em;
-  font-variant-numeric: tabular-nums;
-  font-size: clamp(1.25rem, 3.5vw, 1.75rem);
-  color: #6c757d;
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.12);
+  margin: 0 auto;
+  max-width: min(100%, 20rem);
+  text-align: center;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0;
+  transform: translateY(6px);
 }
 
-.score-modal .timeout-timer-popover .timeout-timer.running {
-  font-weight: 700;
+.score-modal .timeout-timer-display.show {
+  display: flex;
+  opacity: 1;
+  transform: translateY(0);
 }
 
-.score-modal .timeout-timer-popover .timeout-timer-status {
-  font-size: 0.875rem;
-  letter-spacing: 0.02em;
-  color: #6c757d;
+.score-modal .timeout-timer-display[data-team="sc"] {
+  background: linear-gradient(135deg, rgba(13, 110, 253, 0.95), rgba(11, 94, 215, 0.95));
+  color: #fff;
 }
 
-.score-modal .timeout-timer-popover[data-team="sc"] {
-  --bs-popover-border-color: rgba(13, 110, 253, 0.35);
+.score-modal .timeout-timer-display[data-team="opp"] {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.95), rgba(200, 35, 51, 0.95));
+  color: #fff;
 }
 
-.score-modal .timeout-timer-popover[data-team="opp"] {
-  --bs-popover-border-color: rgba(220, 53, 69, 0.35);
+.score-modal .timeout-timer-display .timeout-timer-team {
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
 }
 
-.score-modal .timeout-timer-popover[data-team="sc"] .timeout-timer,
-.score-modal .timeout-timer-popover[data-team="sc"] .timeout-timer-status {
-  color: #0d6efd;
-}
-
-.score-modal .timeout-timer-popover[data-team="opp"] .timeout-timer,
-.score-modal .timeout-timer-popover[data-team="opp"] .timeout-timer-status {
-  color: #dc3545;
+.score-modal .timeout-timer-display .timeout-timer-count {
+  font-size: clamp(1.5rem, 4vw, 2rem);
 }
 
 .score-modal .timeout-container[data-team="sc"] .timeout-box {
