@@ -494,31 +494,41 @@ let playerSortMode = 'number';
       }
     }
 
+    function getRunningTimeoutTeam() {
+      return ['sc', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team])) || null;
+    }
+
+    function cancelActiveTimeoutTimer() {
+      const runningTeam = getRunningTimeoutTeam();
+      if (!runningTeam) {
+        return false;
+      }
+      stopTimeoutTimer(runningTeam);
+      scoreGameState.activeTimeout[runningTeam] = null;
+      scoreGameState.timeoutRemainingSeconds[runningTeam] = TIMEOUT_DURATION_SECONDS;
+      updateTimeoutUI(runningTeam);
+      return true;
+    }
+
     function updateTimeoutTimerDisplay() {
       const anchor = document.getElementById('scoreGameTimeoutAnchor');
       const statusElement = document.getElementById('scoreGameTimeoutSrStatus');
       const modalElement = document.getElementById('scoreGameModal');
-      const runningTeam = ['sc', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team]));
-      const fallbackTeam = ['sc', 'opp'].find(team => scoreGameState.activeTimeout[team] !== null);
-      const displayTeam = runningTeam || fallbackTeam || null;
-      const seconds = displayTeam
-        ? scoreGameState.timeoutRemainingSeconds[displayTeam]
-        : TIMEOUT_DURATION_SECONDS;
+      const runningTeam = getRunningTimeoutTeam();
 
+      if (!runningTeam) {
+        if (statusElement) {
+          statusElement.textContent = '';
+        }
+        hideTimeoutPopover();
+        return;
+      }
+
+      const seconds = scoreGameState.timeoutRemainingSeconds[runningTeam];
       const formatted = formatTimeoutDisplay(seconds);
-      const statusText = runningTeam
-        ? `${getTimeoutTeamName(runningTeam)} timeout running`
-        : displayTeam
-          ? `${getTimeoutTeamName(displayTeam)} timeout paused`
-          : 'No timeout running';
-      const srAnnouncement = runningTeam
-        ? `${getTimeoutTeamName(runningTeam)} timeout running. ${formatted} remaining.`
-        : displayTeam
-          ? `${getTimeoutTeamName(displayTeam)} timeout paused. ${formatted} remaining.`
-          : 'No timeout running.';
 
       if (statusElement) {
-        statusElement.textContent = srAnnouncement;
+        statusElement.textContent = `${getTimeoutTeamName(runningTeam)} timeout running. ${formatted} remaining.`;
       }
 
       if (!modalElement || !modalElement.classList.contains('show')) {
@@ -532,8 +542,7 @@ let playerSortMode = 'number';
       }
 
       const bodyHtml = `
-        <div class="timeout-timer${runningTeam ? ' running' : ''}">${formatted}</div>
-        <div class="timeout-timer-status${displayTeam ? '' : ' text-muted'}">${statusText}</div>
+        <div class="timeout-timer running">${formatted}</div>
       `.trim();
       anchor.setAttribute('data-bs-content', bodyHtml);
 
@@ -547,7 +556,7 @@ let playerSortMode = 'number';
         : (popover.tip || null);
 
       if (tip) {
-        tip.setAttribute('data-team', displayTeam || '');
+        tip.setAttribute('data-team', runningTeam);
         const body = tip.querySelector('.popover-body');
         if (body) {
           body.innerHTML = bodyHtml;
@@ -591,7 +600,10 @@ let playerSortMode = 'number';
       updateTimeoutUI('opp');
     }
 
-    function handleTimeoutSelection(team, index) {
+    function handleTimeoutSelection(team, index, event) {
+      if (event) {
+        event.stopPropagation();
+      }
       if (!scoreGameState.timeouts[team] || index < 0 || index >= scoreGameState.timeouts[team].length) {
         return;
       }
@@ -617,7 +629,6 @@ let playerSortMode = 'number';
 
       scoreGameState.timeouts[team][index] = true;
       scoreGameState.activeTimeout[team] = index;
-      updateTimeoutUI(team);
 
       scoreGameState.timeoutTimers[team] = window.setInterval(() => {
         scoreGameState.timeoutRemainingSeconds[team] = Math.max(0, scoreGameState.timeoutRemainingSeconds[team] - 1);
@@ -628,6 +639,7 @@ let playerSortMode = 'number';
           updateTimeoutUI(team);
         }
       }, 1000);
+      updateTimeoutUI(team);
     }
 
     function resetTeamTimeouts(team) {
@@ -1548,7 +1560,16 @@ let playerSortMode = 'number';
           const team = button.getAttribute('data-team');
           const index = parseInt(button.getAttribute('data-timeout-index'), 10);
           if (!team || Number.isNaN(index)) return;
-          button.addEventListener('click', () => handleTimeoutSelection(team, index));
+          button.addEventListener('click', (event) => handleTimeoutSelection(team, index, event));
+        });
+        scoreGameModalElement.addEventListener('click', (event) => {
+          if (!getRunningTimeoutTeam()) {
+            return;
+          }
+          if (event.target.closest('.timeout-box')) {
+            return;
+          }
+          cancelActiveTimeoutTimer();
         });
         const modalSwapButton = document.getElementById('scoreModalSwapBtn');
         if (modalSwapButton) {
