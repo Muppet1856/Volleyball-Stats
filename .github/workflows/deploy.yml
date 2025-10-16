@@ -109,5 +109,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          echo "Debug: Contents of wrangler.toml before deployment:"
+          cat wrangler.toml || echo "Error: wrangler.toml not found"
           echo "Deploying Worker defined in wrangler.toml"
           npx wrangler deploy
