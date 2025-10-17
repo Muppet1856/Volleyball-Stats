@@ -13,16 +13,32 @@ export function normalizeMatchPayload(input = {}) {
       ? players.map((player) => String(player ?? '').trim()).filter(Boolean)
       : [];
 
+  const toTimeoutBoolean = (raw) => {
+    if (typeof raw === 'string') {
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+        return true;
+      }
+      if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') {
+        return false;
+      }
+    }
+    if (typeof raw === 'number') {
+      return raw !== 0;
+    }
+    return Boolean(raw);
+  };
+
   const normalizeTimeoutArray = (value) => {
     const normalized = Array(TIMEOUT_COUNT).fill(false);
     if (Array.isArray(value)) {
       for (let i = 0; i < Math.min(value.length, TIMEOUT_COUNT); i++) {
-        normalized[i] = Boolean(value[i]);
+        normalized[i] = toTimeoutBoolean(value[i]);
       }
     } else if (value && typeof value === 'object') {
       for (let i = 0; i < TIMEOUT_COUNT; i++) {
         if (value[i] !== undefined) {
-          normalized[i] = Boolean(value[i]);
+          normalized[i] = toTimeoutBoolean(value[i]);
         }
       }
     }
