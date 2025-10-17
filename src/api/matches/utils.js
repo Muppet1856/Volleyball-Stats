@@ -1,3 +1,5 @@
+const TIMEOUT_COUNT = 2;
+
 export function normalizeMatchPayload(input = {}) {
   const coerceTypes = (types = {}) => ({
     tournament: Boolean(types.tournament),
@@ -11,6 +13,38 @@ export function normalizeMatchPayload(input = {}) {
       ? players.map((player) => String(player ?? '').trim()).filter(Boolean)
       : [];
 
+  const toTimeoutBoolean = (raw) => {
+    if (typeof raw === 'string') {
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+        return true;
+      }
+      if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') {
+        return false;
+      }
+    }
+    if (typeof raw === 'number') {
+      return raw !== 0;
+    }
+    return Boolean(raw);
+  };
+
+  const normalizeTimeoutArray = (value) => {
+    const normalized = Array(TIMEOUT_COUNT).fill(false);
+    if (Array.isArray(value)) {
+      for (let i = 0; i < Math.min(value.length, TIMEOUT_COUNT); i++) {
+        normalized[i] = toTimeoutBoolean(value[i]);
+      }
+    } else if (value && typeof value === 'object') {
+      for (let i = 0; i < TIMEOUT_COUNT; i++) {
+        if (value[i] !== undefined) {
+          normalized[i] = toTimeoutBoolean(value[i]);
+        }
+      }
+    }
+    return normalized;
+  };
+
   const coerceSets = (sets = {}) => {
     const normalized = {};
     for (let i = 1; i <= 5; i++) {
@@ -19,9 +53,14 @@ export function normalizeMatchPayload(input = {}) {
         if (value === null || value === undefined) return '';
         return String(value).trim();
       };
+      const timeoutSource = set.timeouts ?? {};
       normalized[i] = {
         sc: normalizeScore(set.sc),
-        opp: normalizeScore(set.opp)
+        opp: normalizeScore(set.opp),
+        timeouts: {
+          sc: normalizeTimeoutArray(timeoutSource.sc),
+          opp: normalizeTimeoutArray(timeoutSource.opp)
+        }
       };
     }
     return normalized;
