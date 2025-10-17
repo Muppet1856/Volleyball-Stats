@@ -613,6 +613,37 @@ let playerSortMode = 'number';
       resetTeamTimeouts('opp');
     }
 
+    function updateScoreColorClasses() {
+      const stoneyOnLeft = !isSwapped;
+      const scHeader = document.getElementById('scHeader');
+      const oppHeader = document.getElementById('oppHeader');
+      if (scHeader && oppHeader) {
+        scHeader.classList.toggle('left-score', stoneyOnLeft);
+        scHeader.classList.toggle('right-score', !stoneyOnLeft);
+        oppHeader.classList.toggle('left-score', !stoneyOnLeft);
+        oppHeader.classList.toggle('right-score', stoneyOnLeft);
+      }
+
+      for (let i = 1; i <= 5; i++) {
+        const scInput = document.getElementById(`set${i}SC`);
+        const oppInput = document.getElementById(`set${i}Opp`);
+        if (!scInput || !oppInput) continue;
+        scInput.classList.toggle('left-score', stoneyOnLeft);
+        scInput.classList.toggle('right-score', !stoneyOnLeft);
+        oppInput.classList.toggle('left-score', !stoneyOnLeft);
+        oppInput.classList.toggle('right-score', stoneyOnLeft);
+      }
+
+      const teamPanels = document.querySelectorAll('#scoreGameModal .team-panel');
+      if (teamPanels.length >= 2) {
+        const [leftPanel, rightPanel] = teamPanels;
+        leftPanel.classList.toggle('team-blue', stoneyOnLeft);
+        leftPanel.classList.toggle('team-red', !stoneyOnLeft);
+        rightPanel.classList.toggle('team-blue', !stoneyOnLeft);
+        rightPanel.classList.toggle('team-red', stoneyOnLeft);
+      }
+    }
+
     function updateScoreModalLabels() {
       const leftLabel = document.getElementById('scoreGameLeftLabel');
       const rightLabel = document.getElementById('scoreGameRightLabel');
@@ -630,6 +661,7 @@ let playerSortMode = 'number';
       if (oppDecrementZone) oppDecrementZone.setAttribute('aria-label', `Decrease ${rightName} score`);
       refreshAllTimeoutDisplays();
       updateTimeoutLayoutForSwap();
+      updateScoreColorClasses();
     }
 
     function applyScoreModalToInputs({ triggerSave = true } = {}) {
@@ -873,14 +905,6 @@ let playerSortMode = 'number';
         document.getElementById(`set${i}Opp`).value = scScore;
       }
       updateAllFinalizeButtonStates();
-      const scHeader = document.getElementById('scHeader');
-      const oppHeader = document.getElementById('oppHeader');
-      const scClass = scHeader.classList.contains('left-score') ? 'left-score' : 'right-score';
-      const oppClass = oppHeader.classList.contains('right-score') ? 'right-score' : 'left-score';
-      scHeader.classList.remove('left-score', 'right-score');
-      oppHeader.classList.remove('left-score', 'right-score');
-      scHeader.classList.add(oppClass);
-      oppHeader.classList.add(scClass);
       updateSetHeaders(opponentName, isSwapped); // Update headers after swap
       refreshAllTeamHeaderButtons();
       if (Object.keys(finalizedSets).length > 0) {
