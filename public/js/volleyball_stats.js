@@ -93,20 +93,26 @@ const apiClient = (() => {
 let playerRecords = [];
 let players = [];
 let playerSortMode = 'number';
-    let finalizedSets = {};
-    let isSwapped = false;
-    let editingPlayerId = null;
-    let loadedMatchPlayers = [];
-    let autoSaveTimeout = null;
-    let autoSaveStatusTimeout = null;
-    let suppressAutoSave = true;
-    let currentMatchId = null;
-    let scoreGameModalInstance = null;
-    const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
-    const TIMEOUT_COUNT = 2;
-    const TIMEOUT_DURATION_SECONDS = 60;
-    const SET_NUMBERS = [1, 2, 3, 4, 5];
-    const scoreGameState = {
+let finalizedSets = {};
+let isSwapped = false;
+let editingPlayerId = null;
+let loadedMatchPlayers = [];
+let autoSaveTimeout = null;
+let autoSaveStatusTimeout = null;
+let suppressAutoSave = true;
+let currentMatchId = null;
+let scoreGameModalInstance = null;
+let liveMatchSocket = null;
+let liveMatchMatchId = null;
+let liveMatchReconnectTimer = null;
+let liveMatchReconnectAttempts = 0;
+const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
+const TIMEOUT_COUNT = 2;
+const TIMEOUT_DURATION_SECONDS = 60;
+const LIVE_MATCH_BACKOFF_BASE = 1000;
+const LIVE_MATCH_BACKOFF_MAX = 30000;
+const SET_NUMBERS = [1, 2, 3, 4, 5];
+const scoreGameState = {
       setNumber: null,
       sc: null,
       opp: null,
@@ -425,6 +431,15 @@ let playerSortMode = 'number';
     function updateAllFinalizeButtonStates() {
       for (let i = 1; i <= 5; i++) {
         updateFinalizeButtonState(i);
+      }
+    }
+
+    function resetFinalizeButtons() {
+      for (let i = 1; i <= 5; i++) {
+        const button = document.getElementById(`finalizeButton${i}`);
+        if (button) {
+          button.classList.remove('finalized-btn');
+        }
       }
     }
 
@@ -1391,6 +1406,171 @@ let playerSortMode = 'number';
 
 
     
+    function applyMatchData(match) {
+      if (!match) return;
+      const previousSuppress = suppressAutoSave;
+      suppressAutoSave = true;
+      resetAllTimeouts({ resetStored: true });
+      currentMatchId = match.id ?? null;
+      loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
+      const dateInput = document.getElementById('date');
+      if (dateInput) dateInput.value = match.date || '';
+      const locationInput = document.getElementById('location');
+      if (locationInput) locationInput.value = match.location || '';
+      const tournamentInput = document.getElementById('tournament');
+      if (tournamentInput) tournamentInput.checked = Boolean(match.types?.tournament);
+      const leagueInput = document.getElementById('league');
+      if (leagueInput) leagueInput.checked = Boolean(match.types?.league);
+      const postSeasonInput = document.getElementById('postSeason');
+      if (postSeasonInput) postSeasonInput.checked = Boolean(match.types?.postSeason);
+      const nonLeagueInput = document.getElementById('nonLeague');
+      if (nonLeagueInput) nonLeagueInput.checked = Boolean(match.types?.nonLeague);
+      const opponentInput = document.getElementById('opponent');
+      if (opponentInput) opponentInput.value = match.opponent || '';
+      const jerseySc = document.getElementById('jerseyColorSC');
+      if (jerseySc) jerseySc.value = match.jerseyColorSC || 'white';
+      const jerseyOpp = document.getElementById('jerseyColorOpp');
+      if (jerseyOpp) jerseyOpp.value = match.jerseyColorOpp || 'white';
+      applyJerseyColorToNumbers();
+      const resultSc = document.getElementById('resultSC');
+      if (resultSc) resultSc.value = match.resultSC ?? 0;
+      const resultOpp = document.getElementById('resultOpp');
+      if (resultOpp) resultOpp.value = match.resultOpp ?? 0;
+      const firstServer = document.getElementById('firstServer');
+      if (firstServer) firstServer.value = match.firstServer || '';
+      updateOpponentName();
+      updatePlayerList();
+      for (let i = 1; i <= 5; i++) {
+        const scInput = document.getElementById(`set${i}SC`);
+        const oppInput = document.getElementById(`set${i}Opp`);
+        if (scInput) {
+          scInput.value = normalizeStoredScoreValue(match.sets?.[i]?.sc);
+        }
+        if (oppInput) {
+          oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
+        }
+      }
+      SET_NUMBERS.forEach((setNumber) => {
+        const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
+        setMatchTimeoutState(setNumber, setData?.timeouts);
+      });
+      finalizedSets = { ...(match.finalizedSets || {}) };
+      isSwapped = Boolean(match.isSwapped);
+      resetFinalizeButtons();
+      for (let i = 1; i <= 5; i++) {
+        if (finalizedSets[i]) {
+          const button = document.getElementById(`finalizeButton${i}`);
+          if (button) {
+            button.classList.add('finalized-btn');
+          }
+        }
+      }
+      updateAllFinalizeButtonStates();
+      if (isSwapped) swapScores();
+      calculateResult();
+      suppressAutoSave = previousSuppress;
+    }
+
+    function openLiveMatchSocket() {
+      if (!liveMatchMatchId) {
+        return;
+      }
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${protocol}//${window.location.host}/live/${liveMatchMatchId}`);
+      liveMatchSocket = socket;
+
+      socket.addEventListener('open', () => {
+        liveMatchReconnectAttempts = 0;
+      });
+
+      socket.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data?.type === 'broadcastScore' && data.match) {
+            applyMatchData(data.match);
+          }
+        } catch (error) {
+          console.error('Failed to process live match payload', error);
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        if (liveMatchSocket === socket) {
+          liveMatchSocket = null;
+        }
+        scheduleLiveMatchReconnect();
+      });
+
+      socket.addEventListener('error', () => {
+        try {
+          socket.close();
+        } catch (error) {
+          // Ignore errors while closing after fault
+        }
+      });
+    }
+
+    function scheduleLiveMatchReconnect() {
+      if (!liveMatchMatchId || liveMatchReconnectTimer) {
+        return;
+      }
+      const delay = Math.min(
+        LIVE_MATCH_BACKOFF_BASE * Math.pow(2, liveMatchReconnectAttempts),
+        LIVE_MATCH_BACKOFF_MAX
+      );
+      liveMatchReconnectAttempts += 1;
+      liveMatchReconnectTimer = setTimeout(() => {
+        liveMatchReconnectTimer = null;
+        openLiveMatchSocket();
+      }, delay);
+    }
+
+    function connectLiveMatchStream(matchId) {
+      if (!matchId) {
+        disconnectLiveMatchStream();
+        return;
+      }
+      const normalizedId = String(matchId);
+      if (
+        liveMatchMatchId === normalizedId &&
+        liveMatchSocket &&
+        (liveMatchSocket.readyState === WebSocket.OPEN || liveMatchSocket.readyState === WebSocket.CONNECTING)
+      ) {
+        return;
+      }
+      disconnectLiveMatchStream();
+      liveMatchMatchId = normalizedId;
+      liveMatchReconnectAttempts = 0;
+      openLiveMatchSocket();
+    }
+
+    function disconnectLiveMatchStream() {
+      if (liveMatchReconnectTimer) {
+        clearTimeout(liveMatchReconnectTimer);
+        liveMatchReconnectTimer = null;
+      }
+      const socket = liveMatchSocket;
+      liveMatchSocket = null;
+      liveMatchMatchId = null;
+      liveMatchReconnectAttempts = 0;
+      if (socket) {
+        try {
+          socket.close(1000, 'Client navigating away');
+        } catch (error) {
+          // Ignore close errors
+        }
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.__liveMatchTestHooks = {
+        getLiveSocket: () => liveMatchSocket,
+        connectLiveMatchStream,
+        disconnectLiveMatchStream,
+        applyMatchData
+      };
+    }
+
     async function loadMatchFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       const matchId = urlParams.get('matchId');
@@ -1407,65 +1587,16 @@ let playerSortMode = 'number';
       if (form) {
         form.classList.remove('was-validated');
       }
-      const resetFinalizeButtons = () => {
-        for (let i = 1; i <= 5; i++) {
-          const button = document.getElementById(`finalizeButton${i}`);
-          if (button) {
-            button.classList.remove('finalized-btn');
-          }
-        }
-      };
+      resetFinalizeButtons();
       resetAllTimeouts({ resetStored: true });
       if (matchId) {
         try {
           const match = await apiClient.getMatch(matchId);
           if (match) {
-            currentMatchId = match.id;
-            loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
-            document.getElementById('date').value = match.date || '';
-            document.getElementById('location').value = match.location || '';
-            document.getElementById('tournament').checked = Boolean(match.types?.tournament);
-            document.getElementById('league').checked = Boolean(match.types?.league);
-            document.getElementById('postSeason').checked = Boolean(match.types?.postSeason);
-            document.getElementById('nonLeague').checked = Boolean(match.types?.nonLeague);
-            document.getElementById('opponent').value = match.opponent || '';
-            document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
-            document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
-            applyJerseyColorToNumbers();
-            document.getElementById('resultSC').value = match.resultSC ?? 0;
-            document.getElementById('resultOpp').value = match.resultOpp ?? 0;
-            document.getElementById('firstServer').value = match.firstServer || '';
-            updateOpponentName();
-            updatePlayerList();
-            for (let i = 1; i <= 5; i++) {
-              const scInput = document.getElementById(`set${i}SC`);
-              const oppInput = document.getElementById(`set${i}Opp`);
-              if (scInput) {
-                scInput.value = normalizeStoredScoreValue(match.sets?.[i]?.sc);
-              }
-              if (oppInput) {
-                oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
-              }
-            }
-            SET_NUMBERS.forEach((setNumber) => {
-              const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
-              setMatchTimeoutState(setNumber, setData?.timeouts);
-            });
-            finalizedSets = { ...(match.finalizedSets || {}) };
-            isSwapped = Boolean(match.isSwapped);
-            resetFinalizeButtons();
-            for (let i = 1; i <= 5; i++) {
-              if (finalizedSets[i]) {
-                const button = document.getElementById(`finalizeButton${i}`);
-                if (button) {
-                  button.classList.add('finalized-btn');
-                }
-              }
-            }
-            updateAllFinalizeButtonStates();
-            if (isSwapped) swapScores();
-            calculateResult();
+            applyMatchData(match);
+            connectLiveMatchStream(match.id);
           } else {
+            disconnectLiveMatchStream();
             currentMatchId = null;
             loadedMatchPlayers = [];
             finalizedSets = {};
@@ -1475,6 +1606,7 @@ let playerSortMode = 'number';
         } catch (error) {
           console.error('Failed to load match', error);
           setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
+          disconnectLiveMatchStream();
           currentMatchId = null;
           loadedMatchPlayers = [];
           finalizedSets = {};
@@ -1482,6 +1614,7 @@ let playerSortMode = 'number';
           updatePlayerList();
         }
       } else {
+        disconnectLiveMatchStream();
         currentMatchId = matchId ? parseInt(matchId, 10) : null;
         loadedMatchPlayers = [];
         finalizedSets = {};
@@ -1568,6 +1701,7 @@ let playerSortMode = 'number';
     function startNewMatch() {
       if (!confirm('Start a new match? Unsaved changes will be lost.')) return;
       suppressAutoSave = true;
+      disconnectLiveMatchStream();
       if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
         autoSaveTimeout = null;

@@ -3,3 +3,11 @@ main = "src/worker.js"
 compatibility_date = "2024-04-03"
 
 assets = { directory = "public" }
+
+[[durable_objects.bindings]]
+name = "LIVE_MATCH"
+class_name = "LiveMatchDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["LiveMatchDurableObject"]

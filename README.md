@@ -36,6 +36,15 @@ Everything described below can be completed entirely from the Cloudflare and Git
 4. Select **Create a D1 database** and name it (for example, `volleyball-stats-db`). Cloudflare automatically creates and binds the database to your Pages project.
 5. Set the binding name to `VOLLEYBALL_STATS_DB` so the Worker can reach it.【F:src/api/database.js†L1-L19】
 
+## Enable live score updates
+
+The Worker uses a Durable Object to coordinate live score broadcasts across all connected clients. In the Pages project **Settings → Functions**, add a Durable Object binding with the following values:
+
+- **Binding name**: `LIVE_MATCH`
+- **Class name**: `LiveMatchDurableObject`
+
+When the Worker deploys, Cloudflare will automatically provision the Durable Object namespace defined in `wrangler.toml`. Each match ID maps to a unique Durable Object instance that fans out WebSocket updates to every viewer.【F:wrangler.toml†L7-L13】【F:src/live/liveMatch.js†L1-L129】
+
 ## Run migrations from the dashboard
 
 1. In the Pages project **Settings → Functions**, open the D1 database you created in the previous step.
@@ -60,6 +69,7 @@ The Worker exposes REST-style endpoints for matches and players. All routes retu
 - `POST /api/players` — create a player (number and last name required).【F:src/api/players.js†L38-L75】
 - `PUT /api/players/:id` — update a player.【F:src/api/players.js†L77-L112】
 - `DELETE /api/players/:id` — delete a player.【F:src/api/players.js†L114-L135】
+- `GET /live/:matchId` — upgrade to a WebSocket that streams real-time score updates for the specified match. Messages use the shape `{ "type": "broadcastScore", "match": { ... } }`, mirroring the payload returned by `GET /api/matches/:id`.【F:src/worker.js†L1-L63】【F:src/live/liveMatch.js†L1-L129】
 
 Static assets are served for any non-API path by Cloudflare's asset handler, so the frontend in `public/` receives all other requests.【F:src/worker.js†L1-L19】
 

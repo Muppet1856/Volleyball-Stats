@@ -93,12 +93,7 @@ async function createMatch(request, env) {
 
 async function getMatch(env, id) {
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      'SELECT * FROM matches WHERE id = ?'
-    ).bind(id);
-    const { results } = await statement.all();
-    const row = results?.[0];
+    const row = await fetchMatchRow(env, id);
     if (!row) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
@@ -155,6 +150,10 @@ async function updateMatch(request, env, id) {
     if (!result?.meta || result.meta.changes === 0) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
+    const row = await fetchMatchRow(env, id);
+    if (row) {
+      await broadcastLiveMatchUpdate(env, deserializeMatchRow(row));
+    }
     return Response.json({ id });
   } catch (error) {
     console.error('Failed to update match', error);
@@ -175,5 +174,30 @@ async function deleteMatch(env, id) {
   } catch (error) {
     console.error('Failed to delete match', error);
     return Response.json({ error: 'Failed to delete match' }, { status: 500 });
+  }
+}
+
+async function fetchMatchRow(env, id) {
+  const db = getDatabase(env);
+  const statement = db.prepare('SELECT * FROM matches WHERE id = ?').bind(id);
+  const { results } = await statement.all();
+  return results?.[0] ?? null;
+}
+
+async function broadcastLiveMatchUpdate(env, match) {
+  if (!match?.id || !env?.LIVE_MATCH) {
+    return;
+  }
+
+  try {
+    const objectId = env.LIVE_MATCH.idFromName(String(match.id));
+    const stub = env.LIVE_MATCH.get(objectId);
+    await stub.fetch('https://live-match/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'broadcastScore', match })
+    });
+  } catch (error) {
+    console.error('Failed to broadcast live match update', error);
   }
 }
