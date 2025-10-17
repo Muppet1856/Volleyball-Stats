@@ -685,33 +685,37 @@ let playerSortMode = 'number';
     }
 
     function updateScoreColorClasses() {
-      const stoneyOnLeft = !isSwapped;
       const scHeader = document.getElementById('scHeader');
       const oppHeader = document.getElementById('oppHeader');
-      if (scHeader && oppHeader) {
-        scHeader.classList.toggle('left-score', stoneyOnLeft);
-        scHeader.classList.toggle('right-score', !stoneyOnLeft);
-        oppHeader.classList.toggle('left-score', !stoneyOnLeft);
-        oppHeader.classList.toggle('right-score', stoneyOnLeft);
+      if (scHeader) {
+        scHeader.classList.add('left-score');
+        scHeader.classList.remove('right-score');
+      }
+      if (oppHeader) {
+        oppHeader.classList.add('right-score');
+        oppHeader.classList.remove('left-score');
       }
 
       for (let i = 1; i <= 5; i++) {
         const scInput = document.getElementById(`set${i}SC`);
         const oppInput = document.getElementById(`set${i}Opp`);
-        if (!scInput || !oppInput) continue;
-        scInput.classList.toggle('left-score', stoneyOnLeft);
-        scInput.classList.toggle('right-score', !stoneyOnLeft);
-        oppInput.classList.toggle('left-score', !stoneyOnLeft);
-        oppInput.classList.toggle('right-score', stoneyOnLeft);
+        if (scInput) {
+          scInput.classList.add('left-score');
+          scInput.classList.remove('right-score');
+        }
+        if (oppInput) {
+          oppInput.classList.add('right-score');
+          oppInput.classList.remove('left-score');
+        }
       }
 
       const teamPanels = document.querySelectorAll('#scoreGameModal .team-panel');
       if (teamPanels.length >= 2) {
         const [leftPanel, rightPanel] = teamPanels;
-        leftPanel.classList.toggle('team-blue', stoneyOnLeft);
-        leftPanel.classList.toggle('team-red', !stoneyOnLeft);
-        rightPanel.classList.toggle('team-blue', !stoneyOnLeft);
-        rightPanel.classList.toggle('team-red', stoneyOnLeft);
+        leftPanel.classList.add('team-blue');
+        leftPanel.classList.remove('team-red');
+        rightPanel.classList.add('team-red');
+        rightPanel.classList.remove('team-blue');
       }
     }
 
