@@ -614,7 +614,9 @@ let playerSortMode = 'number';
     function updateTimeoutLayoutForSwap() {
       const timeoutBar = document.querySelector('#scoreGameModal .timeout-bar');
       if (timeoutBar) {
-        timeoutBar.classList.toggle('timeout-bar-swapped', isSwapped);
+        // Keep the timeout bar layout consistent regardless of swap state so the
+        // team colors always remain aligned with their buttons.
+        timeoutBar.classList.remove('timeout-bar-swapped');
       }
     }
 
