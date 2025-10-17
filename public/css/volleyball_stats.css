@@ -458,10 +458,6 @@
   flex: 1 1 auto;
 }
 
-.score-modal .timeout-bar.timeout-bar-swapped {
-  flex-direction: row-reverse;
-}
-
 .score-modal .timeout-container {
   flex: 1 1 0;
   display: flex;
