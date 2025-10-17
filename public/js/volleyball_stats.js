@@ -105,6 +105,7 @@ let playerSortMode = 'number';
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
     const TIMEOUT_COUNT = 2;
     const TIMEOUT_DURATION_SECONDS = 60;
+    const SET_NUMBERS = [1, 2, 3, 4, 5];
     const scoreGameState = {
       setNumber: null,
       sc: null,
@@ -120,6 +121,7 @@ let playerSortMode = 'number';
         opp: TIMEOUT_DURATION_SECONDS
       }
     };
+    let matchTimeouts = createEmptyMatchTimeouts();
     const finalizeButtonPopoverTimers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
     const FINALIZE_TIE_POPOVER_MESSAGE = 'Set scores are tied. Adjust one team\'s score before marking the set final.';
@@ -450,6 +452,64 @@ let playerSortMode = 'number';
       return index === 0 ? 'first' : 'second';
     }
 
+    function createEmptySetTimeouts() {
+      return {
+        sc: Array(TIMEOUT_COUNT).fill(false),
+        opp: Array(TIMEOUT_COUNT).fill(false)
+      };
+    }
+
+    function createEmptyMatchTimeouts() {
+      const state = {};
+      SET_NUMBERS.forEach((setNumber) => {
+        state[setNumber] = createEmptySetTimeouts();
+      });
+      return state;
+    }
+
+    function cloneTimeoutArray(values) {
+      const normalized = Array(TIMEOUT_COUNT).fill(false);
+      if (Array.isArray(values)) {
+        for (let i = 0; i < Math.min(values.length, TIMEOUT_COUNT); i++) {
+          normalized[i] = Boolean(values[i]);
+        }
+      }
+      return normalized;
+    }
+
+    function getMatchTimeoutState(setNumber) {
+      if (!matchTimeouts[setNumber]) {
+        matchTimeouts[setNumber] = createEmptySetTimeouts();
+      }
+      return matchTimeouts[setNumber];
+    }
+
+    function setMatchTimeoutState(setNumber, timeouts) {
+      matchTimeouts[setNumber] = {
+        sc: cloneTimeoutArray(timeouts?.sc),
+        opp: cloneTimeoutArray(timeouts?.opp)
+      };
+    }
+
+    function persistCurrentSetTimeouts() {
+      const { setNumber } = scoreGameState;
+      if (!setNumber) return;
+      const stored = getMatchTimeoutState(setNumber);
+      stored.sc = scoreGameState.timeouts.sc.slice(0, TIMEOUT_COUNT).map(Boolean);
+      stored.opp = scoreGameState.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean);
+    }
+
+    function loadSetTimeoutsIntoScoreState(setNumber) {
+      const stored = getMatchTimeoutState(setNumber);
+      ['sc', 'opp'].forEach(team => {
+        stopTimeoutTimer(team);
+        scoreGameState.timeouts[team] = stored[team].slice();
+        scoreGameState.activeTimeout[team] = null;
+        scoreGameState.timeoutRemainingSeconds[team] = TIMEOUT_DURATION_SECONDS;
+      });
+      refreshAllTimeoutDisplays();
+    }
+
     function stopTimeoutTimer(team) {
       const timerId = scoreGameState.timeoutTimers[team];
       if (timerId) {
@@ -575,6 +635,8 @@ let playerSortMode = 'number';
         }
         scoreGameState.timeouts[team][index] = false;
         updateTimeoutUI(team);
+        persistCurrentSetTimeouts();
+        scheduleAutoSave();
         return;
       }
 
@@ -595,19 +657,28 @@ let playerSortMode = 'number';
         }
       }, 1000);
       updateTimeoutUI(team);
+      persistCurrentSetTimeouts();
+      scheduleAutoSave();
     }
 
-    function resetTeamTimeouts(team) {
+    function resetTeamTimeouts(team, { skipPersist = false } = {}) {
       stopTimeoutTimer(team);
       scoreGameState.timeouts[team] = Array(TIMEOUT_COUNT).fill(false);
       scoreGameState.activeTimeout[team] = null;
       scoreGameState.timeoutRemainingSeconds[team] = TIMEOUT_DURATION_SECONDS;
       updateTimeoutUI(team);
+      if (!skipPersist) {
+        persistCurrentSetTimeouts();
+      }
     }
 
-    function resetAllTimeouts() {
-      resetTeamTimeouts('sc');
-      resetTeamTimeouts('opp');
+    function resetAllTimeouts({ resetStored = false } = {}) {
+      if (resetStored) {
+        matchTimeouts = createEmptyMatchTimeouts();
+      }
+      resetTeamTimeouts('sc', { skipPersist: true });
+      resetTeamTimeouts('opp', { skipPersist: true });
+      persistCurrentSetTimeouts();
     }
 
     function updateScoreModalLabels() {
@@ -660,9 +731,16 @@ let playerSortMode = 'number';
       const scInput = document.getElementById(`set${setNumber}SC`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
       if (!scInput || !oppInput) return;
+      if (scoreGameState.setNumber !== null) {
+        persistCurrentSetTimeouts();
+        if (scoreGameState.setNumber !== setNumber) {
+          cancelActiveTimeoutTimer();
+        }
+      }
       scoreGameState.setNumber = setNumber;
       scoreGameState.sc = parseScoreValue(scInput.value);
       scoreGameState.opp = parseScoreValue(oppInput.value);
+      loadSetTimeoutsIntoScoreState(setNumber);
       updateScoreModalLabels();
       updateScoreModalDisplay();
       applyScoreModalToInputs({ triggerSave: false });
@@ -860,6 +938,7 @@ let playerSortMode = 'number';
     }
 
     function swapScores() {
+      persistCurrentSetTimeouts();
       isSwapped = !isSwapped;
       const opponentInput = document.getElementById('opponent').value.trim();
       const opponentName = opponentInput || 'Opponent';
@@ -1099,9 +1178,19 @@ let playerSortMode = 'number';
       document.getElementById('resultOpp').value = Math.min(oppWins, 3);
     }
 
-    
+
+    function getSerializedSetTimeouts(setNumber) {
+      const stored = getMatchTimeoutState(setNumber);
+      return {
+        sc: stored.sc.slice(0, TIMEOUT_COUNT).map(Boolean),
+        opp: stored.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+      };
+    }
+
+
     async function saveMatch({ showAlert = false } = {}) {
       if (suppressAutoSave) return null;
+      persistCurrentSetTimeouts();
       const form = document.getElementById('matchForm');
       if (form && !form.checkValidity()) {
         form.classList.add('was-validated');
@@ -1131,11 +1220,31 @@ let playerSortMode = 'number';
         firstServer: document.getElementById('firstServer').value,
         players: Array.from(document.querySelectorAll('#playerList input[type="checkbox"]:checked')).map(cb => cb.value),
         sets: {
-          1: { sc: normalizeScoreInputValue(document.getElementById('set1SC').value), opp: normalizeScoreInputValue(document.getElementById('set1Opp').value) },
-          2: { sc: normalizeScoreInputValue(document.getElementById('set2SC').value), opp: normalizeScoreInputValue(document.getElementById('set2Opp').value) },
-          3: { sc: normalizeScoreInputValue(document.getElementById('set3SC').value), opp: normalizeScoreInputValue(document.getElementById('set3Opp').value) },
-          4: { sc: normalizeScoreInputValue(document.getElementById('set4SC').value), opp: normalizeScoreInputValue(document.getElementById('set4Opp').value) },
-          5: { sc: normalizeScoreInputValue(document.getElementById('set5SC').value), opp: normalizeScoreInputValue(document.getElementById('set5Opp').value) }
+          1: {
+            sc: normalizeScoreInputValue(document.getElementById('set1SC').value),
+            opp: normalizeScoreInputValue(document.getElementById('set1Opp').value),
+            timeouts: getSerializedSetTimeouts(1)
+          },
+          2: {
+            sc: normalizeScoreInputValue(document.getElementById('set2SC').value),
+            opp: normalizeScoreInputValue(document.getElementById('set2Opp').value),
+            timeouts: getSerializedSetTimeouts(2)
+          },
+          3: {
+            sc: normalizeScoreInputValue(document.getElementById('set3SC').value),
+            opp: normalizeScoreInputValue(document.getElementById('set3Opp').value),
+            timeouts: getSerializedSetTimeouts(3)
+          },
+          4: {
+            sc: normalizeScoreInputValue(document.getElementById('set4SC').value),
+            opp: normalizeScoreInputValue(document.getElementById('set4Opp').value),
+            timeouts: getSerializedSetTimeouts(4)
+          },
+          5: {
+            sc: normalizeScoreInputValue(document.getElementById('set5SC').value),
+            opp: normalizeScoreInputValue(document.getElementById('set5Opp').value),
+            timeouts: getSerializedSetTimeouts(5)
+          }
         },
         finalizedSets: { ...finalizedSets },
         isSwapped: isSwapped
@@ -1214,7 +1323,7 @@ let playerSortMode = 'number';
           }
         }
       };
-      resetAllTimeouts();
+      resetAllTimeouts({ resetStored: true });
       if (matchId) {
         try {
           const match = await apiClient.getMatch(matchId);
@@ -1246,6 +1355,10 @@ let playerSortMode = 'number';
                 oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
               }
             }
+            SET_NUMBERS.forEach((setNumber) => {
+              const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
+              setMatchTimeoutState(setNumber, setData?.timeouts);
+            });
             finalizedSets = { ...(match.finalizedSets || {}) };
             isSwapped = Boolean(match.isSwapped);
             resetFinalizeButtons();
@@ -1396,7 +1509,7 @@ let playerSortMode = 'number';
         cb.checked = false;
       });
 
-      resetAllTimeouts();
+      resetAllTimeouts({ resetStored: true });
       scoreGameState.sc = null;
       scoreGameState.opp = null;
       updateScoreModalDisplay();
@@ -1485,6 +1598,8 @@ let playerSortMode = 'number';
           updateTimeoutLayoutForSwap();
         });
         scoreGameModalElement.addEventListener('hidden.bs.modal', () => {
+          persistCurrentSetTimeouts();
+          cancelActiveTimeoutTimer();
           scoreGameState.setNumber = null;
           scoreGameState.sc = null;
           scoreGameState.opp = null;
@@ -1531,7 +1646,7 @@ let playerSortMode = 'number';
         if (modalSwapButton) {
           modalSwapButton.addEventListener('click', swapScores);
         }
-        resetAllTimeouts();
+        resetAllTimeouts({ resetStored: true });
       }
       document.querySelectorAll('.score-game-btn').forEach(button => {
         button.addEventListener('click', () => {
