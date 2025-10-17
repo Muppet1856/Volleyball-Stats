@@ -494,6 +494,20 @@ let playerSortMode = 'number';
       };
     }
 
+    function swapSetTimeoutState(state) {
+      return {
+        sc: cloneTimeoutArray(state?.opp),
+        opp: cloneTimeoutArray(state?.sc)
+      };
+    }
+
+    function swapAllStoredTimeouts() {
+      SET_NUMBERS.forEach((setNumber) => {
+        const current = getMatchTimeoutState(setNumber);
+        matchTimeouts[setNumber] = swapSetTimeoutState(current);
+      });
+    }
+
     function persistCurrentSetTimeouts() {
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
@@ -519,6 +533,19 @@ let playerSortMode = 'number';
         clearInterval(timerId);
         scoreGameState.timeoutTimers[team] = null;
       }
+    }
+
+    function startTimeoutTimer(team) {
+      stopTimeoutTimer(team);
+      scoreGameState.timeoutTimers[team] = window.setInterval(() => {
+        scoreGameState.timeoutRemainingSeconds[team] = Math.max(0, scoreGameState.timeoutRemainingSeconds[team] - 1);
+        updateTimeoutUI(team);
+        if (scoreGameState.timeoutRemainingSeconds[team] <= 0) {
+          stopTimeoutTimer(team);
+          scoreGameState.activeTimeout[team] = null;
+          updateTimeoutUI(team);
+        }
+      }, 1000);
     }
 
     function getRunningTimeoutTeam() {
@@ -611,6 +638,45 @@ let playerSortMode = 'number';
       updateTimeoutUI('opp');
     }
 
+    function swapScoreGameTimeoutState() {
+      const wasRunning = {
+        sc: Boolean(scoreGameState.timeoutTimers.sc),
+        opp: Boolean(scoreGameState.timeoutTimers.opp)
+      };
+      const previousActive = {
+        sc: scoreGameState.activeTimeout.sc,
+        opp: scoreGameState.activeTimeout.opp
+      };
+      const previousRemaining = {
+        sc: scoreGameState.timeoutRemainingSeconds.sc ?? TIMEOUT_DURATION_SECONDS,
+        opp: scoreGameState.timeoutRemainingSeconds.opp ?? TIMEOUT_DURATION_SECONDS
+      };
+
+      stopTimeoutTimer('sc');
+      stopTimeoutTimer('opp');
+
+      const swappedTimeouts = swapSetTimeoutState(scoreGameState.timeouts);
+      scoreGameState.timeouts.sc = swappedTimeouts.sc;
+      scoreGameState.timeouts.opp = swappedTimeouts.opp;
+
+      scoreGameState.activeTimeout.sc = previousActive.opp ?? null;
+      scoreGameState.activeTimeout.opp = previousActive.sc ?? null;
+
+      scoreGameState.timeoutRemainingSeconds.sc = previousRemaining.opp;
+      scoreGameState.timeoutRemainingSeconds.opp = previousRemaining.sc;
+
+      if (wasRunning.opp && scoreGameState.activeTimeout.sc !== null) {
+        startTimeoutTimer('sc');
+      }
+
+      if (wasRunning.sc && scoreGameState.activeTimeout.opp !== null) {
+        startTimeoutTimer('opp');
+      }
+
+      updateTimeoutUI('sc');
+      updateTimeoutUI('opp');
+    }
+
     function updateTimeoutLayoutForSwap() {
       const timeoutBar = document.querySelector('#scoreGameModal .timeout-bar');
       if (timeoutBar) {
@@ -651,16 +717,7 @@ let playerSortMode = 'number';
 
       scoreGameState.timeouts[team][index] = true;
       scoreGameState.activeTimeout[team] = index;
-
-      scoreGameState.timeoutTimers[team] = window.setInterval(() => {
-        scoreGameState.timeoutRemainingSeconds[team] = Math.max(0, scoreGameState.timeoutRemainingSeconds[team] - 1);
-        updateTimeoutUI(team);
-        if (scoreGameState.timeoutRemainingSeconds[team] <= 0) {
-          stopTimeoutTimer(team);
-          scoreGameState.activeTimeout[team] = null;
-          updateTimeoutUI(team);
-        }
-      }, 1000);
+      startTimeoutTimer(team);
       updateTimeoutUI(team);
       persistCurrentSetTimeouts();
       scheduleAutoSave();
@@ -981,6 +1038,8 @@ let playerSortMode = 'number';
     function swapScores() {
       persistCurrentSetTimeouts();
       isSwapped = !isSwapped;
+      swapAllStoredTimeouts();
+      swapScoreGameTimeoutState();
       const opponentInput = document.getElementById('opponent').value.trim();
       const opponentName = opponentInput || 'Opponent';
       for (let i = 1; i <= 5; i++) {
