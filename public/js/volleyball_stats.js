@@ -144,6 +144,18 @@ let playerSortMode = 'number';
         dialog.classList.remove('modal-fullscreen', 'modal-dialog-scrollable');
       }
     }
+
+    function setScoreModalBackgroundLock(isLocked) {
+      const className = 'score-modal-open';
+      [document.body, document.documentElement].forEach(element => {
+        if (!element) return;
+        if (isLocked) {
+          element.classList.add(className);
+        } else {
+          element.classList.remove(className);
+        }
+      });
+    }
     function formatPlayerRecord(player) {
       const number = String(player.number ?? '').trim();
       const lastName = String(player.lastName ?? '').trim();
@@ -1681,6 +1693,7 @@ let playerSortMode = 'number';
           }
         };
         scoreGameModalElement.addEventListener('show.bs.modal', () => {
+          setScoreModalBackgroundLock(true);
           updateScoreGameModalLayout();
           updateTimeoutTimerDisplay();
         });
@@ -1690,6 +1703,7 @@ let playerSortMode = 'number';
           updateTimeoutLayoutForSwap();
         });
         scoreGameModalElement.addEventListener('hidden.bs.modal', () => {
+          setScoreModalBackgroundLock(false);
           persistCurrentSetTimeouts();
           cancelActiveTimeoutTimer();
           scoreGameState.setNumber = null;

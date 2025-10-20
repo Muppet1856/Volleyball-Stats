@@ -2,6 +2,11 @@
   color-scheme: light dark;
 }
 
+html.score-modal-open,
+body.score-modal-open {
+  overflow: hidden;
+}
+
 [data-bs-theme="dark"] {
   color-scheme: dark;
 }
