@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/releases) [![GitHub License](https://img.shields.io/github/license/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/blob/main/LICENSE) [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/issues) <!-- PREVIEW_BADGE_START -->[![Preview](https://img.shields.io/badge/preview-production-purple?link=https://volleyball-stats.stoneyvolleyball.workers.dev)](https://volleyball-stats.stoneyvolleyball.workers.dev)<!-- PREVIEW_BADGE_END -->
 
-This repository contains a Cloudflare Worker that serves a static single-page application from the `public/` directory and exposes a JSON API backed by a Cloudflare D1 database for managing volleyball players and matches.【F:src/worker.js†L1-L35】【F:src/api/database.js†L1-L19】【F:migrations/0001_init.sql†L1-L27】
+This repository contains a Cloudflare Worker that serves a static single-page application from the `public/` directory and exposes a JSON API backed by a Cloudflare D1 database for managing volleyball players and matches.
 
 ## Table of contents
 1. [Prerequisites](#prerequisites)
