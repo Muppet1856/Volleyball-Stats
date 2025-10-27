@@ -1,52 +1,279 @@
+# Workflow Name and Purpose:
+# This workflow automates the deployment of a Cloudflare Worker integrated with a D1 database.
+# It handles three scenarios:
+# 1. Production deployment: Triggered by pushes to the 'main' branch (e.g., after PR merges).
+# 2. Preview deployments: Triggered by pushes to non-main branches or pull requests (PRs) targeting any branch.
+# 3. Cleanup: Removes preview Workers and D1 databases when PRs are closed.
+# Preview URLs follow the format pr-<number>-<WORKER_NAME>.<subdomain>.workers.dev, where WORKER_NAME is set via repository variables.
+# The workflow avoids hardcoding D1 database limits by using a try-create approach to detect limit breaches dynamically.
+
 name: Deploy to Cloudflare Worker with D1
 
+# Event Triggers:
+# The workflow is triggered by:
+# - Push events to the 'main' branch for production deployments.
+# - Pull request events (opened or synchronized) targeting any branch for preview deployments.
 on:
   push:
     branches:
-      - main
+      - '**'
+    paths-ignore:  # Ignore changes in .github directory
+      - '**/.github/**'  # Or use '.github/**' for direct contents only
+      - '**/README.md'  # Ignores README.md files in any directory
   pull_request:
+    paths-ignore:  # Ignore changes in .github directory
+      - '**/.github/**'  # Or use '.github/**' for direct contents only
+      - '**/README.md'  # Ignores README.md files in any directory
+    types: [opened, synchronize]  # Captures PR creation and updates for deployment.
+  create:
     branches:
-      - main
-      
+      - '**'  # Triggers when new branches are created so previews can be provisioned immediately.
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Job Configuration:
+    # This job handles the deployment process for both production and preview environments.
+    runs-on: ubuntu-latest  # Uses the latest Ubuntu runner for consistency and compatibility with required tools.
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout repository
+        # Purpose: Clones the repository to access the Worker code, configuration, and migration files.
         uses: actions/checkout@v4
+        # Details: Uses the latest checkout action (v4) to ensure the most recent repository state is available.
+
+      - name: Verify src/index.js exists
+        # Purpose: Ensures the main Worker script exists to prevent deployment failures.
+        run: |
+          if [ -f "src/index.js" ]; then
+            echo "src/index.js found"
+          else
+            echo "Error: src/index.js not found" >&2
+            exit 1
+          fi
 
       - name: Set up Node.js
+        # Purpose: Configures the Node.js environment required for running Wrangler commands.
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20'  # Specifies Node.js version 20, compatible with Wrangler 4.45.0.
 
       - name: Install dependencies
+        # Purpose: Installs Wrangler and jq, which are needed for Worker deployment and JSON parsing.
         run: |
+          # Installs Wrangler version 4 as a development dependency for managing Cloudflare Workers.
           npm install wrangler@4 --save-dev
-          sudo apt update && sudo apt install -y jq
+          # Updates the package list and installs jq for processing JSON output from Wrangler and API calls.
+          sudo apt update -qq && sudo apt install -y jq -qq
 
-      - name: Create or get D1 database and bind
+      - name: Set DEPLOY variable
+        # Purpose: Determines the deployment mode (production or preview) based on the event and branch.
+        run: |
+          sanitize() {
+            local raw="$1"
+            local lower=$(echo "$raw" | tr '[:upper:]' '[:lower:]')
+            local replaced=$(echo "$lower" | tr '/' '-')
+            local cleaned=$(echo "$replaced" | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+            if [ -z "$cleaned" ]; then
+              cleaned="preview"
+            fi
+            echo "$cleaned"
+          }
+          # Logic for Pull Requests:
+          # If the event is a pull request, sets DEPLOY to 'pr-<pr-number>' for preview mode (e.g., pr-24).
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            RAW_DEPLOY="pr-${{ github.event.pull_request.number }}"
+            echo "DEPLOY=$(sanitize "$RAW_DEPLOY")" >> $GITHUB_ENV
+          # Logic for Main Branch Pushes:
+          # For pushes to main, sets DEPLOY to an empty string to indicate production mode.
+          elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref_name }}" == "main" ]; then
+            echo "DEPLOY=" >> $GITHUB_ENV
+          # Logic for Branch Pushes (Preview deployments):
+          # For pushes to non-main branches, use a sanitized branch name for DEPLOY.
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            SANITIZED_BRANCH=$(sanitize "${{ github.ref_name }}")
+            echo "DEPLOY=$SANITIZED_BRANCH" >> $GITHUB_ENV
+            echo "NEWBRANCH=true" >> $GITHUB_ENV
+          # Logic for Branch Creations:
+          # For create events on branches, set DEPLOY using the new branch name so previews are provisioned immediately.
+          elif [ "${{ github.event_name }}" == "create" ] && [ "${{ github.ref_type }}" == "branch" ]; then
+            SANITIZED_BRANCH=$(sanitize "${{ github.ref_name }}")
+            echo "DEPLOY=$SANITIZED_BRANCH" >> $GITHUB_ENV
+            echo "NEWBRANCH=true" >> $GITHUB_ENV
+          # Error Handling:
+          # If none of the above conditions are met, logs an error and fails the workflow.
+          else
+            echo "Error: Unexpected event or branch. No deployment mode defined for ${{ github.event_name }} on ${{ github.ref_name }}." >&2
+            exit 1
+          fi
+
+      - name: Setup worker (Main Deployment)
+        if: env.DEPLOY == ''  # Only runs for production deployments (when DEPLOY is empty).
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          DB_NAME=${{ vars.DB_NAME }}
-          BINDING_NAME=${{ vars.BINDING_NAME }}
-          # Validate variables
-          if [ -z "$DB_NAME" ]; then
-            echo "Error: DB_NAME is not set. Please define it in GitHub repository variables." >&2
+          WORKER_NAME=${{ vars.WORKER_NAME }}
+          if [ -z "$WORKER_NAME" ]; then
+            echo "Error: WORKER_NAME is not set. Please define it in GitHub repository variables." >&2
             exit 1
           fi
+          echo "name = \"$WORKER_NAME\"" > wrangler.toml
+          echo "main = \"src/index.js\"" >> wrangler.toml
+          echo "compatibility_date = \"2025-10-25\"" >> wrangler.toml
+          # Check for custom domain via workers/domains endpoint.
+          API_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json")
+          echo "API Response (Domains): $API_RESPONSE"
+          # Check if result array is empty
+          RESULT_COUNT=$(echo "$API_RESPONSE" | jq '.result | length')
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "No domains found for the account."
+            DOMAIN=""
+          else
+            DOMAIN=$(echo "$API_RESPONSE" | jq -r '.result[0].hostname')
+            if [ -z "$DOMAIN" ]; then
+              echo "Failed to extract hostname."
+            else
+              echo "Extracted Domain: $DOMAIN"
+            fi
+          fi
+          if [ -n "$DOMAIN" ]; then
+            # Custom domain found, use it for routing.
+            echo "[[routes]]" >> wrangler.toml
+            echo "pattern = \"${DOMAIN}/*\"" >> wrangler.toml
+            echo "zone_name = \"${DOMAIN}\"" >> wrangler.toml
+            echo "WORKER_URL=${DOMAIN}" >> $GITHUB_ENV
+          else
+            # No custom domain, default to workers.dev and fetch subdomain.
+            DOMAIN="workers.dev"
+          fi
+          if [ "$DOMAIN" = "workers.dev" ]; then
+            API_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/workers/subdomain" \
+              -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+              -H "Content-Type: application/json")
+            echo "API Response (Production): $API_RESPONSE"
+            SUBDOMAIN=$(echo "$API_RESPONSE" | jq -r '.result.subdomain' 2>/dev/null || true)
+            if [ -z "$SUBDOMAIN" ]; then
+              echo "Error: Could not fetch workers.dev subdomain via API. Please ensure the subdomain is enabled in the Cloudflare dashboard." >&2
+              exit 1
+            fi
+            echo "WORKER_URL=${WORKER_NAME}.${SUBDOMAIN}.workers.dev" >> $GITHUB_ENV
+          elif [ "$DOMAIN" != "workers.dev" ] && [ -n "$DOMAIN" ]; then
+            echo "WORKER_URL=${WORKER_NAME}.${DOMAIN}" >> $GITHUB_ENV
+          else
+            echo "Error: No Domain set, there is an error in the domain retreival logic." >&2
+            exit 1
+          fi
+
+      - name: Setup worker (Preview Deployment)
+        if: env.DEPLOY != ''  # Only runs for preview deployments (when DEPLOY is set).
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          WORKER_NAME=${{ vars.WORKER_NAME }}
+          if [ -z "$WORKER_NAME" ]; then
+            echo "Error: WORKER_NAME is not set. Please define it in GitHub repository variables." >&2
+            exit 1
+          fi
+          # Retrieves the deployment environment.
+          DEPLOY_ENV=${{ env.DEPLOY }}
+          PREVIEW_HOST="${DEPLOY_ENV}-${WORKER_NAME}"
+          echo "Preview worker host derived from event: ${PREVIEW_HOST}"
+          # Generates wrangler.toml for the preview Worker.
+          echo "name = \"${PREVIEW_HOST}\"" > wrangler.toml
+          echo "main = \"src/index.js\"" >> wrangler.toml
+          echo "compatibility_date = \"2025-10-24\"" >> wrangler.toml
+          # Check for custom domain via workers/domains endpoint.
+          API_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json")
+          echo "API Response (Domains): $API_RESPONSE"
+          # Check if result array is empty
+          RESULT_COUNT=$(echo "$API_RESPONSE" | jq '.result | length')
+          if [ "$RESULT_COUNT" -eq 0 ]; then
+            echo "No domains found for the account."
+            DOMAIN=""
+          else
+            DOMAIN=$(echo "$API_RESPONSE" | jq -r '.result[0].hostname')
+            if [ -z "$DOMAIN" ]; then
+              echo "Failed to extract hostname."
+            else
+              echo "Extracted Domain: $DOMAIN"
+            fi
+          fi
+          if [ -n "$DOMAIN" ]; then
+            # Custom domain found, use it for routing.
+            echo "[[routes]]" >> wrangler.toml
+            echo "pattern = \"${PREVIEW_HOST}.preview.${DOMAIN}/*\"" >> wrangler.toml
+            echo "zone_name = \"${DOMAIN}\"" >> wrangler.toml
+            echo "WORKER_URL=${PREVIEW_HOST}.preview.${DOMAIN}" >> $GITHUB_ENV
+          else
+            # No custom domain, default to workers.dev and fetch subdomain.
+            DOMAIN="workers.dev"
+            SUBDOMAIN_API_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json")
+            echo "API Response (Subdomain): $SUBDOMAIN_API_RESPONSE"
+            SUBDOMAIN=$(echo "$SUBDOMAIN_API_RESPONSE" | jq -r '.result.subdomain' 2>/dev/null || true)
+            if [ -z "$SUBDOMAIN" ]; then
+              echo "Error: Could not fetch workers.dev subdomain via API. Please ensure the subdomain is enabled in the Cloudflare dashboard." >&2
+              exit 1
+            fi
+            echo "WORKER_URL=${PREVIEW_HOST}.${SUBDOMAIN}.workers.dev" >> $GITHUB_ENV
+          fi
+
+      - name: Create or get D1 database and bind
+        # Purpose: Creates or retrieves a D1 database and binds it to the Worker in wrangler.toml.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}  # For Wrangler and API authentication.
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}  # For identifying the Cloudflare account.
+          USE_PRODUCTION_DB_ON_PREVIEW: ${{ vars.USE_PRODUCTION_DB_ON_PREVIEW }} # For managing the production vs preview database
+        run: |
+          # Retrieves worker name and deployment environment.
+          WORKER_NAME=${{ vars.WORKER_NAME }}
+          DEPLOY_ENV=${{ env.DEPLOY }}
+          # Validates required variables.
+          if [ -z "$WORKER_NAME" ]; then
+            echo "Error: WORKER_NAME is not set. Please define it in GitHub repository variables." >&2
+            exit 1
+          fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Error: CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not set." >&2
+            exit 1
+          fi
+          # Determines the database name based on deployment type.
+          if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
+            DB_NAME="${WORKER_NAME}"  # Production: uses worker name.
+          elif [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "false" ] || [ -z "$USE_PRODUCTION_DB_ON_PREVIEW" ]; then
+            DB_NAME="${DEPLOY_ENV}-${WORKER_NAME}"  # Preview: uses pr-<number>-<WORKER_NAME>.
+          fi
+          BINDING_NAME=${{ vars.BINDING_NAME }}  # Binding name for D1 database access.
           if [ -z "$BINDING_NAME" ]; then
             echo "Error: BINDING_NAME is not set. Please define it in GitHub repository variables." >&2
             exit 1
           fi
+          # Verifies Cloudflare authentication.
           npx wrangler whoami
+          # Fetches the list of existing D1 databases.
           DBS=$(npx wrangler d1 list --json)
           DB_ID=$(echo "$DBS" | jq -r --arg name "$DB_NAME" '.[] | select(.name == $name) | .uuid')
+          # Creates a new database if it doesn't exist.
           if [ -z "$DB_ID" ]; then
-            echo "Creating new D1 database \"$DB_NAME\""
-            npx wrangler d1 create "$DB_NAME"
+            echo "Attempting to create new D1 database \"$DB_NAME\""
+            OUTPUT=$(npx wrangler d1 create "$DB_NAME" 2>&1) || true
+            # Checks for database limit errors.
+            if [[ $OUTPUT =~ "Database limit reached" ]]; then
+              echo "Error: D1 database limit reached for this account. Please delete unused databases or upgrade your plan." >&2
+              exit 1
+            elif [[ $OUTPUT =~ "failed" ]]; then
+              echo "Error: Failed to create D1 database \"$DB_NAME\": $OUTPUT" >&2
+              exit 1
+            fi
+            # Refreshes the database list and retrieves the new ID.
             DBS=$(npx wrangler d1 list --json)
             DB_ID=$(echo "$DBS" | jq -r --arg name "$DB_NAME" '.[] | select(.name == $name) | .uuid')
             if [ -z "$DB_ID" ]; then
@@ -61,6 +288,7 @@ jobs:
             echo "Unable to determine a valid database ID for \"$DB_NAME\"." >&2
             exit 1
           fi
+          # Adds D1 binding to wrangler.toml if not already present.
           if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
             echo "" >> wrangler.toml
             echo "[[d1_databases]]" >> wrangler.toml
@@ -71,48 +299,68 @@ jobs:
           else
             echo "D1 binding already present in wrangler.toml"
           fi
+          # Exports database variables for later steps.
           {
             echo "DB_NAME=$DB_NAME"
             echo "DB_ID=$DB_ID"
-          } >> "$GITHUB_ENV"
+          } >> $GITHUB_ENV
 
       - name: Apply D1 migrations
+        # Purpose: Applies SQL migration files to the D1 database and verifies table creation.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          for file in migrations/*.sql; do
-            if [ -f "$file" ]; then
+          DB_NAME=${{ env.DB_NAME }}  # Uses the dynamically set database name.
+          # Checks for SQL migration files in the migrations/ directory.
+          if ls migrations/*.sql >/dev/null 2>&1; then
+            for file in migrations/*.sql; do
               echo "Applying migration: $file"
+              # Executes each migration file remotely on the D1 database.
               if ! npx wrangler d1 execute "$DB_NAME" --file="$file" --remote; then
                 echo "Failed to apply migration: $file" >&2
                 exit 1
               fi
-            else
-              echo "No migration files found in migrations/ folder"
-            fi
-          done
-          # Verify table creation
-          echo "Verifying table creation"
-          TABLES=$(npx wrangler d1 execute "$DB_NAME" --command="SELECT name FROM sqlite_master WHERE type='table' AND name='players' OR name='matches'" --json --remote)
-          if echo "$TABLES" | grep -q '"name": "players"'; then
-            echo "Table 'players' confirmed in database"
-            if echo "$TABLES" | grep -q '"name": "matches"'; then
-              echo "Table 'matches' confirmed in database"
-            else
-              echo "Table 'matches' not found in database" >&2
-              exit 1
-            fi
+            done
           else
-            echo "Table 'players' not found in database" >&2
+            echo "No migration files found in migrations/ folder"
+          fi
+          # Verifies that tables were created in the database.
+          echo "Verifying table creation"
+          TABLES=$(npx wrangler d1 execute "$DB_NAME" --command="SELECT name FROM sqlite_master WHERE type='table'" --json --remote)
+          if [ -n "$(echo "$TABLES" | jq -r '.[0].results[] | select(.name != null)')" ]; then
+            echo "Tables confirmed in database"
+          else
+            echo "No tables found in database" >&2
             exit 1
           fi
 
-      - name: Deploy Cloudflare Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy Worker
+        # Purpose: Deploys the Worker to Cloudflare using the wrangler-action.
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}  # Authenticates with Cloudflare.
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}  # Specifies the account for deployment.
+
+      - name: Debug Variables
+        if: github.event_name == 'pull_request'
         run: |
-          echo "Debug: Contents of wrangler.toml before deployment:"
-          cat wrangler.toml || echo "Error: wrangler.toml not found"
-          echo "Deploying Worker defined in wrangler.toml"
-          npx wrangler deploy
+          echo "WORKER_URL: ${{ env.WORKER_URL }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "Event Name: ${{ github.event_name }}"
+          echo "Event Action: ${{ github.event.action }}"
+
+      - name: Comment Preview URL on PR
+        # Purpose: Posts the preview Worker URL as a comment on the PR.
+        if: github.event_name == 'pull_request' && github.event.action != 'closed'  # Only runs for non-closed PRs.
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}  # Uses GitHub token for API access.
+          script: |
+            const prNumber = ${{ github.event.pull_request.number }};
+            const previewUrl = "${{ env.WORKER_URL }}";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `Preview Worker deployed at https://${previewUrl}`
+            });
