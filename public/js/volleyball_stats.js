@@ -101,6 +101,7 @@ let playerSortMode = 'number';
     let autoSaveStatusTimeout = null;
     let suppressAutoSave = true;
     let currentMatchId = null;
+    let hasPendingChanges = false;
     let scoreGameModalInstance = null;
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
     const TIMEOUT_COUNT = 2;
@@ -286,6 +287,7 @@ let playerSortMode = 'number';
 
     function scheduleAutoSave() {
       if (suppressAutoSave) return;
+      hasPendingChanges = true;
       if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
       setAutoSaveStatus('Saving…', 'text-warning', null);
       autoSaveTimeout = setTimeout(async () => {
@@ -1365,6 +1367,7 @@ let playerSortMode = 'number';
           const newUrl = `${window.location.pathname}?matchId=${savedId}`;
           window.history.replaceState(null, '', newUrl);
         }
+        hasPendingChanges = false;
         if (showAlert) {
           const url = `${window.location.href.split('?')[0]}${savedId ? `?matchId=${savedId}` : ''}`;
           alert(`Match ${matchId !== null ? 'updated' : 'saved'}! View it at: ${url}`);
@@ -1500,6 +1503,7 @@ let playerSortMode = 'number';
         resetFinalizeButtons();
         updatePlayerList();
       }
+      hasPendingChanges = false;
       suppressAutoSave = false;
     }
 
@@ -1578,7 +1582,7 @@ let playerSortMode = 'number';
     }
 
     function startNewMatch() {
-      if (!confirm('Start a new match? Unsaved changes will be lost.')) return;
+      if (hasPendingChanges && !confirm('Start a new match? Unsaved changes will be lost.')) return;
       suppressAutoSave = true;
       if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
@@ -1633,6 +1637,7 @@ let playerSortMode = 'number';
       applyJerseyColorToNumbers();
       setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
 
+      hasPendingChanges = false;
       suppressAutoSave = false;
     }
 
