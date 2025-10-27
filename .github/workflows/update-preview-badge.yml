@@ -1,0 +1,252 @@
+name: Update README preview badge
+
+on:
+  push:
+    branches:
+      - '**'  # Trigger on all branch pushes
+  workflow_dispatch:
+    inputs:
+      badge_label:
+        description: 'Override the badge label (defaults to production or the sanitized branch/PR identifier).'
+        required: false
+      ref:
+        description: 'Branch to run the workflow on (defaults to current branch).'
+        required: false
+        default: ''
+  workflow_call:
+    inputs:
+      badge_label:
+        description: 'Override the badge label (defaults to production or the sanitized branch/PR identifier).'
+        required: false
+        type: string
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          ref: ${{ github.event.inputs.ref || github.ref_name || github.ref }}
+
+      - name: Ensure jq is available
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y jq -qq
+
+      - name: Resolve worker URL and badge label
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: ${{ vars.WORKER_NAME }}
+          INPUT_BADGE_LABEL: ${{ inputs.badge_label }}
+        run: |
+          set -euo pipefail
+
+          sanitize() {
+            local raw="$1"
+            local lowered="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+            local slashes_replaced="$(printf '%s' "$lowered" | tr '/' '-')"
+            local cleaned
+            cleaned="$(printf '%s' "$slashes_replaced" | sed -e 's/[^a-z0-9-]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')"
+            if [ -z "$cleaned" ]; then
+              cleaned="preview"
+            fi
+            printf '%s' "$cleaned"
+          }
+
+          cf_get() {
+            local path="$1"
+            local response
+            response=$(curl -sS -X GET "https://api.cloudflare.com/client/v4/${path}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json")
+            if [ -z "$response" ]; then
+              echo "Cloudflare API call to ${path} returned an empty response." >&2
+              exit 1
+            fi
+            if [ "$(printf '%s' "$response" | jq -r '.success')" != "true" ]; then
+              echo "Cloudflare API call to ${path} did not succeed: $response" >&2
+              exit 1
+            fi
+            printf '%s' "$response"
+          }
+
+          if [ -z "${WORKER_NAME:-}" ]; then
+            echo "WORKER_NAME repository variable is required to resolve the worker URL." >&2
+            exit 1
+          fi
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be provided to resolve the worker URL." >&2
+            exit 1
+          fi
+
+          event_name="${GITHUB_EVENT_NAME:-}"
+          ref_name="${GITHUB_REF_NAME:-}"
+          event_path="${GITHUB_EVENT_PATH:-}"
+          deploy_env=""
+
+          echo "GitHub event: ${event_name}"
+          echo "Git ref name: ${ref_name}"
+          echo "GitHub ref: ${GITHUB_REF:-}"
+          echo "Event path: ${event_path}"
+
+          if [ "$event_name" = "pull_request" ]; then
+            pr_number=""
+            if [ -f "$event_path" ]; then
+              pr_number=$(jq -r '(.number // .pull_request.number // empty)' "$event_path")
+            fi
+            if [ -z "$pr_number" ] || [ "$pr_number" = "null" ]; then
+              echo "Unable to determine pull request number from event payload." >&2
+              exit 1
+            fi
+            deploy_env=$(sanitize "pr-${pr_number}")
+          elif [ -n "$ref_name" ] && [ "$ref_name" != "main" ]; then
+            deploy_env=$(sanitize "$ref_name")
+          fi
+
+          if [ -n "$deploy_env" ]; then
+            echo "Computed deploy environment: ${deploy_env}"
+          else
+            echo "Using production environment (no deploy env computed)."
+          fi
+
+          domains_json=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains")
+          domain_host=$(printf '%s' "$domains_json" | jq -r '.result[]? | select(.hostname != null and .hostname != "") | .hostname' | head -n 1)
+
+          if [ -n "$domain_host" ]; then
+            domain_host=$(printf '%s' "$domain_host" | sed 's/\s//g')
+            echo "Primary domain host from API: ${domain_host}"
+            if [ -n "$deploy_env" ]; then
+              worker_host="${deploy_env}-${WORKER_NAME}.preview.${domain_host}"
+            else
+              worker_host="$domain_host"
+            fi
+          else
+            subdomain_json=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain")
+            subdomain=$(printf '%s' "$subdomain_json" | jq -r '.result.subdomain // empty')
+            if [ -z "$subdomain" ]; then
+              echo "Could not resolve workers.dev subdomain from Cloudflare API." >&2
+              exit 1
+            fi
+            echo "Resolved workers.dev subdomain: ${subdomain}"
+            if [ -n "$deploy_env" ]; then
+              worker_host="${deploy_env}-${WORKER_NAME}.${subdomain}.workers.dev"
+            else
+              worker_host="${WORKER_NAME}.${subdomain}.workers.dev"
+            fi
+          fi
+
+          badge_label_override="${INPUT_BADGE_LABEL:-}"
+          if [ -n "$badge_label_override" ]; then
+            echo "Badge label override supplied: ${badge_label_override}"
+          else
+            echo "No badge label override supplied."
+          fi
+          if [ -n "$badge_label_override" ]; then
+            badge_label="$(printf '%s' "$badge_label_override" | sed 's/^\s*//;s/\s*$//')"
+          elif [ -n "$deploy_env" ]; then
+            badge_label="$deploy_env"
+          else
+            badge_label="production"
+          fi
+
+          echo "Sanitized badge label: ${badge_label}"
+
+          preview_url="https://${worker_host}"
+
+          {
+            echo "WORKER_HOST=${worker_host}"
+            echo "PREVIEW_URL=${preview_url}"
+            echo "BADGE_LABEL=${badge_label}"
+          } >> "${GITHUB_ENV}"
+
+          echo "Resolved worker host: ${worker_host}"
+          echo "Using badge label: ${badge_label}"
+
+      - name: Update preview badge in README
+        run: |
+          set -euo pipefail
+
+          preview_url="${PREVIEW_URL:-}"
+          echo "Preview URL from environment: ${preview_url}"
+          if [ -z "$preview_url" ]; then
+            echo "Preview URL is empty; skipping README update."
+            exit 0
+          fi
+
+          raw_badge_label="${BADGE_LABEL:-}"
+          badge_label="$(printf '%s' "$raw_badge_label" | sed 's/^\s*//;s/\s*$//')"
+          echo "Raw badge label from environment: '${raw_badge_label}'"
+          if [ -z "$badge_label" ]; then
+            badge_label="production"
+          fi
+
+          echo "Resolved badge label for badge: ${badge_label}"
+
+          badge_label_for_badge=$(jq -rn --arg v "$badge_label" '$v|@uri')
+          badge="[![Preview](https://img.shields.io/badge/preview-${badge_label_for_badge}-purple?link=${preview_url})](${preview_url})"
+
+          echo "Generated badge markdown: '${badge}'"
+
+          start="<!-- PREVIEW_BADGE_START -->"
+          end="<!-- PREVIEW_BADGE_END -->"
+          path="README.md"
+
+          echo "Checking README (${path}) for preview badge markers."
+
+          if ! grep -qF "$start" "$path" || ! grep -qF "$end" "$path"; then
+            echo "README markers for preview badge are missing." >&2
+            exit 1
+          fi
+
+          echo "Current README badge block before update:"
+          awk "/${start}/,/${end}/" "$path"
+
+          # Extract current badge with precise matching
+          current_badge=$(awk -v start="${start}" -v end="${end}" '$0 ~ start {flag=1; next} $0 ~ end {flag=0} flag' "$path" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          echo "Extracted current badge: '${current_badge}'"
+          if [ "$current_badge" = "$badge" ]; then
+            echo "Badge already correct in README; skipping update."
+            exit 0
+          fi
+
+          export BADGE="$badge"
+          if ! perl -0pi -e 's/(<!-- PREVIEW_BADGE_START -->)\s*.*?\s*(<!-- PREVIEW_BADGE_END -->)/$1$ENV{BADGE}$2/s' "$path"; then
+            echo "Failed to update README preview badge." >&2
+            exit 1
+          fi
+
+          echo "README badge block after update:"
+          awk "/${start}/,/${end}/" "$path"
+
+          # Normalize and verify badge
+          escaped_badge=$(printf '%s' "$badge" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          echo "Escaped badge for verification: '${escaped_badge}'"
+          if ! grep -qF "$escaped_badge" "$path"; then
+            echo "README content for debugging:"
+            cat "$path"
+            echo "README preview badge update did not apply as expected." >&2
+            exit 1
+          fi
+
+          {
+            echo "BADGE_LABEL=${badge_label}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Commit README update
+        run: |
+          if git diff --quiet README.md; then
+            echo "README already reflects current badge."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update preview badge for ${BADGE_LABEL}"
+          git push

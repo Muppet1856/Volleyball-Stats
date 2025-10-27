@@ -1,0 +1,165 @@
+### Workflow Overview #########################################################
+# This workflow is responsible for removing preview Cloudflare Workers and
+# their associated D1 databases once they are no longer needed. It targets
+# two event types:
+#   1. A pull request that has been closed (regardless of whether it was
+#      merged). This ensures ephemeral environments spun up for the PR are
+#      cleaned up when development concludes.
+#   2. A branch deletion event. This covers scenarios where preview workers
+#      might have been created from manually managed branches outside the PR
+#      flow.
+#
+# In both cases the workflow determines the sanitized branch identifier used
+# during deployment and removes the corresponding Worker script and D1
+# database if they still exist. Extensive logging is included to simplify
+# troubleshooting when cleanups fail due to missing credentials or API
+# throttling.
+################################################################################
+
+name: Cleanup Cloudflare Workers and D1
+
+### Event Triggers ############################################################
+# The pull_request trigger reacts to closed PRs targeting any branch. We do not
+# want documentation-only updates in the repository configuration to trigger a
+# cleanup, so paths-ignore omits .github and README modifications.
+# The delete trigger captures branch deletions initiated from Git or the UI.
+################################################################################
+on:
+  pull_request:
+    types: [closed]
+    paths-ignore:  # Ignore changes in .github directory
+      - '**.github/**'  # Or use '.github/**' for direct contents only
+      - '**README.md'  # Ignores README.md files in any directory
+  delete:
+    paths-ignore:  # Ignore changes in .github directory
+      - '**.github/**'  # Or use '.github/**' for direct contents only
+      - '**README.md'  # Ignores README.md files in any directory
+
+### Job Definition ############################################################
+# A single job handles both trigger types. It runs on ubuntu-latest because the
+# steps require Node.js, npm, curl, and jq—tools readily available on that
+# runner. The job executes only when the GitHub event matches one of the
+# expected combinations (closed PR or deleted branch).
+################################################################################
+jobs:
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'delete' && github.event.ref_type == 'branch')
+    steps:
+      - name: Checkout repository
+        # Required for accessing helper scripts (if added later) and ensures a
+        # consistent working directory even though the cleanup mostly uses API
+        # calls.
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        # Installs Node.js v20 so that npm and Wrangler can run consistently
+        # with the same versions used during deployment.
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        # Wrangler provides CLI helpers for interacting with Workers and D1.
+        # jq is used to parse JSON responses returned by the Cloudflare APIs.
+        run: |
+          npm install wrangler@4 --save-dev
+          sudo apt update -qq && sudo apt install -y jq -qq
+
+      - name: Determine branch cleanup target
+        # Calculates the sanitized identifier that was used when provisioning
+        # preview resources. This replicates the naming logic from the deploy
+        # workflow so the cleanup step targets the correct worker/database.
+        id: branch
+        run: |
+          sanitize() {
+            local raw="$1"
+            local lower=$(echo "$raw" | tr '[:upper:]' '[:lower:]')
+            local replaced=$(echo "$lower" | tr '/' '-')
+            local cleaned=$(echo "$replaced" | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+            if [ -z "$cleaned" ]; then
+              cleaned="preview"
+            fi
+            echo "$cleaned"
+          }
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RAW_BRANCH="pr-${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event_name }}" = "delete" ] && [ "${{ github.event.ref_type }}" = "branch" ]; then
+            RAW_BRANCH="${{ github.event.ref }}"
+          else
+            echo "Error: Unsupported event for cleanup: ${{ github.event_name }}" >&2
+            exit 1
+          fi
+
+          SANITIZED_BRANCH=$(sanitize "$RAW_BRANCH")
+          if [ -z "$SANITIZED_BRANCH" ]; then
+            echo "Error: Sanitized branch is empty." >&2
+            exit 1
+          fi
+
+          echo "sanitized=$SANITIZED_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Delete Preview Worker and D1 Database
+        # Connects to the Cloudflare API to remove the worker script and D1
+        # database associated with the sanitized branch name. The step performs
+        # defensive checks to avoid deleting unrelated resources and surfaces
+        # explicit error messages when credentials are missing or API calls
+        # fail.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: ${{ vars.WORKER_NAME }}
+          SANITIZED_BRANCH: ${{ steps.branch.outputs.sanitized }}
+        run: |
+          if [ -z "$WORKER_NAME" ]; then
+            echo "Error: WORKER_NAME is not set. Please define it in GitHub repository variables." >&2
+            exit 1
+          fi
+
+          PREVIEW_NAME="${SANITIZED_BRANCH}-${WORKER_NAME}"
+          PREVIEW_DB_NAME="$PREVIEW_NAME"
+
+          if curl -s -X GET "https://api.cloudflare.com/client/v4/user" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" | jq -e '.success' > /dev/null 2>&1; then
+            echo "Cloudflare authentication successful"
+
+            export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN"
+            export CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID"
+
+            WORKERS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json")
+            if echo "$WORKERS" | jq -e --arg name "$PREVIEW_NAME" '.result[] | select(.id == $name)' > /dev/null 2>&1; then
+              echo "Deleting preview Worker: $PREVIEW_NAME"
+              if curl -s -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PREVIEW_NAME" \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                -H "Content-Type: application/json"; then
+                echo "Preview Worker $PREVIEW_NAME deleted"
+              else
+                echo "Failed to delete preview Worker $PREVIEW_NAME"
+                exit 1
+              fi
+            else
+              echo "Preview Worker $PREVIEW_NAME not found, skipping deletion"
+            fi
+
+            D1_DBS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json")
+            if echo "$D1_DBS" | jq -e --arg name "$PREVIEW_DB_NAME" '.result[] | select(.name == $name)' > /dev/null 2>&1; then
+              echo "Deleting preview D1 database: $PREVIEW_DB_NAME"
+              if npx wrangler d1 delete "$PREVIEW_DB_NAME"; then
+                echo "Preview D1 database $PREVIEW_DB_NAME deleted"
+              else
+                echo "Failed to delete preview D1 database $PREVIEW_DB_NAME"
+                exit 1
+              fi
+            else
+              echo "Preview D1 database $PREVIEW_DB_NAME not found, skipping deletion"
+            fi
+          else
+            echo "Failed to authenticate with Cloudflare, skipping cleanup"
+            exit 1
+          fi
