@@ -43,13 +43,13 @@ jobs:
         uses: actions/checkout@v4
         # Details: Uses the latest checkout action (v4) to ensure the most recent repository state is available.
 
-      - name: Verify src/index.js exists
+      - name: Verify src/worker.js exists
         # Purpose: Ensures the main Worker script exists to prevent deployment failures.
         run: |
-          if [ -f "src/index.js" ]; then
-            echo "src/index.js found"
+          if [ -f "src/worker.js" ]; then
+            echo "src/worker.js found"
           else
-            echo "Error: src/index.js not found" >&2
+            echo "Error: src/worker.js not found" >&2
             exit 1
           fi
 
