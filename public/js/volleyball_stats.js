@@ -1016,6 +1016,10 @@ let playerSortMode = 'number';
       const opponentInput = document.getElementById('opponent').value.trim();
       const opponentName = opponentInput || 'Opponent';
       const select = document.getElementById('firstServer');
+      if (!select) return;
+
+      const previousValue = select.value;
+
       select.innerHTML = '';
       const stoneyCreekOption = document.createElement('option');
       stoneyCreekOption.value = 'Stoney Creek';
@@ -1025,6 +1029,13 @@ let playerSortMode = 'number';
       opponentOption.value = opponentName;
       opponentOption.textContent = opponentName;
       select.appendChild(opponentOption);
+
+      const normalizedPrevious = (previousValue || '').trim();
+      if (normalizedPrevious === 'Stoney Creek') {
+        select.value = 'Stoney Creek';
+      } else if (normalizedPrevious) {
+        select.value = opponentName;
+      }
     }
 
     function updateSetHeaders(opponentName, swapped) {
