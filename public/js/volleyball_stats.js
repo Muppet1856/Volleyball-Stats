@@ -1038,6 +1038,34 @@ let playerSortMode = 'number';
       }
     }
 
+    function setFirstServerSelection(value) {
+      const select = document.getElementById('firstServer');
+      if (!select) return;
+
+      const normalized = (value ?? '').trim();
+      if (!normalized) {
+        select.value = '';
+        return;
+      }
+
+      const exactMatch = Array.from(select.options).find(option => option.value === normalized);
+      if (exactMatch) {
+        select.value = normalized;
+        return;
+      }
+
+      const lowerNormalized = normalized.toLocaleLowerCase();
+      const caseInsensitiveMatch = Array.from(select.options).find(
+        option => option.value.toLocaleLowerCase() === lowerNormalized
+      );
+      if (caseInsensitiveMatch) {
+        select.value = caseInsensitiveMatch.value;
+        return;
+      }
+
+      select.value = '';
+    }
+
     function updateSetHeaders(opponentName, swapped) {
       const homeName = swapped ? opponentName : 'Stoney Creek';
       const awayName = swapped ? 'Stoney Creek' : opponentName;
@@ -1460,8 +1488,9 @@ let playerSortMode = 'number';
             applyJerseyColorToNumbers();
             document.getElementById('resultSC').value = match.resultSC ?? 0;
             document.getElementById('resultOpp').value = match.resultOpp ?? 0;
-            document.getElementById('firstServer').value = match.firstServer || '';
+            const storedFirstServer = match.firstServer || '';
             updateOpponentName();
+            setFirstServerSelection(storedFirstServer);
             updatePlayerList();
             for (let i = 1; i <= 5; i++) {
               const scInput = document.getElementById(`set${i}SC`);
