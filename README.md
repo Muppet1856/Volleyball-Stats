@@ -1,6 +1,6 @@
 # Volleyball Stats Cloudflare Deployment Guide
 
- [![GitHub Release](https://img.shields.io/github/v/release/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/releases) [![GitHub License](https://img.shields.io/github/license/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/blob/main/LICENSE) [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/issues) <!-- PREVIEW_BADGE_START -->[![preview](https://img.shields.io/badge/preview-production-purple?label=preview)](https://volleyball-stats.stoneyvolleyball.workers.dev)<!-- PREVIEW_BADGE_END -->
+ [![GitHub Release](https://img.shields.io/github/v/release/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/releases) [![GitHub License](https://img.shields.io/github/license/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/blob/main/LICENSE) [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/issues) <!-- PREVIEW_BADGE_START -->[![preview](https://img.shields.io/badge/preview-pr41-purple?label=preview)](https://pr-41-volleyball-stats.stoneyvolleyball.workers.dev)<!-- PREVIEW_BADGE_END -->
 
 This repository contains a Cloudflare Worker that serves a static single-page application from the `public/` directory and exposes a JSON API backed by a Cloudflare D1 database for managing volleyball players and matches.
 
