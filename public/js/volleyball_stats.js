@@ -1238,6 +1238,122 @@ let playerSortMode = 'number';
       purple: '#ffffff'
     };
 
+    const JERSEY_CONTRAST_RATIO_THRESHOLD = 3;
+
+    function parseCssColor(value) {
+      if (!value) return null;
+      const color = value.trim().toLowerCase();
+      if (!color) return null;
+      if (color === 'transparent') {
+        return { r: 0, g: 0, b: 0, a: 0 };
+      }
+      const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (hexMatch) {
+        let hex = hexMatch[1];
+        if (hex.length === 3) {
+          hex = hex.split('').map(char => char + char).join('');
+        }
+        const intVal = parseInt(hex, 16);
+        return {
+          r: (intVal >> 16) & 255,
+          g: (intVal >> 8) & 255,
+          b: intVal & 255,
+          a: 1
+        };
+      }
+      const rgbMatch = color.match(/^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)$/i);
+      if (rgbMatch) {
+        const [, r, g, b, a] = rgbMatch;
+        return {
+          r: Math.max(0, Math.min(255, parseFloat(r))),
+          g: Math.max(0, Math.min(255, parseFloat(g))),
+          b: Math.max(0, Math.min(255, parseFloat(b))),
+          a: a !== undefined ? Math.max(0, Math.min(1, parseFloat(a))) : 1
+        };
+      }
+      return null;
+    }
+
+    function relativeLuminance({ r, g, b }) {
+      const convertChannel = (channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928
+          ? normalized / 12.92
+          : Math.pow((normalized + 0.055) / 1.055, 2.4);
+      };
+      const rL = convertChannel(r);
+      const gL = convertChannel(g);
+      const bL = convertChannel(b);
+      return 0.2126 * rL + 0.7152 * gL + 0.0722 * bL;
+    }
+
+    function getContrastRatio(colorA, colorB) {
+      if (!colorA || !colorB) return Number.POSITIVE_INFINITY;
+      const lumA = relativeLuminance(colorA);
+      const lumB = relativeLuminance(colorB);
+      const lighter = Math.max(lumA, lumB);
+      const darker = Math.min(lumA, lumB);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    function getContrastingOutlineColor(color) {
+      if (!color) return '#000000';
+      const black = { r: 0, g: 0, b: 0 };
+      const white = { r: 255, g: 255, b: 255 };
+      const contrastWithBlack = getContrastRatio(color, black);
+      const contrastWithWhite = getContrastRatio(color, white);
+      return contrastWithBlack >= contrastWithWhite ? '#000000' : '#ffffff';
+    }
+
+    function getEffectiveBackgroundColor(element) {
+      let current = element ? element.parentElement : null;
+      while (current) {
+        const style = window.getComputedStyle(current);
+        const parsed = parseCssColor(style.backgroundColor);
+        if (parsed && parsed.a > 0) {
+          return parsed;
+        }
+        current = current.parentElement;
+      }
+      const bodyColor = parseCssColor(window.getComputedStyle(document.body).backgroundColor);
+      if (bodyColor && bodyColor.a > 0) return bodyColor;
+      const rootColor = parseCssColor(window.getComputedStyle(document.documentElement).backgroundColor);
+      if (rootColor && rootColor.a > 0) return rootColor;
+      return { r: 255, g: 255, b: 255, a: 1 };
+    }
+
+    function computeContrastOutlineColor(element, fillColor, fallbackColor) {
+      const parsedFill = parseCssColor(fillColor);
+      if (!element || !parsedFill) return fallbackColor;
+      const backgroundColor = getEffectiveBackgroundColor(element);
+      const contrast = getContrastRatio(parsedFill, backgroundColor);
+      if (!Number.isFinite(contrast) || contrast < JERSEY_CONTRAST_RATIO_THRESHOLD) {
+        return getContrastingOutlineColor(parsedFill);
+      }
+      return fallbackColor;
+    }
+
+    function getSwatchDefaultBorder(element) {
+      if (!element) return 'rgba(0, 0, 0, 0.175)';
+      if (!element.dataset.jerseyDefaultBorder) {
+        const computed = window.getComputedStyle(element).getPropertyValue('--jersey-swatch-border');
+        element.dataset.jerseyDefaultBorder = computed && computed.trim()
+          ? computed.trim()
+          : 'rgba(0, 0, 0, 0.175)';
+      }
+      return element.dataset.jerseyDefaultBorder;
+    }
+
+    function applySwatchStyles(swatchElement, color) {
+      if (!swatchElement) return;
+      const fallbackBorder = getSwatchDefaultBorder(swatchElement);
+      swatchElement.style.setProperty('--jersey-swatch-color', color);
+      swatchElement.style.backgroundColor = color;
+      const borderColor = computeContrastOutlineColor(swatchElement, color, fallbackBorder);
+      swatchElement.style.setProperty('--jersey-swatch-border', borderColor);
+      swatchElement.dataset.jerseySwatchColor = color;
+    }
+
     function getJerseyColorStyles(color) {
       const backgroundColor = jerseyColorValues[color] || color;
       const textColor = jerseyColorContrast[color] || '#ffffff';
@@ -1254,8 +1370,7 @@ let playerSortMode = 'number';
         triggerLabel.textContent = selectedOption.textContent;
       }
       if (triggerSwatch) {
-        triggerSwatch.style.setProperty('--jersey-swatch-color', swatchColor);
-        triggerSwatch.style.backgroundColor = swatchColor;
+        applySwatchStyles(triggerSwatch, swatchColor);
       }
       if (Array.isArray(optionButtons)) {
         optionButtons.forEach((button) => {
@@ -1263,6 +1378,12 @@ let playerSortMode = 'number';
           button.classList.toggle('is-active', isSelected);
           button.setAttribute('aria-selected', isSelected ? 'true' : 'false');
           button.setAttribute('tabindex', isSelected ? '0' : '-1');
+          const swatch = button._jerseySwatch || button.querySelector('.jersey-select-option-swatch');
+          if (swatch) {
+            const color = swatch.dataset.jerseySwatchColor || swatch.style.getPropertyValue('--jersey-swatch-color') || '#ffffff';
+            applySwatchStyles(swatch, color);
+            button._jerseySwatch = swatch;
+          }
         });
       }
     }
@@ -1327,6 +1448,7 @@ let playerSortMode = 'number';
 
       trigger.appendChild(triggerMain);
       container.appendChild(trigger);
+      getSwatchDefaultBorder(triggerSwatch);
 
       const triggerIdBase = selectElement.id || `jerseySelect${Date.now()}`;
       const triggerId = `${triggerIdBase}Trigger`;
@@ -1367,8 +1489,6 @@ let playerSortMode = 'number';
         const swatch = document.createElement('span');
         swatch.className = 'jersey-select-option-swatch';
         const swatchColor = option.dataset.color || jerseyColorValues[option.value] || '#ffffff';
-        swatch.style.setProperty('--jersey-swatch-color', swatchColor);
-        swatch.style.backgroundColor = swatchColor;
         optionButton.appendChild(swatch);
 
         const optionLabel = document.createElement('span');
@@ -1393,6 +1513,8 @@ let playerSortMode = 'number';
 
         listItem.appendChild(optionButton);
         menu.appendChild(listItem);
+        applySwatchStyles(swatch, swatchColor);
+        optionButton._jerseySwatch = swatch;
         return optionButton;
       });
 
@@ -1560,11 +1682,11 @@ let playerSortMode = 'number';
       if (!jerseySelect) return;
       updateJerseySelectDisplay(jerseySelect);
       const { backgroundColor, textColor } = getJerseyColorStyles(jerseySelect.value);
-      const borderColor = jerseySelect.value === 'white' ? '#000000' : 'transparent';
       document.querySelectorAll('.player-number-circle').forEach(circle => {
         circle.style.backgroundColor = backgroundColor;
         circle.style.color = textColor;
-        circle.style.borderColor = borderColor;
+        const computedBorder = computeContrastOutlineColor(circle, backgroundColor, 'transparent');
+        circle.style.borderColor = computedBorder;
       });
     }
 
@@ -1582,7 +1704,7 @@ let playerSortMode = 'number';
         const { backgroundColor, textColor } = getJerseyColorStyles(jerseyColor);
         numberCircle.style.backgroundColor = backgroundColor;
         numberCircle.style.color = textColor;
-        numberCircle.style.borderColor = jerseyColor === 'white' ? '#000000' : 'transparent';
+        numberCircle.style.borderColor = 'transparent';
         fragment.appendChild(numberCircle);
       }
 

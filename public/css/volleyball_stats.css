@@ -318,12 +318,20 @@ body.score-modal-open {
 
 .jersey-select-trigger .jersey-select-swatch {
   --jersey-swatch-border: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.175));
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--jersey-swatch-border);
-  background-color: var(--jersey-swatch-color, transparent);
+  --jersey-shirt-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Cpath fill=%27%23000%27 d=%27M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z%27/%3E%3C/svg%3E");
+  width: 1.75rem;
+  height: 1.75rem;
   flex: 0 0 auto;
+  background-color: var(--jersey-swatch-color, transparent);
+  -webkit-mask-image: var(--jersey-shirt-mask);
+  mask-image: var(--jersey-shirt-mask);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  filter: drop-shadow(0 0 0.05rem var(--jersey-swatch-border));
 }
 
 .jersey-select-menu {
@@ -371,12 +379,20 @@ body.score-modal-open {
 
 .jersey-select-option .jersey-select-option-swatch {
   --jersey-swatch-border: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.175));
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 999px;
-  border: 1px solid var(--jersey-swatch-border);
-  background-color: var(--jersey-swatch-color, transparent);
+  --jersey-shirt-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Cpath fill=%27%23000%27 d=%27M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z%27/%3E%3C/svg%3E");
+  width: 1.5rem;
+  height: 1.5rem;
   flex: 0 0 auto;
+  background-color: var(--jersey-swatch-color, transparent);
+  -webkit-mask-image: var(--jersey-shirt-mask);
+  mask-image: var(--jersey-shirt-mask);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  filter: drop-shadow(0 0 0.05rem var(--jersey-swatch-border));
 }
 
 .jersey-select-option .jersey-select-option-label {
