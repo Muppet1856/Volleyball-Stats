@@ -1,4 +1,4 @@
-import { notFound } from './api/responses.js';
+import { methodNotAllowed, notFound } from './api/responses.js';
 import { routeMatchById, routeMatches } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
 
@@ -20,6 +20,14 @@ export default {
 function handleApiRequest(request, env, pathname) {
   if (pathname === '/api/matches') {
     return routeMatches(request, env);
+  }
+
+  if (pathname === '/api/config') {
+    if (request.method.toUpperCase() !== 'GET') {
+      return methodNotAllowed(['GET']);
+    }
+    const homeTeam = (env?.HOME_TEAM ?? 'Home Team').toString();
+    return Response.json({ homeTeam });
   }
 
   const matchId = pathname.match(MATCH_ID_PATTERN);
