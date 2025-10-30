@@ -1285,6 +1285,16 @@ let playerSortMode = 'number';
       return null;
     }
 
+    function toCssRgba(color, alphaOverride) {
+      const parsed = typeof color === 'string' ? parseCssColor(color) : color;
+      if (!parsed) return null;
+      const { r, g, b } = parsed;
+      const baseAlpha = typeof parsed.a === 'number' ? parsed.a : 1;
+      const resolvedAlpha = alphaOverride !== undefined ? alphaOverride : baseAlpha;
+      const clampedAlpha = Math.max(0, Math.min(1, resolvedAlpha));
+      return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${clampedAlpha})`;
+    }
+
     function relativeLuminance({ r, g, b }) {
       const convertChannel = (channel) => {
         const normalized = channel / 255;
@@ -1361,7 +1371,20 @@ let playerSortMode = 'number';
       swatchElement.style.setProperty('--jersey-swatch-color', color);
       swatchElement.style.backgroundColor = color;
       const borderColor = computeContrastOutlineColor(swatchElement, color, fallbackBorder);
-      swatchElement.style.setProperty('--jersey-swatch-border', borderColor);
+      const borderCss = toCssRgba(borderColor) || fallbackBorder;
+      swatchElement.style.setProperty('--jersey-swatch-border', borderCss);
+      const parsedBorder = parseCssColor(borderCss);
+      if (parsedBorder) {
+        const highlightHex = getContrastingOutlineColor(parsedBorder);
+        const highlightCss = toCssRgba(highlightHex, highlightHex === '#ffffff' ? 0.85 : 0.7);
+        if (highlightCss) {
+          swatchElement.style.setProperty('--jersey-swatch-outline-highlight', highlightCss);
+        } else {
+          swatchElement.style.removeProperty('--jersey-swatch-outline-highlight');
+        }
+      } else {
+        swatchElement.style.removeProperty('--jersey-swatch-outline-highlight');
+      }
       swatchElement.dataset.jerseySwatchColor = color;
     }
 
