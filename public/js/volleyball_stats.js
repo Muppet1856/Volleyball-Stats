@@ -1221,6 +1221,9 @@ let playerSortMode = 'number';
       applyJerseyColorToNumbers();
     }
 
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const JERSEY_SWATCH_PATH_DATA = 'M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z';
+
     const jerseyColorValues = {
       white: '#ffffff',
       grey: '#808080',
@@ -1285,6 +1288,16 @@ let playerSortMode = 'number';
       return null;
     }
 
+    function toCssRgba(color, alphaOverride) {
+      const parsed = typeof color === 'string' ? parseCssColor(color) : color;
+      if (!parsed) return null;
+      const { r, g, b } = parsed;
+      const baseAlpha = typeof parsed.a === 'number' ? parsed.a : 1;
+      const resolvedAlpha = alphaOverride !== undefined ? alphaOverride : baseAlpha;
+      const clampedAlpha = Math.max(0, Math.min(1, resolvedAlpha));
+      return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${clampedAlpha})`;
+    }
+
     function relativeLuminance({ r, g, b }) {
       const convertChannel = (channel) => {
         const normalized = channel / 255;
@@ -1333,35 +1346,95 @@ let playerSortMode = 'number';
       return { r: 255, g: 255, b: 255, a: 1 };
     }
 
+    function softenOutlineForBackground(baseColor, backgroundColor, fillColor) {
+      const parsedBase = typeof baseColor === 'string' ? parseCssColor(baseColor) : baseColor;
+      if (!parsedBase) return baseColor;
+      const parsedBackground = typeof backgroundColor === 'string'
+        ? parseCssColor(backgroundColor)
+        : backgroundColor;
+      const parsedFill = typeof fillColor === 'string' ? parseCssColor(fillColor) : fillColor;
+      const backgroundLum = parsedBackground ? relativeLuminance(parsedBackground) : 0.5;
+      const fillLum = parsedFill ? relativeLuminance(parsedFill) : null;
+      const isNearBlack = parsedBase.r < 32 && parsedBase.g < 32 && parsedBase.b < 32;
+      const isNearWhite = parsedBase.r > 223 && parsedBase.g > 223 && parsedBase.b > 223;
+      if (isNearBlack && backgroundLum > 0.6) {
+        const targetAlpha = fillLum != null && fillLum > backgroundLum ? 0.45 : 0.55;
+        return toCssRgba(parsedBase, targetAlpha) || baseColor;
+      }
+      if (isNearWhite && backgroundLum < 0.4) {
+        const targetAlpha = fillLum != null && fillLum < backgroundLum ? 0.55 : 0.7;
+        return toCssRgba(parsedBase, targetAlpha) || baseColor;
+      }
+      return baseColor;
+    }
+
     function computeContrastOutlineColor(element, fillColor, fallbackColor) {
       const parsedFill = parseCssColor(fillColor);
       if (!element || !parsedFill) return fallbackColor;
       const backgroundColor = getEffectiveBackgroundColor(element);
       const contrast = getContrastRatio(parsedFill, backgroundColor);
       if (!Number.isFinite(contrast) || contrast < JERSEY_CONTRAST_RATIO_THRESHOLD) {
-        return getContrastingOutlineColor(parsedFill);
+        const baseColor = getContrastingOutlineColor(parsedFill);
+        const softened = softenOutlineForBackground(baseColor, backgroundColor, parsedFill);
+        return softened || baseColor;
       }
       return fallbackColor;
     }
 
-    function getSwatchDefaultBorder(element) {
-      if (!element) return 'rgba(0, 0, 0, 0.175)';
-      if (!element.dataset.jerseyDefaultBorder) {
-        const computed = window.getComputedStyle(element).getPropertyValue('--jersey-swatch-border');
-        element.dataset.jerseyDefaultBorder = computed && computed.trim()
-          ? computed.trim()
-          : 'rgba(0, 0, 0, 0.175)';
-      }
-      return element.dataset.jerseyDefaultBorder;
+    function ensureJerseySwatchGraphic(swatchElement) {
+      if (!swatchElement) return null;
+      if (swatchElement._jerseyGraphic) return swatchElement._jerseyGraphic;
+
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 64 64');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('focusable', 'false');
+      svg.classList.add('jersey-swatch-icon');
+
+      const outlinePath = document.createElementNS(SVG_NS, 'path');
+      outlinePath.setAttribute('d', JERSEY_SWATCH_PATH_DATA);
+      outlinePath.classList.add('jersey-swatch-outline');
+
+      const bodyPath = document.createElementNS(SVG_NS, 'path');
+      bodyPath.setAttribute('d', JERSEY_SWATCH_PATH_DATA);
+      bodyPath.classList.add('jersey-swatch-body');
+
+      svg.append(outlinePath, bodyPath);
+
+      swatchElement.textContent = '';
+      swatchElement.appendChild(svg);
+
+      const graphic = {
+        svg,
+        outlinePath,
+        bodyPath
+      };
+
+      swatchElement._jerseyGraphic = graphic;
+      return graphic;
     }
 
     function applySwatchStyles(swatchElement, color) {
       if (!swatchElement) return;
-      const fallbackBorder = getSwatchDefaultBorder(swatchElement);
+      const graphic = ensureJerseySwatchGraphic(swatchElement);
       swatchElement.style.setProperty('--jersey-swatch-color', color);
-      swatchElement.style.backgroundColor = color;
-      const borderColor = computeContrastOutlineColor(swatchElement, color, fallbackBorder);
-      swatchElement.style.setProperty('--jersey-swatch-border', borderColor);
+      swatchElement.style.removeProperty('--jersey-swatch-border');
+      swatchElement.style.removeProperty('--jersey-swatch-outline-highlight');
+      if (graphic) {
+        const { svg, outlinePath, bodyPath } = graphic;
+        if (svg) {
+          svg.style.setProperty('--jersey-swatch-color', color);
+          svg.style.removeProperty('--jersey-swatch-border');
+          svg.style.removeProperty('--jersey-swatch-outline-highlight');
+        }
+        if (outlinePath) {
+          outlinePath.removeAttribute('stroke');
+        }
+        if (bodyPath) {
+          bodyPath.setAttribute('fill', color);
+          bodyPath.removeAttribute('stroke');
+        }
+      }
       swatchElement.dataset.jerseySwatchColor = color;
     }
 
