@@ -147,6 +147,9 @@ let playerSortMode = 'number';
     let hasPendingChanges = false;
     let openJerseySelectInstance = null;
     let scoreGameModalInstance = null;
+    let jerseyConflictModalInstance = null;
+    let jerseyConflictModalMessageElement = null;
+    let isResolvingJerseyColorConflict = false;
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
     const TIMEOUT_COUNT = 2;
     const TIMEOUT_DURATION_SECONDS = 60;
@@ -1046,9 +1049,15 @@ let playerSortMode = 'number';
       });
     }
 
+    function getOpponentTeamName() {
+      const opponentInput = document.getElementById('opponent');
+      if (!opponentInput) return 'Opponent';
+      const trimmed = opponentInput.value.trim();
+      return trimmed || 'Opponent';
+    }
+
     function updateOpponentName() {
-      const opponentInput = document.getElementById('opponent').value.trim();
-      const opponentName = opponentInput || 'Opponent';
+      const opponentName = getOpponentTeamName();
       const jerseyColorOppLabel = document.getElementById('jerseyColorOppLabel');
       const resultOppLabel = document.getElementById('resultOppLabel');
       if (jerseyColorOppLabel) jerseyColorOppLabel.textContent = `Jersey Color (${opponentName})`;
@@ -1238,6 +1247,8 @@ let playerSortMode = 'number';
       purple: '#ffffff'
     };
 
+    const JERSEY_CONFLICT_NOTE = 'If both teams have the same color, choose the libero color.';
+
     const JERSEY_CONTRAST_RATIO_THRESHOLD = 3;
 
     function parseCssColor(value) {
@@ -1391,6 +1402,81 @@ let playerSortMode = 'number';
     function refreshJerseySelectDisplays() {
       updateJerseySelectDisplay(document.getElementById('jerseyColorSC'));
       updateJerseySelectDisplay(document.getElementById('jerseyColorOpp'));
+    }
+
+    function getJerseyColorLabel(selectElement, value) {
+      if (!selectElement) return value;
+      const option = Array.from(selectElement.options || []).find(opt => opt.value === value);
+      return option ? option.textContent.trim() : value;
+    }
+
+    function findAlternativeJerseyColor(selectElement, forbiddenValue) {
+      if (!selectElement) return null;
+      const options = Array.from(selectElement.options || []);
+      if (options.length === 0) return null;
+      const startIndex = Math.max(0, options.findIndex(option => option.value === forbiddenValue));
+      for (let offset = 1; offset <= options.length; offset++) {
+        const option = options[(startIndex + offset) % options.length];
+        if (!option || option.disabled || option.value === forbiddenValue) continue;
+        return option.value;
+      }
+      return null;
+    }
+
+    function setJerseyConflictMessage({ conflictColorLabel, changedTeamName, adjustedTeamName, replacementColorLabel }) {
+      if (!jerseyConflictModalMessageElement) return;
+      let message = `Jersey colors must be different. ${JERSEY_CONFLICT_NOTE}`;
+      if (changedTeamName && adjustedTeamName && conflictColorLabel) {
+        if (replacementColorLabel) {
+          message = `${changedTeamName} and ${adjustedTeamName} cannot both wear ${conflictColorLabel} jerseys. ${adjustedTeamName}'s jersey color has been changed to ${replacementColorLabel}. ${JERSEY_CONFLICT_NOTE}`;
+        } else {
+          message = `${changedTeamName} and ${adjustedTeamName} cannot both wear ${conflictColorLabel} jerseys. Please choose another color for ${adjustedTeamName}. ${JERSEY_CONFLICT_NOTE}`;
+        }
+      }
+      jerseyConflictModalMessageElement.textContent = message;
+    }
+
+    function ensureDistinctJerseyColors(changedSelect, { showModal = true } = {}) {
+      if (isResolvingJerseyColorConflict) return;
+      const homeSelect = document.getElementById('jerseyColorSC');
+      const opponentSelect = document.getElementById('jerseyColorOpp');
+      if (!homeSelect || !opponentSelect) return;
+
+      const homeValue = homeSelect.value;
+      const opponentValue = opponentSelect.value;
+      if (!homeValue || !opponentValue || homeValue !== opponentValue) return;
+
+      const isOpponentChanged = changedSelect === opponentSelect;
+      const activeSelect = changedSelect && (changedSelect === homeSelect || changedSelect === opponentSelect)
+        ? changedSelect
+        : homeSelect;
+      const otherSelect = isOpponentChanged ? homeSelect : opponentSelect;
+      const changedTeamName = activeSelect === opponentSelect ? getOpponentTeamName() : getHomeTeamName();
+      const adjustedTeamName = otherSelect === opponentSelect ? getOpponentTeamName() : getHomeTeamName();
+      const conflictColorLabel = getJerseyColorLabel(activeSelect, activeSelect.value);
+
+      const replacementValue = findAlternativeJerseyColor(otherSelect, activeSelect.value);
+      let replacementLabel = '';
+      if (replacementValue) {
+        isResolvingJerseyColorConflict = true;
+        try {
+          otherSelect.value = replacementValue;
+          otherSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        } finally {
+          isResolvingJerseyColorConflict = false;
+        }
+        replacementLabel = getJerseyColorLabel(otherSelect, replacementValue);
+      }
+
+      if (showModal && jerseyConflictModalInstance) {
+        setJerseyConflictMessage({
+          conflictColorLabel,
+          changedTeamName,
+          adjustedTeamName,
+          replacementColorLabel: replacementLabel
+        });
+        jerseyConflictModalInstance.show();
+      }
     }
 
     function closeOpenJerseySelect(options) {
@@ -1635,6 +1721,9 @@ let playerSortMode = 'number';
         updateJerseySelectDisplay(selectElement);
         if (applyToNumbers) {
           applyJerseyColorToNumbers();
+        }
+        if (!isResolvingJerseyColorConflict) {
+          ensureDistinctJerseyColors(selectElement);
         }
       });
 
@@ -1995,6 +2084,7 @@ let playerSortMode = 'number';
             document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
             document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
             refreshJerseySelectDisplays();
+            ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
             applyJerseyColorToNumbers();
             document.getElementById('resultSC').value = match.resultSC ?? 0;
             document.getElementById('resultOpp').value = match.resultOpp ?? 0;
@@ -2185,6 +2275,7 @@ let playerSortMode = 'number';
       updateOpponentName();
       updateFirstServeOptions();
       refreshJerseySelectDisplays();
+      ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
       applyJerseyColorToNumbers();
       setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
 
@@ -2208,8 +2299,14 @@ let playerSortMode = 'number';
         updateOpponentName();
         scheduleAutoSave();
       });
+      jerseyConflictModalMessageElement = document.getElementById('jerseyConflictModalMessage');
+      const jerseyConflictModalElement = document.getElementById('jerseyConflictModal');
+      if (jerseyConflictModalElement) {
+        jerseyConflictModalInstance = new bootstrap.Modal(jerseyConflictModalElement);
+      }
       initializeJerseySelect(document.getElementById('jerseyColorSC'), { applyToNumbers: true });
       initializeJerseySelect(document.getElementById('jerseyColorOpp'));
+      ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
       const sortToggleBtn = document.getElementById('playerSortToggleBtn');
       if (sortToggleBtn) {
         sortToggleBtn.addEventListener('click', () => {
