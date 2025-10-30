@@ -317,7 +317,8 @@ body.score-modal-open {
 }
 
 .jersey-select-trigger .jersey-select-swatch {
-  --jersey-swatch-border: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.175));
+  --jersey-swatch-border: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.35));
+  --jersey-swatch-outline-highlight: rgba(255, 255, 255, 0.85);
   --jersey-shirt-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Cpath fill=%27%23000%27 d=%27M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z%27/%3E%3C/svg%3E");
   width: 1.75rem;
   height: 1.75rem;
@@ -331,7 +332,8 @@ body.score-modal-open {
   mask-position: center;
   -webkit-mask-size: contain;
   mask-size: contain;
-  filter: drop-shadow(0 0 0.05rem var(--jersey-swatch-border));
+  filter: drop-shadow(0 0 0.08rem var(--jersey-swatch-outline-highlight))
+    drop-shadow(0 0 0.18rem var(--jersey-swatch-border));
 }
 
 .jersey-select-menu {
@@ -378,7 +380,8 @@ body.score-modal-open {
 }
 
 .jersey-select-option .jersey-select-option-swatch {
-  --jersey-swatch-border: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.175));
+  --jersey-swatch-border: var(--bs-border-color-translucent, rgba(0, 0, 0, 0.35));
+  --jersey-swatch-outline-highlight: rgba(255, 255, 255, 0.85);
   --jersey-shirt-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Cpath fill=%27%23000%27 d=%27M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z%27/%3E%3C/svg%3E");
   width: 1.5rem;
   height: 1.5rem;
@@ -392,7 +395,8 @@ body.score-modal-open {
   mask-position: center;
   -webkit-mask-size: contain;
   mask-size: contain;
-  filter: drop-shadow(0 0 0.05rem var(--jersey-swatch-border));
+  filter: drop-shadow(0 0 0.08rem var(--jersey-swatch-outline-highlight))
+    drop-shadow(0 0 0.18rem var(--jersey-swatch-border));
 }
 
 .jersey-select-option .jersey-select-option-label {
