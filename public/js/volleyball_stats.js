@@ -1428,9 +1428,9 @@ let playerSortMode = 'number';
       let message = `Jersey colors must be different. ${JERSEY_CONFLICT_NOTE}`;
       if (changedTeamName && adjustedTeamName && conflictColorLabel) {
         if (replacementColorLabel) {
-          message = `${changedTeamName} and ${adjustedTeamName} cannot both wear ${conflictColorLabel} jerseys. ${adjustedTeamName}'s jersey color has been changed to ${replacementColorLabel}. ${JERSEY_CONFLICT_NOTE}`;
+          message = `${changedTeamName} and ${adjustedTeamName} cannot both have ${conflictColorLabel} jerseys. ${adjustedTeamName}'s jersey color has been changed to ${replacementColorLabel}. ${JERSEY_CONFLICT_NOTE}`;
         } else {
-          message = `${changedTeamName} and ${adjustedTeamName} cannot both wear ${conflictColorLabel} jerseys. Please choose another color for ${adjustedTeamName}. ${JERSEY_CONFLICT_NOTE}`;
+          message = `${changedTeamName} and ${adjustedTeamName} cannot both have ${conflictColorLabel} jerseys. Please choose another color for ${adjustedTeamName}. ${JERSEY_CONFLICT_NOTE}`;
         }
       }
       jerseyConflictModalMessageElement.textContent = message;
