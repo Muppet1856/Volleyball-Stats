@@ -47,18 +47,12 @@ jobs:
           [ -f "src/index.js" ] || (echo "Error: src/index.js missing" >&2; exit 1)
 
       # ————————————————————————
-      # Install Tools + GitHub CLI
+      # Install Tools
       # ————————————————————————
       - name: Install tools
         run: |
           npm install wrangler@4 --save-dev
           sudo apt update -qq && sudo apt install -y jq -qq
-
-      - name: Install GitHub CLI
-        run: |
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update -qq && sudo apt install -y gh -qq
 
       # ————————————————————————
       # Determine Deploy Type & Badge Label
@@ -131,7 +125,7 @@ jobs:
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
 
       # ————————————————————————
-      # Resolve Worker Host (custom domain to workers.dev)
+      # Resolve Worker Host
       # ————————————————————————
       - name: Resolve Worker Host
         if: steps.cfg.outputs.type != 'skip'
@@ -156,7 +150,7 @@ jobs:
             echo "No custom domain – falling back to workers.dev"
           fi
 
-          BASE_NAME="${FINAL_WORKER_NAME}"
+          BASE_NAME="${{ env.WORKER_NAME }}"
 
           if [ -n "$DOMAIN_HOST" ]; then
             if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
@@ -251,7 +245,7 @@ jobs:
             });
 
       # ————————————————————————
-      # Update README Badge — SHIELD.IO (Bash only)
+      # Update README Badge — "Preview" text on badge
       # ————————————————————————
       - name: Update README Preview Badge
         if: steps.cfg.outputs.type != 'skip'
@@ -259,11 +253,12 @@ jobs:
           set -euo pipefail
 
           URL="${{ env.PREVIEW_URL }}"
-          LABEL="${{ steps.cfg.outputs.badge_label }}"
-          ENCODED_LABEL=$(printf '%s' "$LABEL" | jq -rR '@uri')
+          LABEL="${{ steps.cfg.outputs.badge_label }}"  # e.g., "pr-82"
+          CLEAN_LABEL=$(echo "$LABEL" | tr -d '-')       # → "pr82"
 
-          SHIELD_URL="https://img.shields.io/badge/preview-${ENCODED_LABEL}-purple?link=${URL}"
-          BADGE="[![](${SHIELD_URL})](${URL})"
+          # NO DASHES in message
+          SHIELD_URL="https://img.shields.io/badge/preview-${CLEAN_LABEL}-purple?label=preview"
+          BADGE="[![preview](${SHIELD_URL})](${URL})"
 
           START="<!-- PREVIEW_BADGE_START -->"
           END="<!-- PREVIEW_BADGE_END -->"
@@ -283,7 +278,7 @@ jobs:
 
           if ! cmp -s "$FILE" "$FILE.tmp"; then
             mv "$FILE.tmp" "$FILE"
-            echo "Badge updated: preview-${LABEL} to $URL"
+            echo "Badge updated: preview-${CLEAN_LABEL} → $URL"
           else
             rm "$FILE.tmp"
             echo "Badge already up-to-date"
@@ -294,7 +289,7 @@ jobs:
           }
 
       # ————————————————————————
-      # Commit README Update (PR-safe push)
+      # Commit README Update
       # ————————————————————————
       - name: Commit README Update
         if: steps.cfg.outputs.type != 'skip'
@@ -310,13 +305,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PR_NUMBER=${{ github.event.pull_request.number }}
-            BRANCH_NAME=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.head.ref')
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
             echo "Pushing to PR branch: $BRANCH_NAME"
 
             git add README.md
-            git commit -m "docs: update preview badge for pr-${{ steps.cfg.outputs.badge_label }}"
-            git push origin HEAD:refs/heads/$BRANCH_NAME
+            git commit -m "docs: update preview badge for ${{ steps.cfg.outputs.badge_label }}"
+            git push origin HEAD:refs/heads/$BRANCH_NAME --force
           else
             git add README.md
             git commit -m "docs: update preview badge for ${{ steps.cfg.outputs.badge_label }}"
