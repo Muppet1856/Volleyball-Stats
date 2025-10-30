@@ -103,11 +103,26 @@ jobs:
           fi
 
       # ————————————————————————
-      # Setup wrangler.toml
+      # Validate Cloudflare credentials early
       # ————————————————————————
-      - name: Setup wrangler.toml
+      - name: Validate Cloudflare credentials
         if: steps.cfg.outputs.type != 'skip'
         run: |
+          set -euo pipefail
+          echo "Validating Cloudflare API token..."
+          npx wrangler whoami || {
+            echo "Error: wrangler whoami failed. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID." >&2
+            exit 1
+          }
+
+      # ————————————————————————
+      # Setup wrangler.toml + Smart Assets Detection (fixed Bash gotcha)
+      # ————————————————————————
+      - name: Setup wrangler.toml with smart assets
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
           if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
             FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
           else
@@ -121,8 +136,34 @@ jobs:
           compatibility_date = "${COMPAT_DATE}"
           EOF
 
-          [ -d public ] && echo 'assets = { directory = "public" }' >> wrangler.toml
+          # ——— Detect assets: public → dist → build (only ONE allowed) ———
+          CANDIDATES=("public" "dist" "build")
+          FOUND=()
+          SELECTED=""
+
+          for dir in "${CANDIDATES[@]}"; do
+            if [ -d "$dir" ]; then
+              FOUND+=("$dir")
+            fi
+          done
+
+          if [ ${#FOUND[@]} -gt 1 ]; then
+            echo "ERROR: Multiple asset directories found: ${FOUND[*]}" >&2
+            echo "Only one of 'public', 'dist', or 'build' is allowed." >&2
+            echo "Remove or rename the extras." >&2
+            exit 1
+          elif [ ${#FOUND[@]} -eq 1 ]; then
+            SELECTED="${FOUND[0]}"
+            echo "assets = { directory = \"$SELECTED\" }" >> wrangler.toml
+            echo "Using assets directory: $SELECTED"
+          else
+            echo "No assets directory found (public/dist/build) – skipping assets binding."
+          fi
+
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
+          if [ -n "$SELECTED" ]; then
+            echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
+          fi
 
       # ————————————————————————
       # Resolve Worker Host
@@ -181,6 +222,8 @@ jobs:
       - name: Create/Get D1 + Bind
         if: steps.cfg.outputs.type != 'skip'
         run: |
+          set -euo pipefail
+
           DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
           DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
             echo "$WORKER_NAME"
@@ -188,7 +231,6 @@ jobs:
             echo "${DEPLOY_ENV}-${WORKER_NAME}"
           fi)
 
-          npx wrangler whoami
           DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
 
           if [ -z "$DB_ID" ]; then
@@ -214,10 +256,59 @@ jobs:
       - name: Apply Migrations
         if: steps.cfg.outputs.type != 'skip'
         run: |
+          set -euo pipefail
+
           shopt -s nullglob
           for f in migrations/*.sql; do
             npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
           done
+
+      # ————————————————————————
+      # Load env vars from .cloudflare/vars.json → wrangler.toml
+      # ————————————————————————
+      - name: Inject .cloudflare/vars.json into wrangler.toml
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
+          VARS_JSON=".cloudflare/vars.json"
+          TOML="wrangler.toml"
+
+          # -----------------------------------------------------------------
+          # 1. Bail out early if the file does not exist
+          # -----------------------------------------------------------------
+          if [[ ! -f "$VARS_JSON" ]]; then
+            echo "No $VARS_JSON found – nothing to inject."
+            exit 0
+          fi
+
+          # -----------------------------------------------------------------
+          # 2. Validate JSON
+          # -----------------------------------------------------------------
+          if ! jq empty "$VARS_JSON" >/dev/null 2>&1; then
+            echo "Error: $VARS_JSON contains invalid JSON" >&2
+            exit 1
+          fi
+
+          # -----------------------------------------------------------------
+          # 3. Remove any previous injection (keeps the file tidy on re-runs)
+          # -----------------------------------------------------------------
+          sed -i '/^# --- BEGIN INJECTED VARS ---$/,/^# --- END INJECTED VARS ---$/d' "$TOML" 2>/dev/null || true
+
+          # -----------------------------------------------------------------
+          # 4. Append the new block
+          # -----------------------------------------------------------------
+          {
+            echo "# --- BEGIN INJECTED VARS ---"
+            echo "[vars]"
+            # Quote every value and escape inner quotes
+            jq -r 'to_entries[] |
+                   "\(.key) = \"\(.value | gsub("\""; "\\\""))\""' "$VARS_JSON"
+            echo "# --- END INJECTED VARS ---"
+          } >> "$TOML"
+
+          COUNT=$(jq 'keys | length' "$VARS_JSON")
+          echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
 
       # ————————————————————————
       # Deploy Worker
@@ -228,6 +319,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy ${{ steps.vars.outputs.var_flags }}
 
       # ————————————————————————
       # Comment on PR
@@ -245,7 +337,7 @@ jobs:
             });
 
       # ————————————————————————
-      # Update README Badge — "Preview" text on badge
+      # Update README Badge
       # ————————————————————————
       - name: Update README Preview Badge
         if: steps.cfg.outputs.type != 'skip'
@@ -253,10 +345,8 @@ jobs:
           set -euo pipefail
 
           URL="${{ env.PREVIEW_URL }}"
-          LABEL="${{ steps.cfg.outputs.badge_label }}"  # e.g., "pr-82"
-          CLEAN_LABEL=$(echo "$LABEL" | tr -d '-')       # → "pr82"
-
-          # NO DASHES in message
+          LABEL="${{ steps.cfg.outputs.badge_label }}"
+          CLEAN_LABEL=$(echo "$LABEL" | tr -d '-')
           SHIELD_URL="https://img.shields.io/badge/preview-${CLEAN_LABEL}-purple?label=preview"
           BADGE="[![preview](${SHIELD_URL})](${URL})"
 
@@ -278,7 +368,7 @@ jobs:
 
           if ! cmp -s "$FILE" "$FILE.tmp"; then
             mv "$FILE.tmp" "$FILE"
-            echo "Badge updated: preview-${CLEAN_LABEL} → $URL"
+            echo "Badge updated: preview-${CLEAN_LABEL} to $URL"
           else
             rm "$FILE.tmp"
             echo "Badge already up-to-date"
@@ -307,7 +397,6 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
             echo "Pushing to PR branch: $BRANCH_NAME"
-
             git add README.md
             git commit -m "docs: update preview badge for ${{ steps.cfg.outputs.badge_label }}"
             git push origin HEAD:refs/heads/$BRANCH_NAME --force
