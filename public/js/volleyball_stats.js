@@ -2,6 +2,49 @@ var gk_isXlsx = false;
 var gk_xlsxFileLookup = {};
 var gk_fileData = {};
 
+const HOME_TEAM_FALLBACK = 'Home Team';
+const HOME_TEAM_TEMPLATE_PATTERN = /\{homeTeam\}/g;
+let homeTeamName = HOME_TEAM_FALLBACK;
+
+function getHomeTeamName() {
+  return homeTeamName || HOME_TEAM_FALLBACK;
+}
+
+function applyHomeTeamTemplates(homeName) {
+  document.querySelectorAll('[data-home-team-template]').forEach((element) => {
+    const template = element.getAttribute('data-home-team-template');
+    if (typeof template === 'string') {
+      element.textContent = template.replace(HOME_TEAM_TEMPLATE_PATTERN, () => homeName);
+    }
+  });
+}
+
+async function initializeHomeTeam() {
+  let configuredName = '';
+  try {
+    const response = await fetch('/api/config', { headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const data = await response.json();
+      const candidate = typeof data?.homeTeam === 'string' ? data.homeTeam.trim() : '';
+      if (candidate) {
+        configuredName = candidate;
+      }
+    }
+  } catch (error) {
+    console.warn('Unable to load home team configuration', error);
+  }
+  homeTeamName = configuredName || HOME_TEAM_FALLBACK;
+  updateHomeTeamUI();
+}
+
+function updateHomeTeamUI() {
+  const homeName = getHomeTeamName();
+  applyHomeTeamTemplates(homeName);
+  if (typeof updateOpponentName === 'function') {
+    updateOpponentName();
+  }
+}
+
 function filledCell(cell) {
   return cell !== '' && cell != null;
 }
@@ -457,12 +500,12 @@ let playerSortMode = 'number';
     }
 
     function getTimeoutTeamName(team) {
-      const stoneyHeaderId = isSwapped ? 'oppHeader' : 'scHeader';
+      const homeTeamHeaderId = isSwapped ? 'oppHeader' : 'scHeader';
       const opponentHeaderId = isSwapped ? 'scHeader' : 'oppHeader';
       if (team === 'opp') {
         return getTeamHeaderName(opponentHeaderId, 'Opponent');
       }
-      return getTeamHeaderName(stoneyHeaderId, 'Stoney Creek');
+      return getTeamHeaderName(homeTeamHeaderId, getHomeTeamName());
     }
 
     function getTimeoutOrdinalLabel(index) {
@@ -623,6 +666,7 @@ let playerSortMode = 'number';
       if (container) {
         const buttons = container.querySelectorAll('.timeout-box');
         const teamName = getTimeoutTeamName(team);
+        container.setAttribute('aria-label', `${teamName} timeouts`);
         const isRunning = Boolean(scoreGameState.timeoutTimers[team]);
         const activeIndex = scoreGameState.activeTimeout[team];
         buttons.forEach(button => {
@@ -795,7 +839,7 @@ let playerSortMode = 'number';
     function updateScoreModalLabels() {
       const leftLabel = document.getElementById('scoreGameLeftLabel');
       const rightLabel = document.getElementById('scoreGameRightLabel');
-      const leftName = getTeamHeaderName('scHeader', 'Stoney Creek');
+      const leftName = getTeamHeaderName('scHeader', getHomeTeamName());
       const rightName = getTeamHeaderName('oppHeader', 'Opponent');
       if (leftLabel) leftLabel.textContent = leftName;
       if (rightLabel) rightLabel.textContent = rightName;
@@ -1021,18 +1065,22 @@ let playerSortMode = 'number';
       const previousValue = select.value;
 
       select.innerHTML = '';
-      const stoneyCreekOption = document.createElement('option');
-      stoneyCreekOption.value = 'Stoney Creek';
-      stoneyCreekOption.textContent = 'Stoney Creek';
-      select.appendChild(stoneyCreekOption);
+      const homeName = getHomeTeamName();
+      const homeOption = document.createElement('option');
+      homeOption.value = homeName;
+      homeOption.textContent = homeName;
+      select.appendChild(homeOption);
       const opponentOption = document.createElement('option');
       opponentOption.value = opponentName;
       opponentOption.textContent = opponentName;
       select.appendChild(opponentOption);
 
       const normalizedPrevious = (previousValue || '').trim();
-      if (normalizedPrevious === 'Stoney Creek') {
-        select.value = 'Stoney Creek';
+      const normalizedLower = normalizedPrevious.toLocaleLowerCase();
+      const homeLower = homeName.toLocaleLowerCase();
+      const fallbackLower = HOME_TEAM_FALLBACK.toLocaleLowerCase();
+      if (normalizedLower === homeLower || normalizedLower === fallbackLower) {
+        select.value = homeName;
       } else if (normalizedPrevious) {
         select.value = opponentName;
       }
@@ -1048,15 +1096,27 @@ let playerSortMode = 'number';
         return;
       }
 
-      const exactMatch = Array.from(select.options).find(option => option.value === normalized);
+      const optionsArray = Array.from(select.options);
+      const normalizedLower = normalized.toLocaleLowerCase();
+      const homeLower = getHomeTeamName().toLocaleLowerCase();
+      const fallbackLower = HOME_TEAM_FALLBACK.toLocaleLowerCase();
+
+      if (normalizedLower === homeLower || normalizedLower === fallbackLower) {
+        const homeOption = optionsArray.find(option => option.value.toLocaleLowerCase() === homeLower);
+        if (homeOption) {
+          select.value = homeOption.value;
+          return;
+        }
+      }
+
+      const exactMatch = optionsArray.find(option => option.value === normalized);
       if (exactMatch) {
         select.value = normalized;
         return;
       }
 
-      const lowerNormalized = normalized.toLocaleLowerCase();
-      const caseInsensitiveMatch = Array.from(select.options).find(
-        option => option.value.toLocaleLowerCase() === lowerNormalized
+      const caseInsensitiveMatch = optionsArray.find(
+        option => option.value.toLocaleLowerCase() === normalizedLower
       );
       if (caseInsensitiveMatch) {
         select.value = caseInsensitiveMatch.value;
@@ -1067,8 +1127,9 @@ let playerSortMode = 'number';
     }
 
     function updateSetHeaders(opponentName, swapped) {
-      const homeName = swapped ? opponentName : 'Stoney Creek';
-      const awayName = swapped ? 'Stoney Creek' : opponentName;
+      const baseHomeName = getHomeTeamName();
+      const homeName = swapped ? opponentName : baseHomeName;
+      const awayName = swapped ? baseHomeName : opponentName;
       setTeamHeaderName('scHeader', homeName, { roleDescription: 'Home team' });
       setTeamHeaderName('oppHeader', awayName, { roleDescription: 'Opponent team' });
       updateScoreModalLabels();
@@ -1681,8 +1742,8 @@ let playerSortMode = 'number';
       suppressAutoSave = false;
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-      updateOpponentName();
+    document.addEventListener('DOMContentLoaded', async function() {
+      await initializeHomeTeam();
       initializeTeamHeaderPopovers();
       refreshAllTeamHeaderButtons();
       window.addEventListener('resize', refreshAllTeamHeaderButtons);
