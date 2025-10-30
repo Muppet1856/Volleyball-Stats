@@ -1230,9 +1230,51 @@ let playerSortMode = 'number';
       };
     }
 
+    function syncJerseyOptionStyles(selectElement) {
+      if (!selectElement) return;
+      Array.from(selectElement.options).forEach((option) => {
+        const swatchColor = option.dataset.color;
+        if (!swatchColor) return;
+        option.style.setProperty('--swatch-color', swatchColor);
+        const { textColor } = getJerseyColorStyles(option.value);
+        option.style.setProperty('--swatch-text', textColor);
+      });
+    }
+
+    function updateJerseySelectSwatch(selectElement) {
+      if (!selectElement) return;
+      const selectedOption = selectElement.options[selectElement.selectedIndex];
+      if (!selectedOption) return;
+      const swatchColor = selectedOption.dataset.color || '';
+      const { textColor } = getJerseyColorStyles(selectedOption.value);
+      selectElement.style.setProperty('--jersey-selected-color', swatchColor);
+      selectElement.style.setProperty('--jersey-selected-text', textColor);
+    }
+
+    function initializeJerseySelect(selectElement, { applyToNumbers = false } = {}) {
+      if (!selectElement) return;
+      syncJerseyOptionStyles(selectElement);
+      updateJerseySelectSwatch(selectElement);
+      if (applyToNumbers) {
+        applyJerseyColorToNumbers();
+      }
+      selectElement.addEventListener('change', () => {
+        updateJerseySelectSwatch(selectElement);
+        if (applyToNumbers) {
+          applyJerseyColorToNumbers();
+        }
+      });
+    }
+
+    function refreshJerseySelectSwatches() {
+      updateJerseySelectSwatch(document.getElementById('jerseyColorSC'));
+      updateJerseySelectSwatch(document.getElementById('jerseyColorOpp'));
+    }
+
     function applyJerseyColorToNumbers() {
       const jerseySelect = document.getElementById('jerseyColorSC');
       if (!jerseySelect) return;
+      updateJerseySelectSwatch(jerseySelect);
       const { backgroundColor, textColor } = getJerseyColorStyles(jerseySelect.value);
       const borderColor = jerseySelect.value === 'white' ? '#000000' : 'transparent';
       document.querySelectorAll('.player-number-circle').forEach(circle => {
@@ -1546,6 +1588,7 @@ let playerSortMode = 'number';
             document.getElementById('opponent').value = match.opponent || '';
             document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
             document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
+            refreshJerseySelectSwatches();
             applyJerseyColorToNumbers();
             document.getElementById('resultSC').value = match.resultSC ?? 0;
             document.getElementById('resultOpp').value = match.resultOpp ?? 0;
@@ -1735,6 +1778,7 @@ let playerSortMode = 'number';
 
       updateOpponentName();
       updateFirstServeOptions();
+      refreshJerseySelectSwatches();
       applyJerseyColorToNumbers();
       setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
 
@@ -1758,14 +1802,8 @@ let playerSortMode = 'number';
         updateOpponentName();
         scheduleAutoSave();
       });
-      const jerseySelect = document.getElementById('jerseyColorSC');
-      if (jerseySelect) {
-        jerseySelect.addEventListener('change', () => {
-          applyJerseyColorToNumbers();
-          scheduleAutoSave();
-        });
-        applyJerseyColorToNumbers();
-      }
+      initializeJerseySelect(document.getElementById('jerseyColorSC'), { applyToNumbers: true });
+      initializeJerseySelect(document.getElementById('jerseyColorOpp'));
       const sortToggleBtn = document.getElementById('playerSortToggleBtn');
       if (sortToggleBtn) {
         sortToggleBtn.addEventListener('click', () => {

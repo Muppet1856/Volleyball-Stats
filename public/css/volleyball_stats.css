@@ -268,13 +268,49 @@ body.score-modal-open {
 .finalize-error-popover .popover-body {
   color: var(--bs-warning-text-emphasis);
 }
-.jersey-option {
-  display: flex;
-  align-items: center;
-  padding: 2px 5px;
+.jersey-select {
+  --jersey-swatch-width: 1.75rem;
+  --jersey-swatch-gap: 0.65rem;
+  --jersey-selected-color: transparent;
+  --jersey-selected-text: inherit;
+  background-image: linear-gradient(
+    90deg,
+    var(--jersey-selected-color) 0,
+    var(--jersey-selected-color) var(--jersey-swatch-width),
+    transparent var(--jersey-swatch-width)
+  );
+  background-repeat: no-repeat;
+  background-size: var(--jersey-swatch-width) 100%;
+  background-position: left center;
+  padding-left: calc(var(--jersey-swatch-width) + var(--jersey-swatch-gap));
+  color: var(--jersey-selected-text);
 }
-.jersey-option:hover {
-  background-color: var(--bs-tertiary-bg);
+
+.jersey-select:focus {
+  color: var(--jersey-selected-text);
+}
+
+.jersey-select option {
+  --jersey-swatch-width: 1.75rem;
+  --jersey-swatch-gap: 0.65rem;
+  --swatch-color: transparent;
+  --swatch-text: inherit;
+  padding-left: calc(var(--jersey-swatch-width) + var(--jersey-swatch-gap));
+  background-image: linear-gradient(
+    90deg,
+    var(--swatch-color) 0,
+    var(--swatch-color) var(--jersey-swatch-width),
+    transparent var(--jersey-swatch-width)
+  );
+  background-repeat: no-repeat;
+  background-size: var(--jersey-swatch-width) 100%;
+  background-position: left center;
+  color: var(--swatch-text);
+}
+
+.jersey-select option:checked,
+.jersey-select option:hover {
+  color: var(--swatch-text);
 }
 .set-actions {
   width: 8rem;
