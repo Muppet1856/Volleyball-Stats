@@ -145,6 +145,7 @@ let playerSortMode = 'number';
     let suppressAutoSave = true;
     let currentMatchId = null;
     let hasPendingChanges = false;
+    let openJerseySelectInstance = null;
     let scoreGameModalInstance = null;
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
     const TIMEOUT_COUNT = 2;
@@ -1211,28 +1212,353 @@ let playerSortMode = 'number';
       applyJerseyColorToNumbers();
     }
 
+    const jerseyColorValues = {
+      white: '#ffffff',
+      grey: '#808080',
+      black: '#000000',
+      yellow: '#ffd700',
+      orange: '#ff8c00',
+      red: '#dc3545',
+      green: '#198754',
+      blue: '#0d6efd',
+      purple: '#6f42c1',
+      pink: '#d63384'
+    };
+
+    const jerseyColorContrast = {
+      white: '#000000',
+      yellow: '#000000',
+      orange: '#000000',
+      pink: '#000000',
+      grey: '#ffffff',
+      black: '#ffffff',
+      red: '#ffffff',
+      green: '#ffffff',
+      blue: '#ffffff',
+      purple: '#ffffff'
+    };
+
     function getJerseyColorStyles(color) {
-      const contrastMap = {
-        white: '#000000',
-        yellow: '#000000',
-        orange: '#000000',
-        pink: '#000000',
-        grey: '#ffffff',
-        black: '#ffffff',
-        red: '#ffffff',
-        green: '#ffffff',
-        blue: '#ffffff',
-        purple: '#ffffff'
-      };
-      return {
-        backgroundColor: color,
-        textColor: contrastMap[color] || '#ffffff'
-      };
+      const backgroundColor = jerseyColorValues[color] || color;
+      const textColor = jerseyColorContrast[color] || '#ffffff';
+      return { backgroundColor, textColor };
     }
+
+    function updateJerseySelectDisplay(selectElement) {
+      if (!selectElement || !selectElement._jerseyUI) return;
+      const { triggerLabel, triggerSwatch, optionButtons } = selectElement._jerseyUI;
+      const selectedOption = selectElement.options[selectElement.selectedIndex];
+      if (!selectedOption) return;
+      const swatchColor = selectedOption.dataset.color || jerseyColorValues[selectedOption.value] || '#ffffff';
+      if (triggerLabel) {
+        triggerLabel.textContent = selectedOption.textContent;
+      }
+      if (triggerSwatch) {
+        triggerSwatch.style.setProperty('--jersey-swatch-color', swatchColor);
+        triggerSwatch.style.backgroundColor = swatchColor;
+      }
+      if (Array.isArray(optionButtons)) {
+        optionButtons.forEach((button) => {
+          const isSelected = button.dataset.value === selectElement.value;
+          button.classList.toggle('is-active', isSelected);
+          button.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+          button.setAttribute('tabindex', isSelected ? '0' : '-1');
+        });
+      }
+    }
+
+    function refreshJerseySelectDisplays() {
+      updateJerseySelectDisplay(document.getElementById('jerseyColorSC'));
+      updateJerseySelectDisplay(document.getElementById('jerseyColorOpp'));
+    }
+
+    function closeOpenJerseySelect(options) {
+      if (!openJerseySelectInstance || typeof openJerseySelectInstance.close !== 'function') return;
+      openJerseySelectInstance.close(options);
+    }
+
+    function focusJerseyOption(optionButtons, index) {
+      if (!Array.isArray(optionButtons) || optionButtons.length === 0) return;
+      const boundedIndex = Math.max(0, Math.min(optionButtons.length - 1, index));
+      const button = optionButtons[boundedIndex];
+      if (button) {
+        button.focus();
+      }
+    }
+
+    function initializeJerseySelect(selectElement, { applyToNumbers = false } = {}) {
+      if (!selectElement || selectElement.dataset.jerseyInitialized === 'true') return;
+
+      selectElement.dataset.jerseyInitialized = 'true';
+
+      let container = selectElement.closest('.jersey-select-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.className = 'jersey-select-container';
+        const parent = selectElement.parentNode;
+        if (parent) {
+          parent.insertBefore(container, selectElement);
+        }
+        container.appendChild(selectElement);
+      } else {
+        container.classList.add('jersey-select-container');
+      }
+
+      selectElement.classList.add('jersey-select');
+      selectElement.setAttribute('aria-hidden', 'true');
+      selectElement.setAttribute('tabindex', '-1');
+
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'form-select jersey-select-trigger';
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+
+      const triggerMain = document.createElement('span');
+      triggerMain.className = 'jersey-select-main';
+
+      const triggerSwatch = document.createElement('span');
+      triggerSwatch.className = 'jersey-select-swatch';
+      triggerMain.appendChild(triggerSwatch);
+
+      const triggerLabel = document.createElement('span');
+      triggerLabel.className = 'jersey-select-label';
+      triggerMain.appendChild(triggerLabel);
+
+      trigger.appendChild(triggerMain);
+      container.appendChild(trigger);
+
+      const triggerIdBase = selectElement.id || `jerseySelect${Date.now()}`;
+      const triggerId = `${triggerIdBase}Trigger`;
+      trigger.id = triggerId;
+
+      const menu = document.createElement('ul');
+      const menuId = `${triggerId}-menu`;
+      menu.className = 'jersey-select-menu';
+      menu.id = menuId;
+      menu.hidden = true;
+      menu.setAttribute('role', 'listbox');
+      menu.setAttribute('tabindex', '-1');
+      container.appendChild(menu);
+      trigger.setAttribute('aria-controls', menuId);
+      menu.setAttribute('aria-labelledby', triggerId);
+
+      const labelElement = document.querySelector(`label[for="${selectElement.id}"]`);
+      if (labelElement) {
+        labelElement.setAttribute('for', triggerId);
+        const labelReference = [labelElement.id, triggerId].filter(Boolean).join(' ');
+        if (labelReference) {
+          trigger.setAttribute('aria-labelledby', labelReference);
+        }
+      }
+
+      const optionButtons = Array.from(selectElement.options).map((option, index) => {
+        const listItem = document.createElement('li');
+        listItem.role = 'presentation';
+
+        const optionButton = document.createElement('button');
+        optionButton.type = 'button';
+        optionButton.className = 'jersey-select-option';
+        optionButton.setAttribute('role', 'option');
+        optionButton.dataset.value = option.value;
+        optionButton.dataset.index = String(index);
+        optionButton.setAttribute('tabindex', '-1');
+
+        const swatch = document.createElement('span');
+        swatch.className = 'jersey-select-option-swatch';
+        const swatchColor = option.dataset.color || jerseyColorValues[option.value] || '#ffffff';
+        swatch.style.setProperty('--jersey-swatch-color', swatchColor);
+        swatch.style.backgroundColor = swatchColor;
+        optionButton.appendChild(swatch);
+
+        const optionLabel = document.createElement('span');
+        optionLabel.className = 'jersey-select-option-label';
+        optionLabel.textContent = option.textContent;
+        optionButton.appendChild(optionLabel);
+
+        optionButton.addEventListener('click', () => {
+          const newValue = option.value;
+          const hasChanged = selectElement.value !== newValue;
+          selectElement.value = newValue;
+          if (hasChanged) {
+            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+          } else {
+            updateJerseySelectDisplay(selectElement);
+            if (applyToNumbers) {
+              applyJerseyColorToNumbers();
+            }
+          }
+          closeMenu({ focusTrigger: true });
+        });
+
+        listItem.appendChild(optionButton);
+        menu.appendChild(listItem);
+        return optionButton;
+      });
+
+      function closeMenu({ focusTrigger = false } = {}) {
+        if (!container.classList.contains('is-open')) return;
+        container.classList.remove('is-open');
+        trigger.setAttribute('aria-expanded', 'false');
+        menu.hidden = true;
+        if (openJerseySelectInstance && openJerseySelectInstance.close === closeMenu) {
+          openJerseySelectInstance = null;
+        }
+        if (focusTrigger) {
+          trigger.focus();
+        }
+      }
+
+      function openMenu({ focusOption = true } = {}) {
+        if (container.classList.contains('is-open')) return;
+        closeOpenJerseySelect();
+        container.classList.add('is-open');
+        trigger.setAttribute('aria-expanded', 'true');
+        menu.hidden = false;
+        openJerseySelectInstance = {
+          close: closeMenu,
+          container,
+          trigger
+        };
+        const selectedIndex = selectElement.selectedIndex >= 0 ? selectElement.selectedIndex : 0;
+        const target = optionButtons[selectedIndex] || optionButtons[0];
+        if (target) {
+          requestAnimationFrame(() => {
+            target.scrollIntoView({ block: 'nearest' });
+            if (focusOption) {
+              target.focus();
+            }
+          });
+        }
+      }
+
+      function focusRelative(delta) {
+        if (!Array.isArray(optionButtons) || optionButtons.length === 0) return;
+        const activeIndex = optionButtons.indexOf(document.activeElement);
+        if (activeIndex === -1) {
+          const baseIndex = selectElement.selectedIndex >= 0 ? selectElement.selectedIndex : (delta > 0 ? -1 : optionButtons.length);
+          focusJerseyOption(optionButtons, baseIndex + delta);
+          return;
+        }
+        focusJerseyOption(optionButtons, activeIndex + delta);
+      }
+
+      trigger.addEventListener('click', () => {
+        if (container.classList.contains('is-open')) {
+          closeMenu();
+        } else {
+          openMenu();
+        }
+      });
+
+      trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          openMenu({ focusOption: false });
+          if (event.key === 'ArrowDown') {
+            focusRelative(1);
+          } else {
+            focusRelative(-1);
+          }
+        } else if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          if (container.classList.contains('is-open')) {
+            closeMenu();
+          } else {
+            openMenu();
+          }
+        }
+      });
+
+      menu.addEventListener('keydown', (event) => {
+        switch (event.key) {
+          case 'ArrowDown':
+            event.preventDefault();
+            focusRelative(1);
+            break;
+          case 'ArrowUp':
+            event.preventDefault();
+            focusRelative(-1);
+            break;
+          case 'Home':
+            event.preventDefault();
+            focusJerseyOption(optionButtons, 0);
+            break;
+          case 'End':
+            event.preventDefault();
+            focusJerseyOption(optionButtons, optionButtons.length - 1);
+            break;
+          case 'Enter':
+          case ' ': {
+            event.preventDefault();
+            const activeButton = document.activeElement;
+            if (optionButtons.includes(activeButton)) {
+              activeButton.click();
+            }
+            break;
+          }
+          case 'Escape':
+            event.preventDefault();
+            closeMenu({ focusTrigger: true });
+            break;
+          case 'Tab':
+            closeMenu();
+            break;
+          default:
+            break;
+        }
+      });
+
+      selectElement.addEventListener('change', () => {
+        updateJerseySelectDisplay(selectElement);
+        if (applyToNumbers) {
+          applyJerseyColorToNumbers();
+        }
+      });
+
+      selectElement._jerseyUI = {
+        container,
+        trigger,
+        triggerLabel,
+        triggerSwatch,
+        menu,
+        optionButtons,
+        closeMenu,
+        openMenu
+      };
+
+      container.classList.add('is-ready');
+      updateJerseySelectDisplay(selectElement);
+      if (applyToNumbers) {
+        applyJerseyColorToNumbers();
+      }
+    }
+
+    document.addEventListener('pointerdown', (event) => {
+      if (!openJerseySelectInstance || !openJerseySelectInstance.container) return;
+      if (!openJerseySelectInstance.container.contains(event.target)) {
+        openJerseySelectInstance.close({ focusTrigger: false });
+      }
+    });
+
+    document.addEventListener('focusin', (event) => {
+      if (!openJerseySelectInstance || !openJerseySelectInstance.container) return;
+      if (!openJerseySelectInstance.container.contains(event.target)) {
+        openJerseySelectInstance.close({ focusTrigger: false });
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      if (!openJerseySelectInstance) return;
+      event.preventDefault();
+      openJerseySelectInstance.close({ focusTrigger: true });
+    });
 
     function applyJerseyColorToNumbers() {
       const jerseySelect = document.getElementById('jerseyColorSC');
       if (!jerseySelect) return;
+      updateJerseySelectDisplay(jerseySelect);
       const { backgroundColor, textColor } = getJerseyColorStyles(jerseySelect.value);
       const borderColor = jerseySelect.value === 'white' ? '#000000' : 'transparent';
       document.querySelectorAll('.player-number-circle').forEach(circle => {
@@ -1546,6 +1872,7 @@ let playerSortMode = 'number';
             document.getElementById('opponent').value = match.opponent || '';
             document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
             document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
+            refreshJerseySelectDisplays();
             applyJerseyColorToNumbers();
             document.getElementById('resultSC').value = match.resultSC ?? 0;
             document.getElementById('resultOpp').value = match.resultOpp ?? 0;
@@ -1735,6 +2062,7 @@ let playerSortMode = 'number';
 
       updateOpponentName();
       updateFirstServeOptions();
+      refreshJerseySelectDisplays();
       applyJerseyColorToNumbers();
       setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
 
@@ -1758,14 +2086,8 @@ let playerSortMode = 'number';
         updateOpponentName();
         scheduleAutoSave();
       });
-      const jerseySelect = document.getElementById('jerseyColorSC');
-      if (jerseySelect) {
-        jerseySelect.addEventListener('change', () => {
-          applyJerseyColorToNumbers();
-          scheduleAutoSave();
-        });
-        applyJerseyColorToNumbers();
-      }
+      initializeJerseySelect(document.getElementById('jerseyColorSC'), { applyToNumbers: true });
+      initializeJerseySelect(document.getElementById('jerseyColorOpp'));
       const sortToggleBtn = document.getElementById('playerSortToggleBtn');
       if (sortToggleBtn) {
         sortToggleBtn.addEventListener('click', () => {
