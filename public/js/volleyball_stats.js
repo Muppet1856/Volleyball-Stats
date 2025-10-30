@@ -149,6 +149,7 @@ let playerSortMode = 'number';
     let scoreGameModalInstance = null;
     let jerseyConflictModalInstance = null;
     let jerseyConflictModalMessageElement = null;
+    let jerseyThemeObserver = null;
     let isResolvingJerseyColorConflict = false;
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
     const TIMEOUT_COUNT = 2;
@@ -1221,6 +1222,8 @@ let playerSortMode = 'number';
       applyJerseyColorToNumbers();
     }
 
+    const JERSEY_SWATCH_SVG_PATH = 'M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z';
+
     const jerseyColorValues = {
       white: '#ffffff',
       grey: '#808080',
@@ -1344,6 +1347,37 @@ let playerSortMode = 'number';
       return fallbackColor;
     }
 
+    function ensureJerseySwatchGraphic(swatchElement) {
+      if (!swatchElement) return null;
+
+      let svg = swatchElement._jerseySvg;
+      let path = swatchElement._jerseyPath;
+
+      if (!svg || !path || path.ownerSVGElement !== svg) {
+        svg = swatchElement.querySelector('svg[data-jersey-swatch]');
+        path = svg ? svg.querySelector('path') : null;
+      }
+
+      if (!svg || !path) {
+        svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 64 64');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.setAttribute('focusable', 'false');
+        svg.dataset.jerseySwatch = 'true';
+
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', JERSEY_SWATCH_SVG_PATH);
+        svg.appendChild(path);
+
+        swatchElement.textContent = '';
+        swatchElement.appendChild(svg);
+      }
+
+      swatchElement._jerseySvg = svg;
+      swatchElement._jerseyPath = path;
+      return { svg, path };
+    }
+
     function getSwatchDefaultBorder(element) {
       if (!element) return 'rgba(0, 0, 0, 0.175)';
       if (!element.dataset.jerseyDefaultBorder) {
@@ -1357,12 +1391,17 @@ let playerSortMode = 'number';
 
     function applySwatchStyles(swatchElement, color) {
       if (!swatchElement) return;
+      const graphic = ensureJerseySwatchGraphic(swatchElement);
       const fallbackBorder = getSwatchDefaultBorder(swatchElement);
       swatchElement.style.setProperty('--jersey-swatch-color', color);
-      swatchElement.style.backgroundColor = color;
       const borderColor = computeContrastOutlineColor(swatchElement, color, fallbackBorder);
       swatchElement.style.setProperty('--jersey-swatch-border', borderColor);
+      swatchElement.style.color = borderColor;
       swatchElement.dataset.jerseySwatchColor = color;
+      if (graphic && graphic.path) {
+        graphic.path.setAttribute('fill', color);
+        graphic.path.setAttribute('stroke', borderColor);
+      }
     }
 
     function getJerseyColorStyles(color) {
@@ -1402,6 +1441,39 @@ let playerSortMode = 'number';
     function refreshJerseySelectDisplays() {
       updateJerseySelectDisplay(document.getElementById('jerseyColorSC'));
       updateJerseySelectDisplay(document.getElementById('jerseyColorOpp'));
+    }
+
+    function resetJerseySwatchDefaultBorders() {
+      document.querySelectorAll('.jersey-select-swatch, .jersey-select-option-swatch').forEach((swatch) => {
+        if (!swatch) return;
+        if (swatch.dataset && swatch.dataset.jerseyDefaultBorder) {
+          delete swatch.dataset.jerseyDefaultBorder;
+        }
+        if (swatch.style) {
+          swatch.style.removeProperty('--jersey-swatch-border');
+          swatch.style.removeProperty('color');
+        }
+      });
+    }
+
+    function handleJerseyThemeChange() {
+      resetJerseySwatchDefaultBorders();
+      refreshJerseySelectDisplays();
+    }
+
+    function setupJerseyThemeObserver() {
+      if (jerseyThemeObserver || typeof MutationObserver !== 'function') return;
+      const rootElement = document.documentElement;
+      if (!rootElement) return;
+      jerseyThemeObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'data-bs-theme') {
+            handleJerseyThemeChange();
+            break;
+          }
+        }
+      });
+      jerseyThemeObserver.observe(rootElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
     }
 
     function getJerseyColorLabel(selectElement, value) {
@@ -2306,6 +2378,8 @@ let playerSortMode = 'number';
       }
       initializeJerseySelect(document.getElementById('jerseyColorSC'), { applyToNumbers: true });
       initializeJerseySelect(document.getElementById('jerseyColorOpp'));
+      setupJerseyThemeObserver();
+      handleJerseyThemeChange();
       ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
       const sortToggleBtn = document.getElementById('playerSortToggleBtn');
       if (sortToggleBtn) {
