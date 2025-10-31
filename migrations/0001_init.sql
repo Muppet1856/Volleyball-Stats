@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS matches (
   sets TEXT,
   finalized_sets TEXT,
   is_swapped INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  revision INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date);

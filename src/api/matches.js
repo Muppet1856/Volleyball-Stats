@@ -65,8 +65,9 @@ async function createMatch(request, env) {
         players,
         sets,
         finalized_sets,
-        is_swapped
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        is_swapped,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       payload.date,
       payload.location,
@@ -80,7 +81,8 @@ async function createMatch(request, env) {
       JSON.stringify(payload.players),
       JSON.stringify(payload.sets),
       JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0
+      payload.isSwapped ? 1 : 0,
+      new Date().toISOString()
     );
     const result = await statement.run();
     const id = result?.meta?.last_row_id;
@@ -133,7 +135,9 @@ async function updateMatch(request, env, id) {
         players = ?,
         sets = ?,
         finalized_sets = ?,
-        is_swapped = ?
+        is_swapped = ?,
+        revision = revision + 1,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`
     ).bind(
       payload.date,

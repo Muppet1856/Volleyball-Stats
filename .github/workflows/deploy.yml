@@ -31,6 +31,9 @@ jobs:
       WORKER_NAME: ${{ vars.WORKER_NAME }}
       BINDING_NAME: ${{ vars.BINDING_NAME }}
       USE_PRODUCTION_DB_ON_PREVIEW: ${{ vars.USE_PRODUCTION_DB_ON_PREVIEW }}
+      DURABLE_OBJECT_NAME: ${{ vars.DURABLE_OBJECT_NAME }}
+      DURABLE_OBJECT_CLASS: ${{ vars.DURABLE_OBJECT_CLASS }}
+      DURABLE_OBJECT_MIGRATION_TAG: ${{ vars.DURABLE_OBJECT_MIGRATION_TAG }}
 
     steps:
       # ————————————————————————
@@ -136,6 +139,26 @@ jobs:
           compatibility_date = "${COMPAT_DATE}"
           EOF
 
+          DO_NAME="${DURABLE_OBJECT_NAME:-MATCH_ROOM}"
+          DO_CLASS="${DURABLE_OBJECT_CLASS:-MatchRoom}"
+          DO_TAG="${DURABLE_OBJECT_MIGRATION_TAG:-match-room-v1}"
+
+          if [ -z "$DO_CLASS" ]; then
+            echo "Error: Durable Object class name is empty" >&2
+            exit 1
+          fi
+
+          cat >> wrangler.toml <<EOF
+
+          [[durable_objects.bindings]]
+          name = "${DO_NAME}"
+          class_name = "${DO_CLASS}"
+
+          [[migrations]]
+          tag = "${DO_TAG}"
+          new_classes = ["${DO_CLASS}"]
+          EOF
+
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
           FOUND=()
@@ -154,7 +177,7 @@ jobs:
             exit 1
           elif [ ${#FOUND[@]} -eq 1 ]; then
             SELECTED="${FOUND[0]}"
-            echo "assets = { directory = \"$SELECTED\" }" >> wrangler.toml
+            printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
             echo "Using assets directory: $SELECTED"
           else
             echo "No assets directory found (public/dist/build) – skipping assets binding."
@@ -260,6 +283,22 @@ jobs:
 
           shopt -s nullglob
           for f in migrations/*.sql; do
+            base=$(basename "$f")
+
+            if [ "$base" = "migrations.sql" ]; then
+              echo "Checking if schema patch $base needs to run..."
+              revision_exists=$(npx wrangler d1 execute "$DB_NAME" \
+                --command "SELECT COUNT(*) AS cnt FROM pragma_table_info('matches') WHERE name = 'revision';" \
+                --remote --json \
+                | jq '.[0].results[0].cnt // 0')
+
+              if [ "$revision_exists" != "0" ]; then
+                echo "Skipping $base; revision column already present."
+                continue
+              fi
+            fi
+
+            echo "Applying migration from $f"
             npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
           done
 
