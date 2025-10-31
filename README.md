@@ -58,6 +58,7 @@ The Worker exposes REST-style endpoints for matches and players. All routes retu
 - `GET /api/matches/:id` — fetch a single match.【F:src/api/matches.js†L81-L115】
 - `PUT /api/matches/:id` — update a match.【F:src/api/matches.js†L117-L166】
 - `DELETE /api/matches/:id` — remove a match.【F:src/api/matches.js†L168-L191】
+- `GET /api/matches/:id/stream` — open a Server-Sent Events or WebSocket stream for real-time match snapshots. Provide either `Accept: text/event-stream` for SSE or `Upgrade: websocket` with the WebSocket handshake headers. The worker immediately sends the latest snapshot and pushes updates after each transition save.【F:src/index.js†L1-L48】【F:src/api/matches.js†L1-L120】【F:src/match-room.js†L42-L205】
 - `GET /api/players` — list players ordered by jersey number and name.【F:src/api/players.js†L1-L36】
 - `POST /api/players` — create a player (number and last name required).【F:src/api/players.js†L38-L75】
 - `PUT /api/players/:id` — update a player.【F:src/api/players.js†L77-L112】

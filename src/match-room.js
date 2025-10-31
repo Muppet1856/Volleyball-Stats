@@ -62,6 +62,12 @@ export class MatchRoom {
   async fetch(request) {
     const url = new URL(request.url);
     switch (request.method.toUpperCase()) {
+      case 'GET': {
+        if (url.pathname === '/stream') {
+          return this.handleStream(request);
+        }
+        break;
+      }
       case 'POST': {
         if (url.pathname === '/transitions') {
           return this.handleTransition(request);
@@ -85,6 +91,134 @@ export class MatchRoom {
     }
 
     return new Response('Not found', { status: 404 });
+  }
+
+  getConnectionStore() {
+    if (!this.state.connectionStore) {
+      this.state.connectionStore = {
+        sse: new Set(),
+        websockets: new Set()
+      };
+    }
+    return this.state.connectionStore;
+  }
+
+  buildSnapshotPayload(snapshot) {
+    if (!snapshot) {
+      return null;
+    }
+    const state = snapshot.state ?? null;
+    const id = state?.id ?? this.getMatchId();
+    return {
+      revision: snapshot.revision ?? 0,
+      state,
+      match: state,
+      id
+    };
+  }
+
+  async broadcastSnapshot(snapshot) {
+    if (!snapshot) {
+      return;
+    }
+    const payload = this.buildSnapshotPayload(snapshot);
+    if (!payload) {
+      return;
+    }
+    const message = JSON.stringify({ type: 'snapshot', payload });
+    const sseEvent = `event: snapshot\ndata: ${message}\n\n`;
+    const { sse, websockets } = this.getConnectionStore();
+
+    for (const connection of [...sse]) {
+      try {
+        await connection.writer.ready;
+        await connection.writer.write(sseEvent);
+      } catch (error) {
+        try {
+          connection.writer.close();
+        } catch (closeError) {
+          // ignore close errors
+        }
+        sse.delete(connection);
+      }
+    }
+
+    for (const socket of [...websockets]) {
+      try {
+        socket.send(message);
+      } catch (error) {
+        websockets.delete(socket);
+        try {
+          socket.close(1011, 'Broadcast failed');
+        } catch (closeError) {
+          // ignore close errors
+        }
+      }
+    }
+  }
+
+  async handleStream(request) {
+    const upgradeHeader = request.headers.get('upgrade');
+    const currentSnapshot = await this.getCurrentSnapshot();
+    if (!currentSnapshot) {
+      return new Response('Match not found', { status: 404 });
+    }
+
+    if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      server.accept();
+
+      const store = this.getConnectionStore();
+      store.websockets.add(server);
+
+      const payload = this.buildSnapshotPayload(currentSnapshot);
+      if (payload) {
+        server.send(JSON.stringify({ type: 'snapshot', payload }));
+      }
+
+      server.addEventListener('close', () => {
+        store.websockets.delete(server);
+      });
+      server.addEventListener('error', () => {
+        store.websockets.delete(server);
+      });
+
+      return new Response(null, {
+        status: 101,
+        webSocket: client
+      });
+    }
+
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
+    const store = this.getConnectionStore();
+    const connection = { writer };
+    store.sse.add(connection);
+
+    request.signal.addEventListener('abort', () => {
+      store.sse.delete(connection);
+      try {
+        writer.close();
+      } catch (error) {
+        // ignore close errors
+      }
+    });
+
+    const payload = this.buildSnapshotPayload(currentSnapshot);
+    if (payload) {
+      const message = JSON.stringify({ type: 'snapshot', payload });
+      await writer.write(`event: snapshot\ndata: ${message}\n\n`);
+    }
+
+    return new Response(stream.readable, {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive'
+      }
+    });
   }
 
   async handleTransition(request) {
@@ -136,6 +270,9 @@ export class MatchRoom {
     if (!result.conflict && idempotencyKey) {
       await this.storeCachedResponse(idempotencyKey, { status, body: result });
     }
+    if (!result.conflict) {
+      await this.broadcastSnapshot(this.snapshot);
+    }
     return createResponse(result, { status });
   }
 
@@ -172,6 +309,9 @@ export class MatchRoom {
 
     const result = await this.persistState(payload, currentSnapshot.revision + 1);
     const status = result.conflict ? 409 : 200;
+    if (!result.conflict) {
+      await this.broadcastSnapshot(this.snapshot);
+    }
     return createResponse(result, { status });
   }
 
