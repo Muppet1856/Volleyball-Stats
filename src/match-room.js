@@ -3,6 +3,8 @@ import { deserializeMatchRow, normalizeMatchPayload } from './api/matches/utils.
 
 const SNAPSHOT_STORAGE_KEY = 'snapshot';
 const IDEMPOTENCY_STORAGE_KEY = 'idempotency';
+const MATCH_ID_STORAGE_KEY = 'match-id';
+const MATCH_ID_HEADER = 'x-match-id';
 const IDEMPOTENCY_CACHE_LIMIT = 20;
 
 function sanitizeRevision(value, fallback = 0) {
@@ -57,9 +59,13 @@ export class MatchRoom {
     this.snapshotLoaded = false;
     this.idempotencyCache = null;
     this.idempotencyLoaded = false;
+    this.matchId = null;
+    this.matchIdLoaded = false;
+    this.matchIdPersisted = false;
   }
 
   async fetch(request) {
+    await this.ensureMatchId(request);
     const url = new URL(request.url);
     switch (request.method.toUpperCase()) {
       case 'GET': {
@@ -320,10 +326,14 @@ export class MatchRoom {
     this.snapshotLoaded = true;
     await Promise.all([
       this.state.storage.delete(SNAPSHOT_STORAGE_KEY),
-      this.state.storage.delete(IDEMPOTENCY_STORAGE_KEY)
+      this.state.storage.delete(IDEMPOTENCY_STORAGE_KEY),
+      this.state.storage.delete(MATCH_ID_STORAGE_KEY)
     ]);
     this.idempotencyCache = null;
     this.idempotencyLoaded = false;
+    this.matchId = null;
+    this.matchIdLoaded = true;
+    this.matchIdPersisted = false;
     return new Response(null, { status: 204 });
   }
 
@@ -491,8 +501,50 @@ export class MatchRoom {
   }
 
   getMatchId() {
+    if (this.matchId !== null && this.matchId !== undefined) {
+      return this.matchId;
+    }
     const name = this.state.id.toString();
     const parsed = Number.parseInt(name, 10);
     return Number.isNaN(parsed) ? name : parsed;
+  }
+
+  async ensureMatchId(request) {
+    const headerValue = request.headers?.get(MATCH_ID_HEADER);
+    const parsedFromHeader = this.parseMatchId(headerValue);
+    if (parsedFromHeader !== null) {
+      const changed = this.matchId !== parsedFromHeader;
+      this.matchId = parsedFromHeader;
+      this.matchIdLoaded = true;
+      if (changed || !this.matchIdPersisted) {
+        await this.state.storage.put(MATCH_ID_STORAGE_KEY, this.matchId);
+        this.matchIdPersisted = true;
+      }
+      return;
+    }
+
+    if (!this.matchIdLoaded) {
+      const stored = await this.state.storage.get(MATCH_ID_STORAGE_KEY);
+      if (stored !== undefined && stored !== null) {
+        this.matchId = stored;
+        this.matchIdPersisted = true;
+      }
+      this.matchIdLoaded = true;
+    }
+  }
+
+  parseMatchId(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const trimmed = String(value).trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsedNumber = Number.parseInt(trimmed, 10);
+    if (!Number.isNaN(parsedNumber)) {
+      return parsedNumber;
+    }
+    return trimmed;
   }
 }

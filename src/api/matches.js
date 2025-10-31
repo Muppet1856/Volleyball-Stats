@@ -180,7 +180,13 @@ async function forwardMatchRoom(request, env, id, path) {
   const targetUrl = `https://match-room.internal${path}`;
   let response;
   try {
-    response = await stub.fetch(new Request(targetUrl, request));
+    const forwardedRequest = new Request(targetUrl, request);
+    try {
+      forwardedRequest.headers.set('x-match-id', String(id));
+    } catch (error) {
+      console.warn('Unable to attach match id header for transition forwarding', error);
+    }
+    response = await stub.fetch(forwardedRequest);
   } catch (error) {
     console.error('Failed to reach MatchRoom Durable Object', error);
     return Response.json({ error: 'Failed to update match' }, { status: 500 });
