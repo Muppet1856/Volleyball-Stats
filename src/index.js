@@ -20,6 +20,11 @@ export default {
       return handleApiRequest(request, env, url.pathname);
     }
 
+    if (url.pathname === '/live' || url.pathname === '/live/') {
+      const liveUrl = new URL('/live.html', url);
+      return env.ASSETS.fetch(new Request(liveUrl.toString(), request));
+    }
+
     return env.ASSETS.fetch(request);
   }
 };
