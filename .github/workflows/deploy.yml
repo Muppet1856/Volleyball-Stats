@@ -119,12 +119,16 @@ jobs:
           }
 
       # ————————————————————————
-      # Setup wrangler.toml + Smart Assets Detection (FIXED)
+      # Setup wrangler.toml + Smart Assets Detection (NO HEREDOC AT ALL)
       # ————————————————————————
       - name: Setup wrangler.toml with smart assets
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
+
+          echo "DEBUG: Starting wrangler.toml setup"
+          echo "DEBUG: env_name = '${{ steps.cfg.outputs.env_name }}'"
+          echo "DEBUG: WORKER_NAME = '${{ env.WORKER_NAME }}'"
 
           if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
             FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
@@ -133,22 +137,35 @@ jobs:
           fi
           COMPAT_DATE=$(date +%Y-%m-%d)
 
-          cat > wrangler.toml <<EOF
-          name = "${FINAL_NAME}"
-          main = "src/index.js"
-          compatibility_date = "${COMPAT_DATE}"
-          EOF
+          echo "DEBUG: FINAL_NAME = '$FINAL_NAME'"
+          echo "DEBUG: COMPAT_DATE = '$COMPAT_DATE'"
+
+          # Write base config — safe heredoc with quoted delimiter
+          cat > wrangler.toml <<'BASE_EOF'
+name = "${FINAL_NAME}"
+main = "src/index.js"
+compatibility_date = "${COMPAT_DATE}"
+BASE_EOF
+
+          echo "DEBUG: Base wrangler.toml created"
+          cat wrangler.toml
 
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
           FOUND=()
           SELECTED=""
 
+          echo "DEBUG: Scanning for asset directories..."
           for dir in "${CANDIDATES[@]}"; do
             if [ -d "$dir" ]; then
+              echo "DEBUG: Found: $dir"
               FOUND+=("$dir")
+            else
+              echo "DEBUG: Not found: $dir"
             fi
           done
+
+          echo "DEBUG: FOUND count: ${#FOUND[@]}"
 
           if [ ${#FOUND[@]} -gt 1 ]; then
             echo "ERROR: Multiple asset directories found: ${FOUND[*]}" >&2
@@ -156,15 +173,19 @@ jobs:
             exit 1
           elif [ ${#FOUND[@]} -eq 1 ]; then
             SELECTED="${FOUND[0]}"
-            cat >> wrangler.toml <<-EOF
+            echo "DEBUG: Selected assets directory: $SELECTED"
 
-            assets = { directory = "$SELECTED" }
-            EOF
+            # NO HEREDOC — use printf (100% safe)
+            printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
+
             echo "Using assets directory: $SELECTED"
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
           else
             echo "No assets directory found (public/dist/build) – skipping assets binding."
           fi
+
+          echo "DEBUG: Final wrangler.toml:"
+          cat wrangler.toml
 
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
 
