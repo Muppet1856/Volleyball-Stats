@@ -350,6 +350,32 @@ jobs:
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
 
       # ————————————————————————
+      # Add Durable Object binding + free-plan migration
+      # ————————————————————————
+      - name: Add Durable Object config
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
+          # ----- Hard-code the values you use everywhere -----
+          DO_NAME="MATCH_ROOM"
+          DO_CLASS="MatchRoom"
+          DO_TAG="match-room-v1"
+
+          cat >> wrangler.toml <<EOF
+
+          [[durable_objects.bindings]]
+          name = "$DO_NAME"
+          class_name = "$DO_CLASS"
+
+          [[migrations]]
+          tag = "$DO_TAG"
+          new_sqlite_classes = ["$DO_CLASS"]
+          EOF
+
+          echo "Durable Object $DO_CLASS bound as $DO_NAME (free-plan migration added)"
+
+      # ————————————————————————
       # Deploy Worker
       # ————————————————————————
       - name: Deploy Worker
