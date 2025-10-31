@@ -283,38 +283,76 @@ jobs:
           done
 
       # ————————————————————————
-      # Load env vars from .cloudflare/vars.json → wrangler.toml
+      # Setup wrangler.toml + Smart Assets Detection (DEBUG + NO HEREDOC)
       # ————————————————————————
-      - name: Inject .cloudflare/vars.json into wrangler.toml
+      - name: Setup wrangler.toml with smart assets
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
 
-          VARS_JSON=".cloudflare/vars.json"
-          TOML="wrangler.toml"
+          echo "DEBUG: Starting wrangler.toml setup"
+          echo "DEBUG: env_name = '${{ steps.cfg.outputs.env_name }}'"
+          echo "DEBUG: WORKER_NAME = '${{ env.WORKER_NAME }}'"
 
-          if [[ ! -f "$VARS_JSON" ]]; then
-            echo "No $VARS_JSON found – nothing to inject."
-            exit 0
+          if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
+            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
+          else
+            FINAL_NAME="${{ env.WORKER_NAME }}"
           fi
+          COMPAT_DATE=$(date +%Y-%m-%d)
 
-          if ! jq empty "$VARS_JSON" >/dev/null 2>&1; then
-            echo "Error: $VARS_JSON contains invalid JSON" >&2
+          echo "DEBUG: FINAL_NAME = '$FINAL_NAME'"
+          echo "DEBUG: COMPAT_DATE = '$COMPAT_DATE'"
+
+          # Create base wrangler.toml
+          cat > wrangler.toml <<'BASE_EOF'
+          name = "${FINAL_NAME}"
+          main = "src/index.js"
+          compatibility_date = "${COMPAT_DATE}"
+          BASE_EOF
+
+          echo "DEBUG: Base wrangler.toml created:"
+          cat wrangler.toml
+
+          # ——— Detect assets: public → dist → build (only ONE allowed) ———
+          CANDIDATES=("public" "dist" "build")
+          FOUND=()
+          SELECTED=""
+
+          echo "DEBUG: Scanning for asset directories..."
+          for dir in "${CANDIDATES[@]}"; do
+            if [ -d "$dir" ]; then
+              echo "DEBUG: Found directory: $dir"
+              FOUND+=("$dir")
+            else
+              echo "DEBUG: Not found: $dir"
+            fi
+          done
+
+          echo "DEBUG: FOUND array: ${FOUND[*]}"
+          echo "DEBUG: FOUND count: ${#FOUND[@]}"
+
+          if [ ${#FOUND[@]} -gt 1 ]; then
+            echo "ERROR: Multiple asset directories found: ${FOUND[*]}" >&2
+            echo "Only one of 'public', 'dist', or 'build' is allowed." >&2
             exit 1
+          elif [ ${#FOUND[@]} -eq 1 ]; then
+            SELECTED="${FOUND[0]}"
+            echo "DEBUG: Selected assets directory: $SELECTED"
+
+            # Use printf to avoid heredoc issues
+            printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
+
+            echo "Using assets directory: $SELECTED"
+            echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
+          else
+            echo "No assets directory found (public/dist/build) – skipping assets binding."
           fi
 
-          sed -i '/^# --- BEGIN INJECTED VARS ---$/,/^# --- END INJECTED VARS ---$/d' "$TOML" 2>/dev/null || true
+          echo "DEBUG: Final wrangler.toml:"
+          cat wrangler.toml
 
-          {
-            echo "# --- BEGIN INJECTED VARS ---"
-            echo "[vars]"
-            jq -r 'to_entries[] |
-                   "\(.key) = \"\(.value | gsub("\""; "\\\""))\""' "$VARS_JSON"
-            echo "# --- END INJECTED VARS ---"
-          } >> "$TOML"
-
-          COUNT=$(jq 'keys | length' "$VARS_JSON")
-          echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
+          echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
 
       # ————————————————————————
       # Add Durable Object binding + free-plan migration
