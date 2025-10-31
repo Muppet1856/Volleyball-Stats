@@ -67,3 +67,9 @@ The Worker exposes REST-style endpoints for matches and players. All routes retu
 Static assets are served for any non-API path by Cloudflare's asset handler, so the frontend in `public/` receives all other requests.【F:src/worker.js†L1-L19】
 
 With these steps, you can provision the required Cloudflare resources, run the application locally, and publish the Worker with its D1 backing store.
+
+## Live spectator view
+
+- Share the live scoreboard with spectators at `/live?matchId=<MATCH_ID>`. For example, if your deployment domain is `https://example.workers.dev` and the match ID is `42`, send `https://example.workers.dev/live?matchId=42`.
+- The `/live` route serves `public/live.html`, which renders the scoreboard, current set, timeout usage, and the five-set summary for the selected match.【F:public/live.html†L1-L86】
+- The viewer subscribes to `/api/matches/:id/stream` via Server-Sent Events and falls back to periodic polling if streaming is unavailable. Spectators automatically see score changes as operators save transitions.【F:public/js/spectator.js†L1-L249】

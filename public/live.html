@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Volleyball Match</title>
+  <link rel="icon" type="image/svg+xml" sizes="any" href="volleyball.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <script>
+    (() => {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const updateTheme = () => {
+        document.documentElement.setAttribute('data-bs-theme', mediaQuery.matches ? 'dark' : 'light');
+      };
+      updateTheme();
+      if (typeof mediaQuery.addEventListener === 'function') {
+        mediaQuery.addEventListener('change', updateTheme);
+      } else if (typeof mediaQuery.addListener === 'function') {
+        mediaQuery.addListener(updateTheme);
+      }
+    })();
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/spectator.css">
+</head>
+<body>
+  <header class="spectator-header">
+    <div class="container">
+      <h1 class="page-title">Live Match Viewer</h1>
+      <p id="viewerStatus" class="status-text" role="status" aria-live="polite">Waiting for match…</p>
+    </div>
+  </header>
+  <main class="spectator-main">
+    <div class="container">
+      <section class="share-card" aria-live="polite">
+        <h2 class="visually-hidden">Share match</h2>
+        <p class="share-text">Share this link with spectators:</p>
+        <a id="shareLink" class="share-link" href="#" aria-live="polite">Select a match to generate a link</a>
+      </section>
+
+      <section class="scoreboard" aria-labelledby="scoreboardTitle">
+        <h2 id="scoreboardTitle" class="section-title">Scoreboard</h2>
+        <div class="scoreboard-display" role="group" aria-label="Current set score">
+          <div class="team-panel" id="homePanel">
+            <span class="team-label" id="homeTeamLabel">Home Team</span>
+            <span class="score-value" id="homeTeamScore">00</span>
+            <div class="timeout-track" id="homeTimeoutTrack" aria-label="Home Team timeouts" role="group"></div>
+          </div>
+          <div class="scoreboard-center">
+            <span class="set-indicator" id="currentSetLabel">Set 1</span>
+            <div class="set-counts" role="group" aria-label="Sets won">
+              <span class="count" id="homeSetCount" aria-label="Home sets won">0</span>
+              <span class="separator" aria-hidden="true">–</span>
+              <span class="count" id="awaySetCount" aria-label="Opponent sets won">0</span>
+            </div>
+          </div>
+          <div class="team-panel team-away" id="awayPanel">
+            <span class="team-label" id="awayTeamLabel">Opponent</span>
+            <span class="score-value" id="awayTeamScore">00</span>
+            <div class="timeout-track" id="awayTimeoutTrack" aria-label="Opponent timeouts" role="group"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="set-summary" aria-labelledby="setSummaryTitle">
+        <h2 id="setSummaryTitle" class="section-title">Set Summary</h2>
+        <div class="table-responsive">
+          <table class="table table-borderless align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">Set</th>
+                <th scope="col" id="homeSummaryHeader">Home</th>
+                <th scope="col" id="awaySummaryHeader">Opponent</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody id="setSummaryBody">
+              <tr>
+                <td colspan="4" class="text-center text-muted">Waiting for match data…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="js/spectator.js"></script>
+</body>
+</html>
