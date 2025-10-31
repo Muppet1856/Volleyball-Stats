@@ -1,8 +1,9 @@
 import { methodNotAllowed, notFound } from './api/responses.js';
-import { routeMatchById, routeMatches } from './api/matches.js';
+import { routeMatchById, routeMatches, routeMatchTransitions } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
 
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
+const MATCH_TRANSITION_PATTERN = /^\/api\/matches\/(\d+)\/transitions$/;
 const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
 
 export default {
@@ -33,6 +34,11 @@ function handleApiRequest(request, env, pathname) {
   const matchId = pathname.match(MATCH_ID_PATTERN);
   if (matchId) {
     return routeMatchById(request, env, Number.parseInt(matchId[1], 10));
+  }
+
+  const matchTransition = pathname.match(MATCH_TRANSITION_PATTERN);
+  if (matchTransition) {
+    return routeMatchTransitions(request, env, Number.parseInt(matchTransition[1], 10));
   }
 
   if (pathname === '/api/players') {
