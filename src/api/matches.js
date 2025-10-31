@@ -33,6 +33,13 @@ export function routeMatchTransitions(request, env, id) {
   return forwardMatchRoom(request, env, id, '/transitions');
 }
 
+export function routeMatchStream(request, env, id) {
+  if (request.method.toUpperCase() !== 'GET') {
+    return methodNotAllowed(['GET']);
+  }
+  return forwardMatchRoom(request, env, id, '/stream');
+}
+
 async function listMatches(env) {
   try {
     const db = getDatabase(env);
