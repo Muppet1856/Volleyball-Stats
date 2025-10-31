@@ -36,9 +36,6 @@ jobs:
       DURABLE_OBJECT_MIGRATION_TAG: ${{ vars.DURABLE_OBJECT_MIGRATION_TAG }}
 
     steps:
-      # ————————————————————————
-      # Checkout
-      # ————————————————————————
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -49,17 +46,11 @@ jobs:
         run: |
           [ -f "src/index.js" ] || (echo "Error: src/index.js missing" >&2; exit 1)
 
-      # ————————————————————————
-      # Install Tools
-      # ————————————————————————
       - name: Install tools
         run: |
           npm install wrangler@4 --save-dev
           sudo apt update -qq && sudo apt install -y jq -qq
 
-      # ————————————————————————
-      # Determine Deploy Type & Badge Label
-      # ————————————————————————
       - name: Determine Deploy Type & Badge Label
         id: cfg
         run: |
@@ -71,24 +62,20 @@ jobs:
               | sed 's/--*/-/g' \
               | sed 's/^-//;s/-$//'
           }
-
           BRANCH_REF="${{ github.ref }}"
           BRANCH_NAME=$(echo "$BRANCH_REF" | sed 's|^refs/heads/||' | sed 's|^refs/pull/[0-9]*/merge$||')
           EVENT="${{ github.event_name }}"
           BADGE_OVERRIDE="${{ inputs.badge_label }}"
-
           if [ "$EVENT" = "push" ] && [ "$BRANCH_NAME" = "main" ]; then
             echo "type=prod" >> $GITHUB_OUTPUT
             echo "env_name=" >> $GITHUB_OUTPUT
             echo "badge_label=production" >> $GITHUB_OUTPUT
-
           elif [ "$EVENT" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
             ENV=$(sanitize "pr-${PR_NUM}")
             echo "type=pr" >> $GITHUB_OUTPUT
             echo "env_name=$ENV" >> $GITHUB_OUTPUT
             echo "badge_label=${BADGE_OVERRIDE:-$ENV}" >> $GITHUB_OUTPUT
-
           elif [ "$EVENT" = "workflow_dispatch" ]; then
             if [ "$BRANCH_NAME" = "main" ]; then
               echo "type=prod" >> $GITHUB_OUTPUT
@@ -100,313 +87,108 @@ jobs:
               echo "env_name=$ENV" >> $GITHUB_OUTPUT
               echo "badge_label=${BADGE_OVERRIDE:-$ENV}" >> $GITHUB_OUTPUT
             fi
-
           else
             echo "type=skip" >> $GITHUB_OUTPUT
           fi
 
-      # ————————————————————————
-      # Validate Cloudflare credentials early
-      # ————————————————————————
       - name: Validate Cloudflare credentials
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
           echo "Validating Cloudflare API token..."
-          npx wrangler whoami || {
-            echo "Error: wrangler whoami failed. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID." >&2
-            exit 1
-          }
+          npx wrangler whoami || { echo "Error: wrangler whoami failed." >&2; exit 1; }
 
-      # ————————————————————————
-      # Setup wrangler.toml + Smart Assets Detection (NO HEREDOC AT ALL)
-      # ————————————————————————
       - name: Setup wrangler.toml with smart assets
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
-          echo "DEBUG: Starting wrangler.toml setup"
-          echo "DEBUG: env_name = '${{ steps.cfg.outputs.env_name }}'"
-          echo "DEBUG: WORKER_NAME = '${{ env.WORKER_NAME }}'"
-
-          if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
-          else
-            FINAL_NAME="${{ env.WORKER_NAME }}"
-          fi
+          [ -n "${{ steps.cfg.outputs.env_name }}" ] && FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}" || FINAL_NAME="${{ env.WORKER_NAME }}"
           COMPAT_DATE=$(date +%Y-%m-%d)
-
-          echo "DEBUG: FINAL_NAME = '$FINAL_NAME'"
-          echo "DEBUG: COMPAT_DATE = '$COMPAT_DATE'"
-
-          # Write base config — safe heredoc with quoted delimiter
           cat > wrangler.toml <<'BASE_EOF'
 name = "${FINAL_NAME}"
 main = "src/index.js"
 compatibility_date = "${COMPAT_DATE}"
 BASE_EOF
-
-          echo "DEBUG: Base wrangler.toml created"
-          cat wrangler.toml
-
-          # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
           FOUND=()
-          SELECTED=""
-
-          echo "DEBUG: Scanning for asset directories..."
           for dir in "${CANDIDATES[@]}"; do
-            if [ -d "$dir" ]; then
-              echo "DEBUG: Found: $dir"
-              FOUND+=("$dir")
-            else
-              echo "DEBUG: Not found: $dir"
-            fi
+            [ -d "$dir" ] && FOUND+=("$dir")
           done
-
-          echo "DEBUG: FOUND count: ${#FOUND[@]}"
-
           if [ ${#FOUND[@]} -gt 1 ]; then
-            echo "ERROR: Multiple asset directories found: ${FOUND[*]}" >&2
-            echo "Only one of 'public', 'dist', or 'build' is allowed." >&2
+            echo "ERROR: Multiple asset dirs: ${FOUND[*]}" >&2
             exit 1
           elif [ ${#FOUND[@]} -eq 1 ]; then
             SELECTED="${FOUND[0]}"
-            echo "DEBUG: Selected assets directory: $SELECTED"
-
-            # NO HEREDOC — use printf (100% safe)
             printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
-
-            echo "Using assets directory: $SELECTED"
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
-          else
-            echo "No assets directory found (public/dist/build) – skipping assets binding."
           fi
-
-          echo "DEBUG: Final wrangler.toml:"
-          cat wrangler.toml
-
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
 
-      # ————————————————————————
-      # Resolve Worker Host
-      # ————————————————————————
       - name: Resolve Worker Host
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
-          cf_get() {
-            local path="$1"
-            curl -sS -X GET "https://api.cloudflare.com/client/v4/${path}" \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              -H "Content-Type: application/json"
-          }
-
-          DOMAIN_HOST=""
-          DOMAINS_JSON=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains")
-          DOMAIN_HOST=$(echo "$DOMAINS_JSON" | jq -r '.result[]? | select(.hostname != null and .hostname != "") | .hostname' | head -n1 || true)
-
-          if [ -n "$DOMAIN_HOST" ]; then
-            DOMAIN_HOST=$(echo "$DOMAIN_HOST" | tr -d '[:space:]')
-            echo "Custom domain found: $DOMAIN_HOST"
-          else
-            echo "No custom domain – falling back to workers.dev"
-          fi
-
+          cf_get() { curl -sS -X GET "https://api.cloudflare.com/client/v4/$1" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json"; }
+          DOMAIN_HOST=$(cf_get "accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" | jq -r '.result[]?.hostname // empty' | head -n1 || true)
+          [ -n "$DOMAIN_HOST" ] && DOMAIN_HOST=$(echo "$DOMAIN_HOST" | tr -d '[:space:]')
           BASE_NAME="${{ env.WORKER_NAME }}"
-
           if [ -n "$DOMAIN_HOST" ]; then
-            if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-              HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.preview.${DOMAIN_HOST}"
-            else
-              HOST="${DOMAIN_HOST}"
-            fi
+            [ -n "${{ steps.cfg.outputs.env_name }}" ] && HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.preview.${DOMAIN_HOST}" || HOST="$DOMAIN_HOST"
           else
-            SUB_JSON=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain")
-            SUBDOMAIN=$(echo "$SUB_JSON" | jq -r '.result.subdomain // empty')
-            [ -n "$SUBDOMAIN" ] || { echo "Error: cannot get workers.dev subdomain" >&2; exit 1; }
-
-            if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-              HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.${SUBDOMAIN}.workers.dev"
-            else
-              HOST="${BASE_NAME}.${SUBDOMAIN}.workers.dev"
-            fi
+            SUBDOMAIN=$(cf_get "accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')
+            [ -n "$SUBDOMAIN" ] || { echo "Error: no workers.dev subdomain" >&2; exit 1; }
+            [ -n "${{ steps.cfg.outputs.env_name }}" ] && HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.${SUBDOMAIN}.workers.dev" || HOST="${BASE_NAME}.${SUBDOMAIN}.workers.dev"
           fi
-
           PREVIEW_URL="https://$HOST"
           echo "WORKER_HOST=$HOST" >> $GITHUB_ENV
           echo "PREVIEW_URL=$PREVIEW_URL" >> $GITHUB_ENV
-          echo "Resolved host: $HOST"
 
-      # ————————————————————————
-      # D1: Create / Bind
-      # ————————————————————————
       - name: Create/Get D1 + Bind
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
           DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
-          DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
-            echo "$WORKER_NAME"
-          else
-            echo "${DEPLOY_ENV}-${WORKER_NAME}"
-          fi)
-
+          DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then echo "$WORKER_NAME"; else echo "${DEPLOY_ENV}-${WORKER_NAME}"; fi)
           DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
-
-          if [ -z "$DB_ID" ]; then
-            npx wrangler d1 create "$DB_NAME"
-            DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
-          fi
-
-          if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
-            cat >> wrangler.toml <<EOF
-
-          [[d1_databases]]
-          binding = "$BINDING_NAME"
-          database_name = "$DB_NAME"
-          database_id = "$DB_ID"
-          EOF
-          fi
-
+          [ -z "$DB_ID" ] && npx wrangler d1 create "$DB_NAME" && DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
+          grep -q "database_id = \"$DB_ID\"" wrangler.toml || printf '\n[[d1_databases]]\nbinding = "%s"\ndatabase_name = "%s"\ndatabase_id = "%s"\n' "$BINDING_NAME" "$DB_NAME" "$DB_ID" >> wrangler.toml
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
 
-      # ————————————————————————
-      # Apply Migrations
-      # ————————————————————————
       - name: Apply Migrations
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
           shopt -s nullglob
           for f in migrations/*.sql; do
             base=$(basename "$f")
-
             if [ "$base" = "migrations.sql" ]; then
-              echo "Checking if schema patch $base needs to run..."
-              revision_exists=$(npx wrangler d1 execute "$DB_NAME" \
-                --command "SELECT COUNT(*) AS cnt FROM pragma_table_info('matches') WHERE name = 'revision';" \
-                --remote --json \
-                | jq '.[0].results[0].cnt // 0')
-
-              if [ "$revision_exists" != "0" ]; then
-                echo "Skipping $base; revision column already present."
-                continue
-              fi
+              revision_exists=$(npx wrangler d1 execute "$DB_NAME" --command "SELECT COUNT(*) FROM pragma_table_info('matches') WHERE name = 'revision';" --remote --json | jq '.[0].results[0].cnt // 0')
+              [ "$revision_exists" != "0" ] && continue
             fi
-
-            echo "Applying migration from $f"
             npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
           done
 
-      # ————————————————————————
-      # Setup wrangler.toml + Smart Assets Detection (NO HEREDOC, BULLETPROOF)
-      # ————————————————————————
-      - name: Setup wrangler.toml with smart assets
+      - name: Inject .cloudflare/vars.json into wrangler.toml
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
+          VARS_JSON=".cloudflare/vars.json"
+          TOML="wrangler.toml"
+          [[ ! -f "$VARS_JSON" ]] && exit 0
+          jq empty "$VARS_JSON" >/dev/null 2>&1 || { echo "Error: invalid JSON in $VARS_JSON" >&2; exit 1; }
+          sed -i '/^# --- BEGIN INJECTED VARS ---$/,/^# --- END INJECTED VARS ---$/d' "$TOML" 2>/dev/null || true
+          { echo "# --- BEGIN INJECTED VARS ---"; echo "[vars]"; jq -r 'to_entries[] | "\(.key) = \"\(.value | gsub("\""; "\\\""))\""' "$VARS_JSON"; echo "# --- END INJECTED VARS ---"; } >> "$TOML"
 
-          echo "DEBUG: Starting wrangler.toml setup"
-          echo "DEBUG: env_name = '${{ steps.cfg.outputs.env_name }}'"
-          echo "DEBUG: WORKER_NAME = '${{ env.WORKER_NAME }}'"
-
-          if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
-          else
-            FINAL_NAME="${{ env.WORKER_NAME }}"
-          fi
-          COMPAT_DATE=$(date +%Y-%m-%d)
-
-          echo "DEBUG: FINAL_NAME = '$FINAL_NAME'"
-          echo "DEBUG: COMPAT_DATE = '$COMPAT_DATE'"
-
-          # Create base wrangler.toml
-          cat > wrangler.toml <<'BASE_EOF'
-          name = "${FINAL_NAME}"
-          main = "src/index.js"
-          compatibility_date = "${COMPAT_DATE}"
-          BASE_EOF
-
-          echo "DEBUG: Base wrangler.toml created"
-          cat wrangler.toml
-
-          # ——— Detect assets: public → dist → build (only ONE allowed) ———
-          CANDIDATES=("public" "dist" "build")
-          FOUND=()
-          SELECTED=""
-
-          echo "DEBUG: Scanning for asset directories..."
-          for dir in "${CANDIDATES[@]}"; do
-            if [ -d "$dir" ]; then
-              echo "DEBUG: Found: $dir"
-              FOUND+=("$dir")
-            else
-              echo "DEBUG: Not found: $dir"
-            fi
-          done
-
-          echo "DEBUG: FOUND count: ${#FOUND[@]}"
-
-          if [ ${#FOUND[@]} -gt 1 ]; then
-            echo "ERROR: Multiple asset directories found: ${FOUND[*]}" >&2
-            echo "Only one of 'public', 'dist', or 'build' is allowed." >&2
-            exit 1
-          elif [ ${#FOUND[@]} -eq 1 ]; then
-            SELECTED="${FOUND[0]}"
-            echo "DEBUG: Selected assets directory: $SELECTED"
-
-            # NO HEREDOC — use printf
-            printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
-
-            echo "Using assets directory: $SELECTED"
-            echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
-          else
-            echo "No assets directory found (public/dist/build) – skipping assets binding."
-          fi
-
-          echo "DEBUG: Final wrangler.toml:"
-          cat wrangler.toml
-
-          echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
-
-      # ————————————————————————
-      # Add Durable Object binding + free-plan migration
-      # ————————————————————————
       - name: Add Durable Object config
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
           DO_NAME="${{ env.DURABLE_OBJECT_NAME }}"
           DO_CLASS="${{ env.DURABLE_OBJECT_CLASS }}"
           DO_TAG="${{ env.DURABLE_OBJECT_MIGRATION_TAG }}"
+          [ -z "$DO_CLASS" ] && { echo "Error: DURABLE_OBJECT_CLASS not set" >&2; exit 1; }
+          printf '\n[[durable_objects.bindings]]\nname = "%s"\nclass_name = "%s"\n\n[[migrations]]\ntag = "%s"\nnew_sqlite_classes = ["%s"]\n' "$DO_NAME" "$DO_CLASS" "$DO_TAG" "$DO_CLASS" >> wrangler.toml
 
-          if [ -z "$DO_CLASS" ]; then
-            echo "Error: DURABLE_OBJECT_CLASS is not set in repository variables" >&2
-            exit 1
-          fi
-
-          cat >> wrangler.toml <<EOF
-
-          [[durable_objects.bindings]]
-          name = "$DO_NAME"
-          class_name = "$DO_CLASS"
-
-          [[migrations]]
-          tag = "$DO_TAG"
-          new_sqlite_classes = ["$DO_CLASS"]
-          EOF
-
-          echo "Durable Object '$DO_CLASS' bound as '$DO_NAME' (free-plan migration: $DO_TAG)"
-
-      # ————————————————————————
-      # Deploy Worker
-      # ————————————————————————
       - name: Deploy Worker
         if: steps.cfg.outputs.type != 'skip'
         uses: cloudflare/wrangler-action@v3
@@ -415,9 +197,6 @@ BASE_EOF
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      # ————————————————————————
-      # Comment on PR
-      # ————————————————————————
       - name: Comment on PR
         if: steps.cfg.outputs.type == 'pr'
         uses: actions/github-script@v6
@@ -430,67 +209,35 @@ BASE_EOF
               body: `Preview: ${{ env.PREVIEW_URL }}`
             });
 
-      # ————————————————————————
-      # Update README Badge
-      # ————————————————————————
       - name: Update README Preview Badge
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
           URL="${{ env.PREVIEW_URL }}"
           LABEL="${{ steps.cfg.outputs.badge_label }}"
           CLEAN_LABEL=$(echo "$LABEL" | tr -d '-')
           SHIELD_URL="https://img.shields.io/badge/preview-${CLEAN_LABEL}-purple?label=preview"
           BADGE="[![preview](${SHIELD_URL})](${URL})"
-
           START="<!-- PREVIEW_BADGE_START -->"
           END="<!-- PREVIEW_BADGE_END -->"
           FILE="README.md"
-
-          grep -qF "$START" "$FILE" && grep -qF "$END" "$FILE" || {
-            echo "Error: Missing badge markers in $FILE" >&2
-            exit 1
-          }
-
+          grep -qF "$START" "$FILE" && grep -qF "$END" "$FILE" || { echo "Error: missing badge markers" >&2; exit 1; }
           ESCAPED_START=$(printf '%s\n' "$START" | sed 's/[&/\]/\\&/g')
           ESCAPED_END=$(printf '%s\n' "$END" | sed 's/[&/\]/\\&/g')
           ESCAPED_BADGE=$(printf '%s\n' "$BADGE" | sed 's/[&/\]/\\&/g')
-
           cp "$FILE" "$FILE.tmp"
           sed -i "s|${ESCAPED_START}.*${ESCAPED_END}|${ESCAPED_START}${ESCAPED_BADGE}${ESCAPED_END}|" "$FILE.tmp"
+          cmp -s "$FILE" "$FILE.tmp" && rm "$FILE.tmp" || mv "$FILE.tmp" "$FILE"
 
-          if ! cmp -s "$FILE" "$FILE.tmp"; then
-            mv "$FILE.tmp" "$FILE"
-            echo "Badge updated: preview-${CLEAN_LABEL} to $URL"
-          else
-            rm "$FILE.tmp"
-            echo "Badge already up-to-date"
-          fi
-
-          grep -qF "$BADGE" "$FILE" || {
-            echo "Error: Badge not inserted!" >&2; cat "$FILE"; exit 1
-          }
-
-      # ————————————————————————
-      # Commit README Update
-      # ————————————————————————
       - name: Commit README Update
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-
-          if git diff --quiet README.md; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
+          git diff --quiet README.md && exit 0
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-            echo "Pushing to PR branch: $BRANCH_NAME"
             git add README.md
             git commit -m "docs: update preview badge for ${{ steps.cfg.outputs.badge_label }}"
             git push origin HEAD:refs/heads/$BRANCH_NAME --force
