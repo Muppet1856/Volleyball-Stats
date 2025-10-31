@@ -144,6 +144,7 @@ let playerSortMode = 'number';
     let autoSaveStatusTimeout = null;
     let suppressAutoSave = true;
     let currentMatchId = null;
+    let currentMatchRevision = 0;
     let hasPendingChanges = false;
     let openJerseySelectInstance = null;
     let scoreGameModalInstance = null;
@@ -2064,6 +2065,7 @@ let playerSortMode = 'number';
         finalizedSets: { ...finalizedSets },
         isSwapped: isSwapped
       };
+      match.revision = currentMatchRevision;
       const matchId = currentMatchId;
       loadedMatchPlayers = [...match.players];
       try {
@@ -2071,6 +2073,9 @@ let playerSortMode = 'number';
           ? await apiClient.updateMatch(matchId, match)
           : await apiClient.createMatch(match);
         const savedId = response?.id ?? matchId ?? null;
+        if (typeof response?.revision === 'number') {
+          currentMatchRevision = response.revision;
+        }
         if (savedId !== null && currentMatchId !== savedId) {
           currentMatchId = savedId;
           const newUrl = `${window.location.pathname}?matchId=${savedId}`;
@@ -2145,6 +2150,7 @@ let playerSortMode = 'number';
           const match = await apiClient.getMatch(matchId);
           if (match) {
             currentMatchId = match.id;
+            currentMatchRevision = typeof match.revision === 'number' ? match.revision : 0;
             loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
             document.getElementById('date').value = match.date || '';
             document.getElementById('location').value = match.location || '';
@@ -2194,6 +2200,7 @@ let playerSortMode = 'number';
             calculateResult();
           } else {
             currentMatchId = null;
+            currentMatchRevision = 0;
             loadedMatchPlayers = [];
             finalizedSets = {};
             resetFinalizeButtons();
@@ -2203,6 +2210,7 @@ let playerSortMode = 'number';
           console.error('Failed to load match', error);
           setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
           currentMatchId = null;
+          currentMatchRevision = 0;
           loadedMatchPlayers = [];
           finalizedSets = {};
           resetFinalizeButtons();
@@ -2210,6 +2218,7 @@ let playerSortMode = 'number';
         }
       } else {
         currentMatchId = matchId ? parseInt(matchId, 10) : null;
+        currentMatchRevision = 0;
         loadedMatchPlayers = [];
         finalizedSets = {};
         resetFinalizeButtons();
@@ -2305,6 +2314,7 @@ let playerSortMode = 'number';
         autoSaveStatusTimeout = null;
       }
       currentMatchId = null;
+      currentMatchRevision = 0;
       loadedMatchPlayers = [];
       finalizedSets = {};
       isSwapped = false;
