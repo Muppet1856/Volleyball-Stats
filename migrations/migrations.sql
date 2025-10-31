@@ -1,5 +1,3 @@
-BEGIN TRANSACTION;
-
 -- Add revision column for optimistic concurrency control when missing.
 ALTER TABLE matches ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
 
@@ -14,5 +12,3 @@ SET
 
 -- Index the timestamp to keep chronological queries efficient.
 CREATE INDEX idx_matches_updated_at ON matches(updated_at);
-
-COMMIT;
