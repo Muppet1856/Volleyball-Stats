@@ -324,17 +324,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          DO_NAME="${{ vars.DURABLE_OBJECT_NAME }}"
-          DO_CLASS="${{ vars.DURABLE_OBJECT_CLASS }}"
-          DO_TAG="${{ vars.DURABLE_OBJECT_MIGRATION_TAG }}"
-
-          # Fallback defaults
-          DO_NAME="${DO_NAME:-MATCH_ROOM}"
-          DO_CLASS="${DO_CLASS:-MatchRoom}"
-          DO_TAG="${DO_TAG:-match-room-v1}"
+          DO_NAME="${{ env.DURABLE_OBJECT_NAME }}"
+          DO_CLASS="${{ env.DURABLE_OBJECT_CLASS }}"
+          DO_TAG="${{ env.DURABLE_OBJECT_MIGRATION_TAG }}"
 
           if [ -z "$DO_CLASS" ]; then
-            echo "Error: Durable Object class name is empty" >&2
+            echo "Error: DURABLE_OBJECT_CLASS is not set in repository variables" >&2
             exit 1
           fi
 
@@ -349,7 +344,7 @@ jobs:
           new_sqlite_classes = ["$DO_CLASS"]
           EOF
 
-          echo "Durable Object $DO_CLASS bound as $DO_NAME (free-plan migration added)"
+          echo "Durable Object '$DO_CLASS' bound as '$DO_NAME' (free-plan migration: $DO_TAG)"
 
       # ————————————————————————
       # Deploy Worker
