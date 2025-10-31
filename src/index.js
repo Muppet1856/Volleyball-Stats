@@ -6,6 +6,7 @@ import {
   routeMatchTransitions
 } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
+export { MatchRoom } from './match-room.js';
 
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
 const MATCH_TRANSITION_PATTERN = /^\/api\/matches\/(\d+)\/transitions$/;
