@@ -283,7 +283,7 @@ jobs:
           done
 
       # ————————————————————————
-      # Setup wrangler.toml + Smart Assets Detection (DEBUG + NO HEREDOC)
+      # Setup wrangler.toml + Smart Assets Detection (NO HEREDOC, BULLETPROOF)
       # ————————————————————————
       - name: Setup wrangler.toml with smart assets
         if: steps.cfg.outputs.type != 'skip'
@@ -311,7 +311,7 @@ jobs:
           compatibility_date = "${COMPAT_DATE}"
           BASE_EOF
 
-          echo "DEBUG: Base wrangler.toml created:"
+          echo "DEBUG: Base wrangler.toml created"
           cat wrangler.toml
 
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
@@ -322,14 +322,13 @@ jobs:
           echo "DEBUG: Scanning for asset directories..."
           for dir in "${CANDIDATES[@]}"; do
             if [ -d "$dir" ]; then
-              echo "DEBUG: Found directory: $dir"
+              echo "DEBUG: Found: $dir"
               FOUND+=("$dir")
             else
               echo "DEBUG: Not found: $dir"
             fi
           done
 
-          echo "DEBUG: FOUND array: ${FOUND[*]}"
           echo "DEBUG: FOUND count: ${#FOUND[@]}"
 
           if [ ${#FOUND[@]} -gt 1 ]; then
@@ -340,7 +339,7 @@ jobs:
             SELECTED="${FOUND[0]}"
             echo "DEBUG: Selected assets directory: $SELECTED"
 
-            # Use printf to avoid heredoc issues
+            # NO HEREDOC — use printf
             printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
 
             echo "Using assets directory: $SELECTED"
