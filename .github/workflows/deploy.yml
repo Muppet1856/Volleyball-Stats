@@ -102,26 +102,36 @@ jobs:
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
-          [ -n "${{ steps.cfg.outputs.env_name }}" ] && FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}" || FINAL_NAME="${{ env.WORKER_NAME }}"
+
+          # Set worker name
+          if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
+            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
+          else
+            FINAL_NAME="${{ env.WORKER_NAME }}"
+          fi
           COMPAT_DATE=$(date +%Y-%m-%d)
-          cat > wrangler.toml <<'BASE_EOF'
-name = "${FINAL_NAME}"
-main = "src/index.js"
-compatibility_date = "${COMPAT_DATE}"
-BASE_EOF
+
+          # Write wrangler.toml line by line — NO HEREDOC
+          printf 'name = "%s"\n' "$FINAL_NAME" > wrangler.toml
+          printf 'main = "src/index.js"\n' >> wrangler.toml
+          printf 'compatibility_date = "%s"\n' "$COMPAT_DATE" >> wrangler.toml
+
+          # Detect assets
           CANDIDATES=("public" "dist" "build")
           FOUND=()
           for dir in "${CANDIDATES[@]}"; do
             [ -d "$dir" ] && FOUND+=("$dir")
           done
+
           if [ ${#FOUND[@]} -gt 1 ]; then
-            echo "ERROR: Multiple asset dirs: ${FOUND[*]}" >&2
+            echo "ERROR: Multiple asset directories: ${FOUND[*]}" >&2
             exit 1
           elif [ ${#FOUND[@]} -eq 1 ]; then
             SELECTED="${FOUND[0]}"
             printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
           fi
+
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
 
       - name: Resolve Worker Host
