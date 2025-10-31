@@ -26,6 +26,13 @@ export function routeMatchById(request, env, id) {
   }
 }
 
+export function routeMatchTransitions(request, env, id) {
+  if (request.method.toUpperCase() !== 'POST') {
+    return methodNotAllowed(['POST']);
+  }
+  return forwardMatchRoom(request, env, id, '/transitions');
+}
+
 async function listMatches(env) {
   try {
     const db = getDatabase(env);
@@ -112,58 +119,7 @@ async function getMatch(env, id) {
 }
 
 async function updateMatch(request, env, id) {
-  let body;
-  try {
-    body = await request.json();
-  } catch (error) {
-    return Response.json({ error: 'Invalid JSON payload' }, { status: 400 });
-  }
-  const payload = normalizeMatchPayload(body);
-  try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      `UPDATE matches SET
-        date = ?,
-        location = ?,
-        types = ?,
-        opponent = ?,
-        jersey_color_sc = ?,
-        jersey_color_opp = ?,
-        result_sc = ?,
-        result_opp = ?,
-        first_server = ?,
-        players = ?,
-        sets = ?,
-        finalized_sets = ?,
-        is_swapped = ?,
-        revision = revision + 1,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?`
-    ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
-      payload.opponent,
-      payload.jerseyColorSC,
-      payload.jerseyColorOpp,
-      payload.resultSC,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0,
-      id
-    );
-    const result = await statement.run();
-    if (!result?.meta || result.meta.changes === 0) {
-      return Response.json({ error: 'Match not found' }, { status: 404 });
-    }
-    return Response.json({ id });
-  } catch (error) {
-    console.error('Failed to update match', error);
-    return Response.json({ error: 'Failed to update match' }, { status: 500 });
-  }
+  return forwardMatchRoom(request, env, id, '/state');
 }
 
 async function deleteMatch(env, id) {
@@ -175,9 +131,68 @@ async function deleteMatch(env, id) {
     if (!result?.meta || result.meta.changes === 0) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
+    await notifyMatchRoomOfDeletion(env, id);
     return new Response(null, { status: 204 });
   } catch (error) {
     console.error('Failed to delete match', error);
     return Response.json({ error: 'Failed to delete match' }, { status: 500 });
+  }
+}
+
+function getMatchRoomNamespace(env) {
+  return (
+    env?.MATCH_ROOMS ??
+    env?.matchRooms ??
+    env?.match_rooms ??
+    env?.MatchRooms ??
+    env?.matchrooms ??
+    null
+  );
+}
+
+function getMatchRoomStub(env, id) {
+  const namespace = getMatchRoomNamespace(env);
+  if (!namespace || typeof namespace.idFromName !== 'function' || typeof namespace.get !== 'function') {
+    return null;
+  }
+  try {
+    const durableId = namespace.idFromName(String(id));
+    return namespace.get(durableId);
+  } catch (error) {
+    console.error('Failed to resolve MatchRoom stub', error);
+    return null;
+  }
+}
+
+async function forwardMatchRoom(request, env, id, path) {
+  const stub = getMatchRoomStub(env, id);
+  if (!stub) {
+    console.error('Missing MatchRoom Durable Object binding');
+    return Response.json({ error: 'Match synchronization service unavailable' }, { status: 500 });
+  }
+  const targetUrl = `https://match-room.internal${path}`;
+  let response;
+  try {
+    response = await stub.fetch(new Request(targetUrl, request));
+  } catch (error) {
+    console.error('Failed to reach MatchRoom Durable Object', error);
+    return Response.json({ error: 'Failed to update match' }, { status: 500 });
+  }
+  const headers = new Headers(response.headers);
+  return new Response(response.body, {
+    status: response.status,
+    headers
+  });
+}
+
+async function notifyMatchRoomOfDeletion(env, id) {
+  const stub = getMatchRoomStub(env, id);
+  if (!stub) {
+    return;
+  }
+  try {
+    await stub.fetch('https://match-room.internal/state', { method: 'DELETE' });
+  } catch (error) {
+    console.warn('Failed to notify MatchRoom of deletion', error);
   }
 }
