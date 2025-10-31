@@ -172,7 +172,7 @@ jobs:
           for f in migrations/*.sql; do
             base=$(basename "$f")
             if [ "$base" = "migrations.sql" ]; then
-              revision_exists=$(npx wrangler d1 execute "$DB_NAME" --command "SELECT COUNT(*) FROM pragma_table_info('matches') WHERE name = 'revision';" --remote --json | jq '.[0].results[0].cnt // 0')
+              revision_exists=$(npx wrangler d1 execute "$DB_NAME" --command "SELECT COUNT(*) AS cnt FROM pragma_table_info('matches') WHERE name = 'revision';" --remote --json | jq '.[0].results[0].cnt // 0')
               [ "$revision_exists" != "0" ] && continue
             fi
             npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
