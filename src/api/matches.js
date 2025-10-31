@@ -65,8 +65,9 @@ async function createMatch(request, env) {
         players,
         sets,
         finalized_sets,
-        is_swapped
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        is_swapped,
+        revision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       payload.date,
       payload.location,
@@ -80,11 +81,20 @@ async function createMatch(request, env) {
       JSON.stringify(payload.players),
       JSON.stringify(payload.sets),
       JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0
+      payload.isSwapped ? 1 : 0,
+      payload.revision ?? 0
     );
     const result = await statement.run();
     const id = result?.meta?.last_row_id;
-    return Response.json({ id }, { status: 201 });
+    if (!id) {
+      throw new Error('Insert did not return a new row id');
+    }
+
+    const row = await loadMatchRow(db, id);
+    if (!row) {
+      throw new Error('Inserted match missing after persistence');
+    }
+    return Response.json(deserializeMatchRow(row), { status: 201 });
   } catch (error) {
     console.error('Failed to create match', error);
     return Response.json({ error: 'Failed to create match' }, { status: 500 });
@@ -94,11 +104,7 @@ async function createMatch(request, env) {
 async function getMatch(env, id) {
   try {
     const db = getDatabase(env);
-    const statement = db.prepare(
-      'SELECT * FROM matches WHERE id = ?'
-    ).bind(id);
-    const { results } = await statement.all();
-    const row = results?.[0];
+    const row = await loadMatchRow(db, id);
     if (!row) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
@@ -119,23 +125,23 @@ async function updateMatch(request, env, id) {
   const payload = normalizeMatchPayload(body);
   try {
     const db = getDatabase(env);
-    const statement = db.prepare(
-      `UPDATE matches SET
-        date = ?,
-        location = ?,
-        types = ?,
-        opponent = ?,
-        jersey_color_sc = ?,
-        jersey_color_opp = ?,
-        result_sc = ?,
-        result_opp = ?,
-        first_server = ?,
-        players = ?,
-        sets = ?,
-        finalized_sets = ?,
-        is_swapped = ?
-      WHERE id = ?`
-    ).bind(
+    const updateColumns = [
+      'date = ?',
+      'location = ?',
+      'types = ?',
+      'opponent = ?',
+      'jersey_color_sc = ?',
+      'jersey_color_opp = ?',
+      'result_sc = ?',
+      'result_opp = ?',
+      'first_server = ?',
+      'players = ?',
+      'sets = ?',
+      'finalized_sets = ?',
+      'is_swapped = ?'
+    ];
+
+    const bindings = [
       payload.date,
       payload.location,
       JSON.stringify(payload.types),
@@ -148,18 +154,39 @@ async function updateMatch(request, env, id) {
       JSON.stringify(payload.players),
       JSON.stringify(payload.sets),
       JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0,
-      id
-    );
+      payload.isSwapped ? 1 : 0
+    ];
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'revision')) {
+      updateColumns.push('revision = ?');
+      bindings.push(payload.revision);
+    }
+
+    bindings.push(id);
+
+    const statement = db.prepare(
+      `UPDATE matches SET ${updateColumns.join(', ')} WHERE id = ?`
+    ).bind(...bindings);
     const result = await statement.run();
     if (!result?.meta || result.meta.changes === 0) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
-    return Response.json({ id });
+
+    const row = await loadMatchRow(db, id);
+    if (!row) {
+      throw new Error('Updated match missing after persistence');
+    }
+    return Response.json(deserializeMatchRow(row));
   } catch (error) {
     console.error('Failed to update match', error);
     return Response.json({ error: 'Failed to update match' }, { status: 500 });
   }
+}
+
+async function loadMatchRow(db, id) {
+  const statement = db.prepare('SELECT * FROM matches WHERE id = ?').bind(id);
+  const { results } = await statement.all();
+  return results?.[0] ?? null;
 }
 
 async function deleteMatch(env, id) {
