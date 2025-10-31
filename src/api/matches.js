@@ -133,7 +133,9 @@ async function updateMatch(request, env, id) {
         players = ?,
         sets = ?,
         finalized_sets = ?,
-        is_swapped = ?
+        is_swapped = ?,
+        revision = revision + 1,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`
     ).bind(
       payload.date,

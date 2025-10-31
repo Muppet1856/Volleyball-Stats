@@ -136,6 +136,9 @@ export function deserializeMatchRow(row) {
     players: parseJson(row.players, []),
     sets: parseJson(row.sets, {}),
     finalizedSets: parseJson(row.finalized_sets, {}),
-    isSwapped: Boolean(row.is_swapped)
+    isSwapped: Boolean(row.is_swapped),
+    revision: Number.isInteger(row.revision) ? row.revision : Number.parseInt(row.revision ?? '0', 10) || 0,
+    createdAt: row.created_at ?? '',
+    updatedAt: row.updated_at ?? row.created_at ?? ''
   };
 }
