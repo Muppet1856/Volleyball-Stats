@@ -150,19 +150,6 @@ jobs:
             fi
           done
 
-          if [ ${#FOUND[@]} -gt 1 ]; then
-            echo "ERROR: Multiple asset directories found: ${FOUND[*]}" >&2
-            echo "Only one of 'public', 'dist', or 'build' is allowed." >&2
-            echo "Remove or rename the extras." >&2
-            exit 1
-          elif [ ${#FOUND[@]} -eq 1 ]; then
-            SELECTED="${FOUND[0]}"
-            printf '\nassets = { directory = "%s" }\n' "$SELECTED" >> wrangler.toml
-            echo "Using assets directory: $SELECTED"
-          else
-            echo "No assets directory found (public/dist/build) – skipping assets binding."
-          fi
-
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
           if [ -n "$SELECTED" ]; then
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
@@ -354,6 +341,15 @@ jobs:
           EOF
 
           echo "Durable Object $DO_CLASS bound as $DO_NAME (free-plan migration added)"
+
+          if [ ${#FOUND[@]} -eq 1 ]; then
+            SELECTED="${FOUND[0]}"
+            cat >> wrangler.toml <<EOF
+
+            assets = { directory = "$SELECTED" }
+            EOF
+            echo "Using assets directory: $SELECTED"
+          fi
 
       # ————————————————————————
       # Deploy Worker
