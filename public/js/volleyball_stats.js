@@ -128,7 +128,40 @@ const apiClient = (() => {
     listMatches: () => request('/api/matches'),
     getMatch: (id) => request(`/api/matches/${id}`),
     createMatch: (match) => request('/api/matches', { method: 'POST', body: match }),
-    updateMatch: (id, match) => request(`/api/matches/${id}`, { method: 'PUT', body: match }),
+    updateMatch: async (id, transition) => {
+      const path = `/api/matches/${id}/transitions`;
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(transition)
+      });
+      const contentType = response.headers.get('content-type') || '';
+      let payload = null;
+      if (contentType.includes('application/json')) {
+        try {
+          payload = await response.json();
+        } catch (error) {
+          payload = null;
+        }
+      } else if (response.status !== 204) {
+        payload = await response.text();
+      }
+      if (!response.ok) {
+        const error = new Error(`POST ${path} failed with status ${response.status}`);
+        error.status = response.status;
+        if (payload && typeof payload === 'string') {
+          try {
+            error.payload = JSON.parse(payload);
+          } catch (parseError) {
+            error.payload = payload;
+          }
+        } else {
+          error.payload = payload;
+        }
+        throw error;
+      }
+      return payload;
+    },
     deleteMatch: (id) => request(`/api/matches/${id}`, { method: 'DELETE' })
   };
 })();
@@ -145,12 +178,14 @@ let playerSortMode = 'number';
     let suppressAutoSave = true;
     let currentMatchId = null;
     let hasPendingChanges = false;
+    let lastSavedMatchSnapshot = null;
     let openJerseySelectInstance = null;
     let scoreGameModalInstance = null;
     let jerseyConflictModalInstance = null;
     let jerseyConflictModalMessageElement = null;
     let jerseyThemeObserver = null;
     let isResolvingJerseyColorConflict = false;
+    let toastContainerElement = null;
     const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
     const TIMEOUT_COUNT = 2;
     const TIMEOUT_DURATION_SECONDS = 60;
@@ -346,6 +381,188 @@ let playerSortMode = 'number';
           // Errors handled within saveMatch
         }
       }, 500);
+    }
+
+    function withAutoSaveSuppressed(callback) {
+      const previousValue = suppressAutoSave;
+      suppressAutoSave = true;
+      try {
+        callback();
+      } finally {
+        suppressAutoSave = previousValue;
+      }
+    }
+
+    function cloneMatchSnapshot(match) {
+      if (!match) return null;
+      if (typeof structuredClone === 'function') {
+        try {
+          return structuredClone(match);
+        } catch (error) {
+          // Fallback to JSON serialization below
+        }
+      }
+      try {
+        return JSON.parse(JSON.stringify(match));
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function ensureToastContainer() {
+      if (toastContainerElement && document.body.contains(toastContainerElement)) {
+        return toastContainerElement;
+      }
+      const container = document.createElement('div');
+      container.className = 'toast-container position-fixed top-0 end-0 p-3';
+      container.setAttribute('aria-live', 'polite');
+      container.setAttribute('aria-atomic', 'true');
+      document.body.appendChild(container);
+      toastContainerElement = container;
+      return container;
+    }
+
+    function showToast(message, { title = 'Notice', variant = 'primary', delay = 5000 } = {}) {
+      if (!message) return;
+      const container = ensureToastContainer();
+      const toastElement = document.createElement('div');
+      toastElement.className = `toast text-bg-${variant} border-0`;
+      toastElement.setAttribute('role', 'alert');
+      toastElement.setAttribute('aria-live', 'assertive');
+      toastElement.setAttribute('aria-atomic', 'true');
+
+      if (title) {
+        const header = document.createElement('div');
+        header.className = 'toast-header text-bg-dark text-white border-0';
+        const strong = document.createElement('strong');
+        strong.className = 'me-auto';
+        strong.textContent = title;
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close btn-close-white';
+        closeButton.setAttribute('data-bs-dismiss', 'toast');
+        closeButton.setAttribute('aria-label', 'Close');
+        header.appendChild(strong);
+        header.appendChild(closeButton);
+        toastElement.appendChild(header);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'toast-body';
+      body.textContent = message;
+      toastElement.appendChild(body);
+
+      container.appendChild(toastElement);
+      const toast = new bootstrap.Toast(toastElement, { autohide: true, delay });
+      toast.show();
+      toastElement.addEventListener('hidden.bs.toast', () => {
+        toast.dispose();
+        toastElement.remove();
+      });
+    }
+
+    function resetFinalizeButtonsStyles() {
+      for (let i = 1; i <= 5; i++) {
+        const button = document.getElementById(`finalizeButton${i}`);
+        if (button) {
+          button.classList.remove('finalized-btn');
+        }
+      }
+    }
+
+    function applyMatchSnapshotToForm(match) {
+      if (!match) return;
+      const form = document.getElementById('matchForm');
+      if (form) {
+        form.classList.remove('was-validated');
+      }
+
+      currentMatchId = match.id ?? currentMatchId;
+      loadedMatchPlayers = Array.isArray(match.players) ? match.players.slice() : [];
+
+      const dateInput = document.getElementById('date');
+      if (dateInput) dateInput.value = match.date || '';
+      const locationInput = document.getElementById('location');
+      if (locationInput) locationInput.value = match.location || '';
+
+      const typeIds = ['tournament', 'league', 'postSeason', 'nonLeague'];
+      typeIds.forEach((typeId) => {
+        const element = document.getElementById(typeId);
+        if (!element) return;
+        element.checked = Boolean(match.types?.[typeId]);
+      });
+
+      const opponentInput = document.getElementById('opponent');
+      if (opponentInput) opponentInput.value = match.opponent || '';
+
+      const jerseyColorSC = document.getElementById('jerseyColorSC');
+      if (jerseyColorSC) jerseyColorSC.value = match.jerseyColorSC || 'white';
+      const jerseyColorOpp = document.getElementById('jerseyColorOpp');
+      if (jerseyColorOpp) jerseyColorOpp.value = match.jerseyColorOpp || 'white';
+      refreshJerseySelectDisplays();
+      ensureDistinctJerseyColors(jerseyColorSC, { showModal: false });
+      applyJerseyColorToNumbers();
+
+      const resultSC = document.getElementById('resultSC');
+      if (resultSC) resultSC.value = match.resultSC ?? 0;
+      const resultOpp = document.getElementById('resultOpp');
+      if (resultOpp) resultOpp.value = match.resultOpp ?? 0;
+
+      updateOpponentName();
+      setFirstServerSelection(match.firstServer || '');
+      updatePlayerList();
+
+      for (let i = 1; i <= 5; i++) {
+        const scInput = document.getElementById(`set${i}SC`);
+        const oppInput = document.getElementById(`set${i}Opp`);
+        if (scInput) {
+          scInput.value = normalizeStoredScoreValue(match.sets?.[i]?.sc ?? match.sets?.[String(i)]?.sc);
+        }
+        if (oppInput) {
+          oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp ?? match.sets?.[String(i)]?.opp);
+        }
+      }
+
+      resetAllTimeouts({ resetStored: true });
+      SET_NUMBERS.forEach((setNumber) => {
+        const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
+        setMatchTimeoutState(setNumber, setData?.timeouts);
+      });
+      refreshAllTimeoutDisplays();
+
+      finalizedSets = { ...(match.finalizedSets || {}) };
+      resetFinalizeButtonsStyles();
+      for (let i = 1; i <= 5; i++) {
+        if (finalizedSets[i]) {
+          const button = document.getElementById(`finalizeButton${i}`);
+          if (button) {
+            button.classList.add('finalized-btn');
+          }
+        }
+      }
+      updateAllFinalizeButtonStates();
+
+      const desiredSwapState = Boolean(match.isSwapped);
+      if (isSwapped !== desiredSwapState) {
+        swapScores();
+      }
+      isSwapped = desiredSwapState;
+      refreshAllTeamHeaderButtons();
+      calculateResult();
+    }
+
+    function syncFormWithMatchSnapshot(match) {
+      if (!match) return;
+      withAutoSaveSuppressed(() => {
+        applyMatchSnapshotToForm(match);
+      });
+    }
+
+    function generateIdempotencyKey() {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+      return `transition-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     }
 
     function maybeRecalculateFinalResult(target) {
@@ -2003,6 +2220,114 @@ let playerSortMode = 'number';
     }
 
 
+    function extractMatchSnapshot(payload, fallbackId) {
+      if (!payload || typeof payload !== 'object') return null;
+      let candidate = payload.match
+        || payload.snapshot
+        || payload.data
+        || payload.next
+        || payload.current
+        || payload.latest
+        || null;
+      if (!candidate && payload.result && typeof payload.result === 'object') {
+        candidate = payload.result.match
+          || payload.result.snapshot
+          || payload.result.current
+          || null;
+      }
+      if (!candidate || typeof candidate !== 'object') return null;
+      const snapshot = cloneMatchSnapshot(candidate) || candidate;
+      if (snapshot && snapshot.id == null && fallbackId != null) {
+        snapshot.id = fallbackId;
+      }
+      return snapshot;
+    }
+
+    async function submitMatchTransition({ matchId, nextMatch, showAlert, originalOverride = null }) {
+      const originalSnapshot = originalOverride ? cloneMatchSnapshot(originalOverride) : cloneMatchSnapshot(lastSavedMatchSnapshot);
+      const transitionPayload = {
+        original: originalSnapshot,
+        next: nextMatch,
+        idempotencyKey: generateIdempotencyKey()
+      };
+      try {
+        const response = await apiClient.updateMatch(matchId, transitionPayload);
+        return handleTransitionSuccess({ response, matchId, nextMatch, showAlert });
+      } catch (error) {
+        if (error?.status === 409) {
+          return handleTransitionConflict({ error, matchId, nextMatch, showAlert });
+        }
+        console.error('Failed to save match', error);
+        if (showAlert) {
+          alert('Unable to save match. Please try again.');
+        } else {
+          setAutoSaveStatus('Error saving changes.', 'text-danger', 4000);
+        }
+        throw error;
+      }
+    }
+
+    function handleTransitionSuccess({ response, matchId, nextMatch, showAlert }) {
+      const resolvedId = response?.id ?? matchId ?? currentMatchId ?? null;
+      if (resolvedId !== null && currentMatchId !== resolvedId) {
+        currentMatchId = resolvedId;
+        const newUrl = `${window.location.pathname}?matchId=${resolvedId}`;
+        window.history.replaceState(null, '', newUrl);
+      }
+      const snapshot = extractMatchSnapshot(response, resolvedId);
+      if (snapshot) {
+        lastSavedMatchSnapshot = cloneMatchSnapshot(snapshot) || snapshot;
+        syncFormWithMatchSnapshot(snapshot);
+      } else {
+        const fallback = { ...nextMatch };
+        if (resolvedId !== null) {
+          fallback.id = resolvedId;
+        }
+        lastSavedMatchSnapshot = cloneMatchSnapshot(fallback) || fallback;
+      }
+      hasPendingChanges = false;
+      if (showAlert) {
+        const url = `${window.location.href.split('?')[0]}${resolvedId ? `?matchId=${resolvedId}` : ''}`;
+        alert(`Match ${matchId !== null ? 'updated' : 'saved'}! View it at: ${url}`);
+      } else {
+        setAutoSaveStatus('All changes saved.', 'text-success');
+      }
+      populateMatchIndexModal();
+      return resolvedId;
+    }
+
+    async function handleTransitionConflict({ error, matchId, nextMatch, showAlert }) {
+      const payload = error?.payload;
+      const snapshot = extractMatchSnapshot(payload, matchId ?? currentMatchId ?? null);
+      if (snapshot) {
+        lastSavedMatchSnapshot = cloneMatchSnapshot(snapshot) || snapshot;
+        syncFormWithMatchSnapshot(snapshot);
+      }
+      const message = (payload && typeof payload.message === 'string')
+        ? payload.message
+        : 'Another scorer saved changes. Your view has been refreshed with the latest data.';
+      showToast(message, { title: 'Changes overwritten', variant: 'warning', delay: 7000 });
+      setAutoSaveStatus('Latest changes loaded from server.', 'text-warning', 6000);
+      hasPendingChanges = false;
+      if (showAlert) {
+        alert('Another scorer saved changes before you. Review the latest data before saving again.');
+      }
+      if (!snapshot) {
+        return matchId ?? currentMatchId ?? null;
+      }
+      const shouldRetry = window.confirm('Apply your change on top of the latest updates from another scorer?');
+      if (!shouldRetry) {
+        return matchId ?? currentMatchId ?? null;
+      }
+      setAutoSaveStatus('Saving…', 'text-warning', null);
+      return submitMatchTransition({
+        matchId: snapshot.id ?? matchId ?? currentMatchId,
+        nextMatch,
+        showAlert,
+        originalOverride: snapshot
+      });
+    }
+
     async function saveMatch({ showAlert = false } = {}) {
       if (suppressAutoSave) return null;
       persistCurrentSetTimeouts();
@@ -2018,7 +2343,7 @@ let playerSortMode = 'number';
         const value = parseInt(element.value, 10);
         return Number.isNaN(value) ? null : value;
       };
-      const match = {
+      const nextMatch = {
         date: document.getElementById('date').value,
         location: document.getElementById('location').value,
         types: {
@@ -2065,35 +2390,41 @@ let playerSortMode = 'number';
         isSwapped: isSwapped
       };
       const matchId = currentMatchId;
-      loadedMatchPlayers = [...match.players];
-      try {
-        const response = matchId !== null
-          ? await apiClient.updateMatch(matchId, match)
-          : await apiClient.createMatch(match);
-        const savedId = response?.id ?? matchId ?? null;
-        if (savedId !== null && currentMatchId !== savedId) {
-          currentMatchId = savedId;
-          const newUrl = `${window.location.pathname}?matchId=${savedId}`;
-          window.history.replaceState(null, '', newUrl);
+      loadedMatchPlayers = [...nextMatch.players];
+      if (matchId === null || matchId === undefined) {
+        try {
+          const response = await apiClient.createMatch(nextMatch);
+          const savedId = response?.id ?? null;
+          if (savedId !== null) {
+            currentMatchId = savedId;
+            const newUrl = `${window.location.pathname}?matchId=${savedId}`;
+            window.history.replaceState(null, '', newUrl);
+          }
+          const snapshot = { ...nextMatch };
+          if (savedId !== null) {
+            snapshot.id = savedId;
+          }
+          lastSavedMatchSnapshot = cloneMatchSnapshot(snapshot) || snapshot;
+          hasPendingChanges = false;
+          if (showAlert) {
+            const url = `${window.location.href.split('?')[0]}${savedId ? `?matchId=${savedId}` : ''}`;
+            alert(`Match saved! View it at: ${url}`);
+          } else {
+            setAutoSaveStatus('All changes saved.', 'text-success');
+          }
+          populateMatchIndexModal();
+          return savedId;
+        } catch (error) {
+          console.error('Failed to save match', error);
+          if (showAlert) {
+            alert('Unable to save match. Please try again.');
+          } else {
+            setAutoSaveStatus('Error saving changes.', 'text-danger', 4000);
+          }
+          throw error;
         }
-        hasPendingChanges = false;
-        if (showAlert) {
-          const url = `${window.location.href.split('?')[0]}${savedId ? `?matchId=${savedId}` : ''}`;
-          alert(`Match ${matchId !== null ? 'updated' : 'saved'}! View it at: ${url}`);
-        } else {
-          setAutoSaveStatus('All changes saved.', 'text-success');
-        }
-        populateMatchIndexModal();
-        return savedId;
-      } catch (error) {
-        console.error('Failed to save match', error);
-        if (showAlert) {
-          alert('Unable to save match. Please try again.');
-        } else {
-          setAutoSaveStatus('Error saving changes.', 'text-danger', 4000);
-        }
-        throw error;
       }
+      return submitMatchTransition({ matchId, nextMatch, showAlert });
     }
     
     async function deleteMatch(matchId) {
@@ -2119,104 +2450,71 @@ let playerSortMode = 'number';
       const urlParams = new URLSearchParams(window.location.search);
       const matchId = urlParams.get('matchId');
       suppressAutoSave = true;
-      if (autoSaveTimeout) {
-        clearTimeout(autoSaveTimeout);
-        autoSaveTimeout = null;
-      }
-      if (autoSaveStatusTimeout) {
-        clearTimeout(autoSaveStatusTimeout);
-        autoSaveStatusTimeout = null;
-      }
-      const form = document.getElementById('matchForm');
-      if (form) {
-        form.classList.remove('was-validated');
-      }
-      const resetFinalizeButtons = () => {
-        for (let i = 1; i <= 5; i++) {
-          const button = document.getElementById(`finalizeButton${i}`);
-          if (button) {
-            button.classList.remove('finalized-btn');
-          }
+      try {
+        if (autoSaveTimeout) {
+          clearTimeout(autoSaveTimeout);
+          autoSaveTimeout = null;
         }
-      };
-      resetAllTimeouts({ resetStored: true });
-      if (matchId) {
-        try {
-          const match = await apiClient.getMatch(matchId);
-          if (match) {
-            currentMatchId = match.id;
-            loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
-            document.getElementById('date').value = match.date || '';
-            document.getElementById('location').value = match.location || '';
-            document.getElementById('tournament').checked = Boolean(match.types?.tournament);
-            document.getElementById('league').checked = Boolean(match.types?.league);
-            document.getElementById('postSeason').checked = Boolean(match.types?.postSeason);
-            document.getElementById('nonLeague').checked = Boolean(match.types?.nonLeague);
-            document.getElementById('opponent').value = match.opponent || '';
-            document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
-            document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
-            refreshJerseySelectDisplays();
-            ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
-            applyJerseyColorToNumbers();
-            document.getElementById('resultSC').value = match.resultSC ?? 0;
-            document.getElementById('resultOpp').value = match.resultOpp ?? 0;
-            const storedFirstServer = match.firstServer || '';
-            updateOpponentName();
-            setFirstServerSelection(storedFirstServer);
-            updatePlayerList();
-            for (let i = 1; i <= 5; i++) {
-              const scInput = document.getElementById(`set${i}SC`);
-              const oppInput = document.getElementById(`set${i}Opp`);
-              if (scInput) {
-                scInput.value = normalizeStoredScoreValue(match.sets?.[i]?.sc);
+        if (autoSaveStatusTimeout) {
+          clearTimeout(autoSaveStatusTimeout);
+          autoSaveStatusTimeout = null;
+        }
+        const form = document.getElementById('matchForm');
+        if (form) {
+          form.classList.remove('was-validated');
+        }
+
+        resetAllTimeouts({ resetStored: true });
+
+        if (matchId) {
+          try {
+            const match = await apiClient.getMatch(matchId);
+            if (match) {
+              const snapshot = cloneMatchSnapshot(match) || match;
+              if (snapshot && snapshot.id == null) {
+                snapshot.id = match.id ?? parseInt(matchId, 10);
               }
-              if (oppInput) {
-                oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
-              }
+              lastSavedMatchSnapshot = cloneMatchSnapshot(snapshot) || snapshot;
+              syncFormWithMatchSnapshot(snapshot);
+            } else {
+              currentMatchId = null;
+              loadedMatchPlayers = [];
+              finalizedSets = {};
+              isSwapped = false;
+              resetFinalizeButtonsStyles();
+              updatePlayerList();
+              refreshAllTeamHeaderButtons();
+              calculateResult();
+              lastSavedMatchSnapshot = null;
             }
-            SET_NUMBERS.forEach((setNumber) => {
-              const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
-              setMatchTimeoutState(setNumber, setData?.timeouts);
-            });
-            finalizedSets = { ...(match.finalizedSets || {}) };
-            isSwapped = Boolean(match.isSwapped);
-            resetFinalizeButtons();
-            for (let i = 1; i <= 5; i++) {
-              if (finalizedSets[i]) {
-                const button = document.getElementById(`finalizeButton${i}`);
-                if (button) {
-                  button.classList.add('finalized-btn');
-                }
-              }
-            }
-            updateAllFinalizeButtonStates();
-            if (isSwapped) swapScores();
-            calculateResult();
-          } else {
+          } catch (error) {
+            console.error('Failed to load match', error);
+            setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
             currentMatchId = null;
             loadedMatchPlayers = [];
             finalizedSets = {};
-            resetFinalizeButtons();
+            isSwapped = false;
+            resetFinalizeButtonsStyles();
             updatePlayerList();
+            refreshAllTeamHeaderButtons();
+            calculateResult();
+            lastSavedMatchSnapshot = null;
           }
-        } catch (error) {
-          console.error('Failed to load match', error);
-          setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
-          currentMatchId = null;
+        } else {
+          currentMatchId = matchId ? parseInt(matchId, 10) : null;
           loadedMatchPlayers = [];
           finalizedSets = {};
-          resetFinalizeButtons();
+          isSwapped = false;
+          resetFinalizeButtonsStyles();
           updatePlayerList();
+          refreshAllTeamHeaderButtons();
+          calculateResult();
+          lastSavedMatchSnapshot = null;
         }
-      } else {
-        currentMatchId = matchId ? parseInt(matchId, 10) : null;
-        loadedMatchPlayers = [];
-        finalizedSets = {};
-        resetFinalizeButtons();
-        updatePlayerList();
+        hasPendingChanges = false;
+      } finally {
+        suppressAutoSave = false;
       }
-      hasPendingChanges = false;
-      suppressAutoSave = false;
     }
 
 
@@ -2308,6 +2606,7 @@ let playerSortMode = 'number';
       loadedMatchPlayers = [];
       finalizedSets = {};
       isSwapped = false;
+      lastSavedMatchSnapshot = null;
 
       const form = document.getElementById('matchForm');
       if (form) {
