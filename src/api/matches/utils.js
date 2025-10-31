@@ -83,7 +83,18 @@ export function normalizeMatchPayload(input = {}) {
     return Number.isNaN(parsed) ? null : parsed;
   };
 
-  return {
+  const toRevisionOrNull = (value) => {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed)) {
+      return null;
+    }
+    return parsed < 0 ? 0 : parsed;
+  };
+
+  const normalized = {
     date: input.date ? String(input.date) : '',
     location: input.location ? String(input.location) : '',
     types: coerceTypes(input.types),
@@ -98,6 +109,13 @@ export function normalizeMatchPayload(input = {}) {
     finalizedSets: coerceFinalized(input.finalizedSets),
     isSwapped: Boolean(input.isSwapped)
   };
+
+  const revision = toRevisionOrNull(input.revision);
+  if (revision !== null) {
+    normalized.revision = revision;
+  }
+
+  return normalized;
 }
 
 const DEFAULT_TYPES = {
@@ -119,6 +137,9 @@ const parseJson = (value, fallback) => {
 };
 
 export function deserializeMatchRow(row) {
+  const parsedRevision = Number.parseInt(row.revision, 10);
+  const revision = Number.isNaN(parsedRevision) ? 0 : Math.max(parsedRevision, 0);
+
   return {
     id: row.id,
     date: row.date ?? '',
@@ -136,6 +157,9 @@ export function deserializeMatchRow(row) {
     players: parseJson(row.players, []),
     sets: parseJson(row.sets, {}),
     finalizedSets: parseJson(row.finalized_sets, {}),
-    isSwapped: Boolean(row.is_swapped)
+    isSwapped: Boolean(row.is_swapped),
+    revision,
+    createdAt: row.created_at ?? '',
+    updatedAt: row.updated_at ?? row.created_at ?? ''
   };
 }
