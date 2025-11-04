@@ -60,19 +60,19 @@ export class MatchState {
       await storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS live_sets (
           set_number INTEGER PRIMARY KEY,
-          live_score TEXT,  // e.g., JSON {home: 25, away: 23}
-          timeouts JSON,    // e.g., {home: 1, away: 0}
+          live_score TEXT,  -- e.g., JSON {home: 25, away: 23}
+          timeouts JSON,    -- e.g., {home: 1, away: 0}
           final_flag BOOLEAN DEFAULT FALSE
         );
         CREATE TABLE IF NOT EXISTS match_info (
-          id TEXT PRIMARY KEY,  // Match ID
+          id TEXT PRIMARY KEY,  -- Match ID
           opponent TEXT,
           date TEXT,
           time TEXT,
           jerseys TEXT,
           who_served_first TEXT,
           players_appeared JSON,
-          match_score TEXT,  // Updated on finalization
+          match_score TEXT,  -- Updated on finalization
           location TEXT,
           type TEXT
         );
