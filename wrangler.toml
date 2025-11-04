@@ -6,6 +6,7 @@ assets = { directory = "public" }
 
 vars = { HOME_TEAM = "HoMe" }
 
+# npx wrangler d1 migrations apply local-volleyball-stats --local --persist-to=.wrangler/state
 [[d1_databases]]
 binding = "VOLLEYBALL_STATS_DB"
 database_name = "local-volleyball-stats"
