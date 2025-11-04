@@ -17,6 +17,33 @@ export default {
   }
 };
 
+export class MatchState {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+  
+  async fetch(request) {
+    const url = new URL(request.url);
+    const matchId = url.searchParams.get('matchId');
+    
+    if (url.pathname === 'get-score' && matchId) {
+      // Fetch live score from DO storage
+      const score = await this.state.storage.get('score') || { home: 0, away: 0 };
+      return new Response(JSON.stringify(score), { headers: { 'Content-Type': 'application/json' } });
+    }
+    
+    if (url.pathname === '/update-score' && matchId) {
+      // Update score (atomic, consistent)
+      const newScore = await request.json();
+      await this.state.storage.put('score', newScore);
+      return new Response('Score updated', { status: 200 });
+    }
+
+    return new Response('Not found', { status: 404 });
+  }
+}
+
 function handleApiRequest(request, env, pathname) {
   if (pathname === '/api/matches') {
     return routeMatches(request, env);

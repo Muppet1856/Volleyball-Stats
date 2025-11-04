@@ -130,12 +130,10 @@ jobs:
           fi
           COMPAT_DATE=$(date +%Y-%m-%d)
 
-          cat > wrangler.toml <<EOF
-          name = "${FINAL_NAME}"
-          main = "src/index.js"
-          compatibility_date = "${COMPAT_DATE}"
-          EOF
-
+          echo "name = \"${FINAL_NAME}\"" >> wrangler.toml
+          echo "main = \"src/index.js\"" >> wrangler.toml
+          echo "compatibility_date = \"${COMPAT_DATE}\"" >> wrangler.toml
+                    
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
           FOUND=()
@@ -164,6 +162,12 @@ jobs:
           if [ -n "$SELECTED" ]; then
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
           fi
+
+          # ——— Setup Durable Object ———
+          echo "[durable_objects]" >> wrangler.toml
+          echo "bindings = [" >> wrangler.toml
+          echo "  { name = \"MATCH_DO\", class_name = \"MatchState\" }" >> wrangler.toml
+          echo "]" >> wrangler.toml
 
       # ————————————————————————
       # Resolve Worker Host
@@ -219,11 +223,42 @@ jobs:
       # ————————————————————————
       # D1: Create / Bind
       # ————————————————————————
-      - name: Create/Get D1 + Bind
-        if: steps.cfg.outputs.type != 'skip'
+      # - name: Create/Get D1 + Bind
+        # if: steps.cfg.outputs.type != 'skip' && vars.USE_DO != 'true'
+        # run: |
+          # set -euo pipefail
+
+          # DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
+          # DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
+            # echo "$WORKER_NAME"
+          # else
+            # echo "${DEPLOY_ENV}-${WORKER_NAME}"
+          # fi)
+
+          # DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
+
+          # if [ -z "$DB_ID" ]; then
+            # npx wrangler d1 create "$DB_NAME"
+            # DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
+          # fi
+
+          # if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
+            # cat >> wrangler.toml <<EOF
+
+          # [[d1_databases]]
+          # binding = "$BINDING_NAME"
+          # database_name = "$DB_NAME"
+          # database_id = "$DB_ID"
+          # EOF
+          # fi
+
+          # echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+
+      - name: Apply DO Migrations (if needed)
+        if: steps.cfg.outputs.type != 'skip' && vars.APPLY_DO_MIGRATION == 'true'
         run: |
           set -euo pipefail
-
+          
           DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
           DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
             echo "$WORKER_NAME"
@@ -231,37 +266,21 @@ jobs:
             echo "${DEPLOY_ENV}-${WORKER_NAME}"
           fi)
 
-          DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
-
-          if [ -z "$DB_ID" ]; then
-            npx wrangler d1 create "$DB_NAME"
-            DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
-          fi
-
-          if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
-            cat >> wrangler.toml <<EOF
-
-          [[d1_databases]]
-          binding = "$BINDING_NAME"
-          database_name = "$DB_NAME"
-          database_id = "$DB_ID"
-          EOF
-          fi
-
-          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          npx wrangler deploy --dry-run  # Validates migrations
+          npx wrangler deploy  # Applies if ok
 
       # ————————————————————————
-      # Apply Migrations
+      # Apply D1 Migrations
       # ————————————————————————
-      - name: Apply Migrations
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
+      # - name: Apply Migrations
+        # if: steps.cfg.outputs.type != 'skip' && vars.USE_DO != 'true'
+        # run: |
+          # set -euo pipefail
 
-          shopt -s nullglob
-          for f in migrations/*.sql; do
-            npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
-          done
+          # shopt -s nullglob
+          # for f in migrations/*.sql; do
+            # npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
+          # done
 
       # ————————————————————————
       # Load env vars from .cloudflare/vars.json → wrangler.toml
