@@ -168,6 +168,10 @@ jobs:
           echo "bindings = [" >> wrangler.toml
           echo "  { name = \"MATCH_DO\", class_name = \"MatchState\" }" >> wrangler.toml
           echo "]" >> wrangler.toml
+          
+          echo "[[migrations]]" >> wrangler.toml
+          echo "tag = \"v1\"" >> wrangler.toml
+          echo "new_classes = [\"MatchState\"]" >> wrangler.toml
 
       # ————————————————————————
       # Resolve Worker Host
