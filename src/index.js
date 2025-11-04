@@ -7,6 +7,7 @@ DO by match for the Live Score by set, Timeouts by set, and the final score flag
 import { methodNotAllowed, notFound } from './api/responses.js';
 import { routeMatchById, routeMatches } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
+import { getDatabase } from './api/database.js';
 
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
 const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
@@ -15,6 +16,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const matchId = url.searchParams.get("matchId");  // Assume clients pass matchId
+    const db = getDatabase(env);
 
     if (matchId) {
       const doId = env.MATCH_DO.idFromName(matchId);  // Per-match sharding
@@ -22,7 +24,10 @@ export default {
 
       // Proxy client requests to DO (add auth/validation as needed)
       if (url.pathname.startsWith("/live/")) {
-        return doStub.fetch(request);  // Forwards to DO's fetch
+        const forwardedUrl = new URL(request.url);
+        forwardedUrl.pathname = forwardedUrl.pathname.slice("/live".length) || "/";
+        const forwardedRequest = new Request(forwardedUrl.toString(), request);
+        return doStub.fetch(forwardedRequest);  // Forwards to DO's fetch
       }
 
       // WebSocket proxy for live clients
@@ -33,7 +38,7 @@ export default {
 
     // Direct D1 reads for archived matches (e.g., list completed)
     if (url.pathname === "/list-matches") {
-      const { results } = await env.BINDING_NAME.prepare("SELECT * FROM matches").all();
+      const { results } = await db.prepare("SELECT * FROM matches").all();
       return new Response(JSON.stringify(results));
     }
 
@@ -54,6 +59,7 @@ export class MatchState {
   constructor(state, env) {
     this.state = state;
     this.env = env;
+    this.db = getDatabase(env);
     this.state.blockConcurrencyWhile(async () => {
       // Initialize storage schema on first access (mirrors D1 tables for live data)
       const storage = this.state.storage;
@@ -98,7 +104,7 @@ export class MatchState {
             [matchId, body.opponent, body.date, body.time, body.jerseys, body.who_served_first, JSON.stringify(body.players_appeared), body.location, body.type]
           );
           // Optionally sync to D1 immediately (or defer to finalization)
-          const d1 = this.env.BINDING_NAME;
+          const d1 = this.db;
           await d1.prepare(
             `INSERT OR REPLACE INTO matches (id, opponent, date, time, jerseys, who_served_first, players_appeared, location, type)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -132,7 +138,7 @@ export class MatchState {
           const matchScore = allSets.reduce((acc, set) => { /* e.g., count wins */ return acc; }, {home: 0, away: 0});
 
           // Push to D1
-          const d1 = this.env.BINDING_NAME;
+          const d1 = this.db;
           await d1.prepare(`INSERT INTO sets (match_id, set_number, final_score) VALUES (?, ?, ?)`)
             .bind(matchId, body.set_number, JSON.stringify(finalScore)).run();
           await d1.prepare(`UPDATE matches SET match_score = ? WHERE id = ?`)
