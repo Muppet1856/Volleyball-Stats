@@ -1,111 +1,5 @@
-const TIMEOUT_COUNT = 2;
-
-export function normalizeMatchPayload(input = {}) {
-  const coerceTypes = (types = {}) => ({
-    tournament: Boolean(types.tournament),
-    league: Boolean(types.league),
-    postSeason: Boolean(types.postSeason),
-    nonLeague: Boolean(types.nonLeague)
-  });
-
-  const coercePlayers = (players) =>
-    Array.isArray(players)
-      ? players.map((player) => String(player ?? '').trim()).filter(Boolean)
-      : [];
-
-  const toTimeoutBoolean = (raw) => {
-    if (typeof raw === 'string') {
-      const normalized = raw.trim().toLowerCase();
-      if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-        return true;
-      }
-      if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') {
-        return false;
-      }
-    }
-    if (typeof raw === 'number') {
-      return raw !== 0;
-    }
-    return Boolean(raw);
-  };
-
-  const normalizeTimeoutArray = (value) => {
-    const normalized = Array(TIMEOUT_COUNT).fill(false);
-    if (Array.isArray(value)) {
-      for (let i = 0; i < Math.min(value.length, TIMEOUT_COUNT); i++) {
-        normalized[i] = toTimeoutBoolean(value[i]);
-      }
-    } else if (value && typeof value === 'object') {
-      for (let i = 0; i < TIMEOUT_COUNT; i++) {
-        if (value[i] !== undefined) {
-          normalized[i] = toTimeoutBoolean(value[i]);
-        }
-      }
-    }
-    return normalized;
-  };
-
-  const coerceSets = (sets = {}) => {
-    const normalized = {};
-    for (let i = 1; i <= 5; i++) {
-      const set = sets[i] ?? sets[String(i)] ?? {};
-      const normalizeScore = (value) => {
-        if (value === null || value === undefined) return '';
-        return String(value).trim();
-      };
-      const timeoutSource = set.timeouts ?? {};
-      normalized[i] = {
-        sc: normalizeScore(set.sc),
-        opp: normalizeScore(set.opp),
-        timeouts: {
-          sc: normalizeTimeoutArray(timeoutSource.sc),
-          opp: normalizeTimeoutArray(timeoutSource.opp)
-        }
-      };
-    }
-    return normalized;
-  };
-
-  const coerceFinalized = (finalized = {}) => {
-    const normalized = {};
-    if (finalized && typeof finalized === 'object') {
-      for (const key of Object.keys(finalized)) {
-        if ([1, 2, 3, 4, 5].includes(Number(key))) {
-          normalized[key] = Boolean(finalized[key]);
-        }
-      }
-    }
-    return normalized;
-  };
-
-  const toIntegerOrNull = (value) => {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isNaN(parsed) ? null : parsed;
-  };
-
-  return {
-    date: input.date ? String(input.date) : '',
-    location: input.location ? String(input.location) : '',
-    types: coerceTypes(input.types),
-    opponent: input.opponent ? String(input.opponent) : '',
-    jerseyColorSC: input.jerseyColorSC ? String(input.jerseyColorSC) : '',
-    jerseyColorOpp: input.jerseyColorOpp ? String(input.jerseyColorOpp) : '',
-    resultSC: toIntegerOrNull(input.resultSC),
-    resultOpp: toIntegerOrNull(input.resultOpp),
-    firstServer: input.firstServer ? String(input.firstServer) : '',
-    players: coercePlayers(input.players),
-    sets: coerceSets(input.sets),
-    finalizedSets: coerceFinalized(input.finalizedSets),
-    isSwapped: Boolean(input.isSwapped)
-  };
-}
-
-const DEFAULT_TYPES = {
-  tournament: false,
-  league: false,
-  postSeason: false,
-  nonLeague: false
-};
+const DEFAULT_JERSEYS = { home: '', away: '' };
+const DEFAULT_MATCH_SCORE = { home: 0, away: 0 };
 
 const parseJson = (value, fallback) => {
   if (value === null || value === undefined || value === '') {
@@ -121,21 +15,88 @@ const parseJson = (value, fallback) => {
 export function deserializeMatchRow(row) {
   return {
     id: row.id,
-    date: row.date ?? '',
-    location: row.location ?? '',
-    types: {
-      ...DEFAULT_TYPES,
-      ...parseJson(row.types, DEFAULT_TYPES)
-    },
     opponent: row.opponent ?? '',
-    jerseyColorSC: row.jersey_color_sc ?? '',
-    jerseyColorOpp: row.jersey_color_opp ?? '',
-    resultSC: row.result_sc,
-    resultOpp: row.result_opp,
-    firstServer: row.first_server ?? '',
-    players: parseJson(row.players, []),
-    sets: parseJson(row.sets, {}),
-    finalizedSets: parseJson(row.finalized_sets, {}),
-    isSwapped: Boolean(row.is_swapped)
+    date: row.date ?? '',
+    time: row.time ?? '',
+    jerseys: {
+      ...DEFAULT_JERSEYS,
+      ...parseJson(row.jerseys, DEFAULT_JERSEYS)
+    },
+    whoServedFirst: row.who_served_first ?? '',
+    playersAppeared: parseJson(row.players_appeared, []),
+    location: row.location ?? '',
+    type: row.type ?? '',
+    matchScore: {
+      ...DEFAULT_MATCH_SCORE,
+      ...parseJson(row.match_score, DEFAULT_MATCH_SCORE)
+    },
+    createdAt: row.created_at ?? null
+  };
+}
+
+const normalizeString = (value) => (value === null || value === undefined ? '' : String(value).trim());
+
+const normalizeJerseys = (value) => {
+  if (!value) {
+    return { ...DEFAULT_JERSEYS };
+  }
+  if (typeof value === 'string') {
+    const parsed = parseJson(value, DEFAULT_JERSEYS);
+    return normalizeJerseys(parsed);
+  }
+  if (typeof value === 'object') {
+    return {
+      home: normalizeString(value.home ?? value.sc ?? value.homeTeam),
+      away: normalizeString(value.away ?? value.opp ?? value.awayTeam)
+    };
+  }
+  return { ...DEFAULT_JERSEYS };
+};
+
+const normalizePlayersAppeared = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const deduped = new Set();
+  for (const entry of value) {
+    const normalized = normalizeString(entry);
+    if (normalized) {
+      deduped.add(normalized);
+    }
+  }
+  return Array.from(deduped);
+};
+
+const normalizeMatchType = (value) => normalizeString(value);
+
+const normalizeMatchScore = (value) => {
+  if (!value) {
+    return { ...DEFAULT_MATCH_SCORE };
+  }
+  if (typeof value === 'string') {
+    const parsed = parseJson(value, DEFAULT_MATCH_SCORE);
+    return normalizeMatchScore(parsed);
+  }
+  const toNumber = (input) => {
+    const parsed = Number.parseInt(input, 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  return {
+    home: toNumber(value.home ?? value.sc ?? value.homeTeam),
+    away: toNumber(value.away ?? value.opp ?? value.awayTeam)
+  };
+};
+
+export function normalizeMatchPayload(input = {}) {
+  return {
+    opponent: normalizeString(input.opponent),
+    date: normalizeString(input.date),
+    time: normalizeString(input.time),
+    jerseys: normalizeJerseys(input.jerseys),
+    whoServedFirst: normalizeString(input.whoServedFirst ?? input.who_served_first),
+    playersAppeared: normalizePlayersAppeared(input.playersAppeared ?? input.players_appeared),
+    location: normalizeString(input.location),
+    type: normalizeMatchType(input.type),
+    matchScore: normalizeMatchScore(input.matchScore ?? input.match_score)
   };
 }
