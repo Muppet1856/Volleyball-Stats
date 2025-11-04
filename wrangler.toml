@@ -9,7 +9,7 @@ vars = { HOME_TEAM = "HoMe" }
 [[d1_databases]]
 binding = "VOLLEYBALL_STATS_DB"
 database_name = "local-volleyball-stats"
-# database_id = ""
+database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 preview_database_id = "local-volleyball-stats"
 
