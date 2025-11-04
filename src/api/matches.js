@@ -30,7 +30,7 @@ async function listMatches(env) {
   try {
     const db = getDatabase(env);
     const statement = db.prepare(
-      'SELECT id, date, opponent FROM matches ORDER BY date ASC, opponent ASC, id ASC'
+      'SELECT id, date, time, opponent, location, type FROM matches ORDER BY date ASC, time ASC, opponent ASC, id ASC'
     );
     const { results } = await statement.all();
     return Response.json(results || []);
@@ -53,34 +53,26 @@ async function createMatch(request, env) {
     const db = getDatabase(env);
     const statement = db.prepare(
       `INSERT INTO matches (
-        date,
-        location,
-        types,
         opponent,
-        jersey_color_sc,
-        jersey_color_opp,
-        result_sc,
-        result_opp,
-        first_server,
-        players,
-        sets,
-        finalized_sets,
-        is_swapped
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        date,
+        time,
+        jerseys,
+        who_served_first,
+        players_appeared,
+        location,
+        type,
+        match_score
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
       payload.opponent,
-      payload.jerseyColorSC,
-      payload.jerseyColorOpp,
-      payload.resultSC,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0
+      payload.date,
+      payload.time,
+      JSON.stringify(payload.jerseys),
+      payload.whoServedFirst,
+      JSON.stringify(payload.playersAppeared),
+      payload.location,
+      payload.type,
+      JSON.stringify(payload.matchScore)
     );
     const result = await statement.run();
     const id = result?.meta?.last_row_id;
@@ -121,34 +113,26 @@ async function updateMatch(request, env, id) {
     const db = getDatabase(env);
     const statement = db.prepare(
       `UPDATE matches SET
-        date = ?,
-        location = ?,
-        types = ?,
         opponent = ?,
-        jersey_color_sc = ?,
-        jersey_color_opp = ?,
-        result_sc = ?,
-        result_opp = ?,
-        first_server = ?,
-        players = ?,
-        sets = ?,
-        finalized_sets = ?,
-        is_swapped = ?
+        date = ?,
+        time = ?,
+        jerseys = ?,
+        who_served_first = ?,
+        players_appeared = ?,
+        location = ?,
+        type = ?,
+        match_score = ?
       WHERE id = ?`
     ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
       payload.opponent,
-      payload.jerseyColorSC,
-      payload.jerseyColorOpp,
-      payload.resultSC,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0,
+      payload.date,
+      payload.time,
+      JSON.stringify(payload.jerseys),
+      payload.whoServedFirst,
+      JSON.stringify(payload.playersAppeared),
+      payload.location,
+      payload.type,
+      JSON.stringify(payload.matchScore),
       id
     );
     const result = await statement.run();
