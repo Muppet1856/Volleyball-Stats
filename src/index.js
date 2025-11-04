@@ -37,6 +37,14 @@ export default {
       return new Response(JSON.stringify(results));
     }
 
+    if (url.pathname.startsWith('/api')) {
+      return handleApiRequest(request, env, url.pathname);
+    }
+
+    if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
+      return env.ASSETS.fetch(request);
+    }
+
     // Other routes (e.g., assets) as before
     return new Response("Not found", { status: 404 });
   }
