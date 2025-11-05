@@ -130,7 +130,7 @@ jobs:
           fi
           COMPAT_DATE=$(date +%Y-%m-%d)
 
-          echo "name = \"${FINAL_NAME}\"" >> wrangler.toml
+          echo "name = \"${FINAL_NAME}\"" > wrangler.toml
           echo "main = \"src/index.js\"" >> wrangler.toml
           echo "compatibility_date = \"${COMPAT_DATE}\"" >> wrangler.toml
                     
