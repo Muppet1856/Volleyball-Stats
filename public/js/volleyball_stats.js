@@ -89,6 +89,16 @@ function loadFileData(filename) {
 const apiClient = (() => {
   const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
+  function buildLiveUrl(path, matchId) {
+    if (!matchId && matchId !== 0) {
+      throw new Error('A matchId is required for live API requests');
+    }
+    const normalizedId = String(matchId);
+    const url = new URL(`/live${path}`, 'http://localhost');
+    url.searchParams.set('matchId', normalizedId);
+    return `${url.pathname}${url.search}`;
+  }
+
   async function request(path, { method = 'GET', body, headers = {} } = {}) {
     const init = { method, headers: body !== undefined ? { ...JSON_HEADERS, ...headers } : headers };
     if (body !== undefined) {
@@ -126,10 +136,10 @@ const apiClient = (() => {
     updatePlayer: (id, player) => request(`/api/players/${id}`, { method: 'PUT', body: player }),
     deletePlayer: (id) => request(`/api/players/${id}`, { method: 'DELETE' }),
     listMatches: () => request('/api/matches'),
-    getMatch: (id) => request(`/api/matches/${id}`),
-    createMatch: (match) => request('/api/matches', { method: 'POST', body: match }),
-    updateMatch: (id, match) => request(`/api/matches/${id}`, { method: 'PUT', body: match }),
-    deleteMatch: (id) => request(`/api/matches/${id}`, { method: 'DELETE' })
+    getMatch: (id) => request(buildLiveUrl('/get-match', id)),
+    createMatch: (match) => request(buildLiveUrl('/create-match', 'new'), { method: 'POST', body: match }),
+    updateMatch: (id, match) => request(buildLiveUrl('/update-match-info', id), { method: 'PUT', body: match }),
+    deleteMatch: (id) => request(buildLiveUrl('/delete-match', id), { method: 'DELETE' })
   };
 })();
 
