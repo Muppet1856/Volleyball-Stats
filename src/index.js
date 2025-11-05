@@ -12,6 +12,37 @@ import { getDatabase } from './api/database.js';
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
 const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
 
+const createEmptyScore = () => ({ home: 0, away: 0 });
+
+const parseLiveScore = (rawScore) => {
+  if (rawScore === null || rawScore === undefined || rawScore === '') {
+    return createEmptyScore();
+  }
+
+  let parsed = rawScore;
+  if (typeof rawScore === 'string') {
+    try {
+      parsed = JSON.parse(rawScore);
+    } catch (error) {
+      return createEmptyScore();
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return createEmptyScore();
+  }
+
+  const toNumber = (value) => {
+    const number = Number.parseInt(value, 10);
+    return Number.isNaN(number) ? 0 : number;
+  };
+
+  return {
+    home: toNumber(parsed.home),
+    away: toNumber(parsed.away)
+  };
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -133,9 +164,25 @@ export class MatchState {
             [body.set_number]
           );
           // Compute final score by set and overall match score (logic based on your app)
-          const finalScore = JSON.parse((await txn.sql.exec(`SELECT live_score FROM live_sets WHERE set_number = ?`, [body.set_number])).results[0].live_score);
-          const allSets = await txn.sql.exec(`SELECT live_score FROM live_sets WHERE final_flag = TRUE`).results;
-          const matchScore = allSets.reduce((acc, set) => { /* e.g., count wins */ return acc; }, {home: 0, away: 0});
+          const { results: finalScoreResults } = await txn.sql.exec(
+            `SELECT live_score FROM live_sets WHERE set_number = ?`,
+            [body.set_number]
+          );
+          const finalScoreRow = finalScoreResults?.[0];
+          const finalScore = parseLiveScore(finalScoreRow?.live_score);
+
+          const { results: finalizedSets } = await txn.sql.exec(
+            `SELECT live_score FROM live_sets WHERE final_flag = TRUE`
+          );
+          const matchScore = (finalizedSets ?? []).reduce((acc, set) => {
+            const parsedScore = parseLiveScore(set.live_score);
+            if (parsedScore.home > parsedScore.away) {
+              acc.home += 1;
+            } else if (parsedScore.away > parsedScore.home) {
+              acc.away += 1;
+            }
+            return acc;
+          }, createEmptyScore());
 
           // Push to D1
           const d1 = this.db;
@@ -150,8 +197,11 @@ export class MatchState {
 
     // GET for querying live state (e.g., for clients)
     if (request.method === "GET" && url.pathname === "/get-live") {
-      const data = await storage.sql.exec(`SELECT * FROM live_sets UNION SELECT * FROM match_info WHERE id = ?`, [matchId]).results;
-      return new Response(JSON.stringify(data));
+      const { results: data } = await storage.sql.exec(
+        `SELECT * FROM live_sets UNION SELECT * FROM match_info WHERE id = ?`,
+        [matchId]
+      );
+      return new Response(JSON.stringify(data ?? []));
     }
 
     // Optional: WebSocket for real-time broadcasting to clients
