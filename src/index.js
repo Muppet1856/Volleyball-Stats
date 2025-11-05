@@ -14,6 +14,26 @@ const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
 
 const createEmptyScore = () => ({ home: 0, away: 0 });
 
+const parseJsonField = (value, fallback) => {
+  if (value === null || value === undefined || value === '') {
+    return typeof fallback === 'function' ? fallback() : fallback;
+  }
+
+  if (typeof value === 'object') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return typeof fallback === 'function' ? fallback() : fallback;
+    }
+  }
+
+  return typeof fallback === 'function' ? fallback() : fallback;
+};
+
 const parseLiveScore = (rawScore) => {
   if (rawScore === null || rawScore === undefined || rawScore === '') {
     return createEmptyScore();
@@ -40,6 +60,31 @@ const parseLiveScore = (rawScore) => {
   return {
     home: toNumber(parsed.home),
     away: toNumber(parsed.away)
+  };
+};
+
+const createEmptyTimeouts = () => ({ sc: [], opp: [] });
+
+const parseTimeouts = (rawTimeouts) => {
+  const parsed = parseJsonField(rawTimeouts, createEmptyTimeouts);
+
+  if (!parsed || typeof parsed !== 'object') {
+    return createEmptyTimeouts();
+  }
+
+  const toBooleanArray = (value) => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value.map(Boolean);
+  };
+
+  const sc = toBooleanArray(parsed.sc ?? parsed.home);
+  const opp = toBooleanArray(parsed.opp ?? parsed.away);
+
+  return {
+    sc,
+    opp
   };
 };
 
@@ -197,11 +242,51 @@ export class MatchState {
 
     // GET for querying live state (e.g., for clients)
     if (request.method === "GET" && url.pathname === "/get-live") {
-      const { results: data } = await storage.sql.exec(
-        `SELECT * FROM live_sets UNION SELECT * FROM match_info WHERE id = ?`,
-        [matchId]
+      const [liveSetsResult, matchInfoResult] = await Promise.all([
+        storage.sql.exec(
+          `SELECT set_number, live_score, timeouts, final_flag FROM live_sets ORDER BY set_number`
+        ),
+        matchId
+          ? storage.sql.exec(
+              `SELECT id, opponent, date, time, jerseys, who_served_first, players_appeared, match_score, location, type FROM match_info WHERE id = ?`,
+              [matchId]
+            )
+          : Promise.resolve({ results: [] })
+      ]);
+
+      const liveSets = (liveSetsResult?.results ?? []).map((row) => {
+        const setNumber = Number.parseInt(row.set_number, 10);
+        return {
+          setNumber: Number.isNaN(setNumber) ? null : setNumber,
+          liveScore: parseLiveScore(row.live_score),
+          timeouts: parseTimeouts(row.timeouts),
+          final: Boolean(row.final_flag)
+        };
+      });
+
+      const matchInfoRow = (matchInfoResult?.results ?? [])[0] ?? null;
+      const matchInfo = matchInfoRow
+        ? {
+            id: matchInfoRow.id ?? null,
+            opponent: matchInfoRow.opponent ?? null,
+            date: matchInfoRow.date ?? null,
+            time: matchInfoRow.time ?? null,
+            jerseys: matchInfoRow.jerseys ?? null,
+            whoServedFirst: matchInfoRow.who_served_first ?? null,
+            playersAppeared: parseJsonField(matchInfoRow.players_appeared, []),
+            matchScore: parseLiveScore(matchInfoRow.match_score),
+            location: matchInfoRow.location ?? null,
+            type: matchInfoRow.type ?? null
+          }
+        : null;
+
+      return new Response(
+        JSON.stringify({
+          matchInfo,
+          liveSets
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
       );
-      return new Response(JSON.stringify(data ?? []));
     }
 
     // Optional: WebSocket for real-time broadcasting to clients
