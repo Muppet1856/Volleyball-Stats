@@ -133,6 +133,142 @@ const apiClient = (() => {
   };
 })();
 
+const liveMatchApi = (() => {
+  const EMPTY_SCORE = Object.freeze({ home: 0, away: 0 });
+  const EMPTY_TIMEOUTS = Object.freeze({ sc: [], opp: [] });
+
+  const safeParseJson = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value === 'object') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const parseScore = (value) => {
+    const parsed = safeParseJson(value) ?? value;
+    if (!parsed || typeof parsed !== 'object') {
+      return { ...EMPTY_SCORE };
+    }
+    const toNumber = (candidate) => {
+      const number = Number.parseInt(candidate, 10);
+      return Number.isNaN(number) ? 0 : number;
+    };
+    return {
+      home: toNumber(parsed.home ?? parsed.sc ?? 0),
+      away: toNumber(parsed.away ?? parsed.opp ?? 0)
+    };
+  };
+
+  const parseTimeouts = (value) => {
+    const parsed = safeParseJson(value) ?? value;
+    if (!parsed || typeof parsed !== 'object') {
+      return { sc: [...EMPTY_TIMEOUTS.sc], opp: [...EMPTY_TIMEOUTS.opp] };
+    }
+
+    const toBooleanArray = (candidate) => {
+      if (!Array.isArray(candidate)) {
+        return [];
+      }
+      return candidate.map(Boolean);
+    };
+
+    return {
+      sc: toBooleanArray(parsed.sc ?? parsed.home),
+      opp: toBooleanArray(parsed.opp ?? parsed.away)
+    };
+  };
+
+  const normalizeLiveSet = (rawSet) => {
+    if (!rawSet || typeof rawSet !== 'object') {
+      return {
+        setNumber: null,
+        liveScore: { ...EMPTY_SCORE },
+        timeouts: { sc: [...EMPTY_TIMEOUTS.sc], opp: [...EMPTY_TIMEOUTS.opp] },
+        final: false
+      };
+    }
+
+    const setNumber = Number.parseInt(rawSet.setNumber ?? rawSet.set_number, 10);
+
+    return {
+      setNumber: Number.isNaN(setNumber) ? null : setNumber,
+      liveScore: parseScore(rawSet.liveScore ?? rawSet.live_score),
+      timeouts: parseTimeouts(rawSet.timeouts ?? rawSet.rawTimeouts),
+      final: Boolean(rawSet.final ?? rawSet.final_flag)
+    };
+  };
+
+  const normalizeMatchInfo = (rawInfo) => {
+    if (!rawInfo || typeof rawInfo !== 'object') {
+      return null;
+    }
+
+    const players = rawInfo.playersAppeared ?? safeParseJson(rawInfo.players_appeared);
+
+    return {
+      id: rawInfo.id ?? null,
+      opponent: rawInfo.opponent ?? '',
+      date: rawInfo.date ?? null,
+      time: rawInfo.time ?? null,
+      jerseys: rawInfo.jerseys ?? null,
+      whoServedFirst: rawInfo.whoServedFirst ?? rawInfo.who_served_first ?? null,
+      playersAppeared: Array.isArray(players) ? players.slice() : [],
+      matchScore: parseScore(rawInfo.matchScore ?? rawInfo.match_score),
+      location: rawInfo.location ?? null,
+      type: rawInfo.type ?? null
+    };
+  };
+
+  const normalizeResponse = (raw) => {
+    const liveSets = Array.isArray(raw?.liveSets) ? raw.liveSets.map(normalizeLiveSet) : [];
+    return {
+      matchInfo: normalizeMatchInfo(raw?.matchInfo),
+      liveSets
+    };
+  };
+
+  async function getLiveMatch(matchId) {
+    if (!matchId) {
+      return { matchInfo: null, liveSets: [] };
+    }
+
+    try {
+      const response = await fetch(`/live/get-live?matchId=${encodeURIComponent(matchId)}`, {
+        headers: { Accept: 'application/json' }
+      });
+
+      if (!response.ok) {
+        throw new Error(`GET /live/get-live failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      return normalizeResponse(data);
+    } catch (error) {
+      console.error('Failed to fetch live match state', error);
+      return { matchInfo: null, liveSets: [] };
+    }
+  }
+
+  return {
+    getLiveMatch,
+    normalizeResponse
+  };
+})();
+
+if (typeof window !== 'undefined') {
+  window.liveMatchApi = liveMatchApi;
+}
+
 let playerRecords = [];
 let players = [];
 let playerSortMode = 'number';
