@@ -216,7 +216,7 @@ export class MatchState {
             result_opp,
             first_server,
             players_appeared
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           payload.date,
           payload.time,

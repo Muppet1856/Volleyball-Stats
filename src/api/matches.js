@@ -64,7 +64,7 @@ async function createMatch(request, env) {
         result_opp,
         first_server,
         players
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       payload.date,
       payload.time,
