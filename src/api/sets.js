@@ -43,7 +43,7 @@ async function listMatchSets(env) {
   try {
     const db = getDatabase(env);
     const statement = db.prepare(
-      'SELECT id, match_id, set_number, set_score_home, set_score_opp FROM sets ORDER WHERE match_id = ? BY match_id ASC, set_number ASC, id ASC'
+      'SELECT id, match_id, set_number, set_score_home, set_score_opp FROM sets WHERE match_id = ? ORDER BY match_id ASC, set_number ASC, id ASC'
     ).bind(matchID);
     const { results } = await statement.all();
     return Response.json(results || []);
@@ -74,7 +74,7 @@ async function createSet(request, env) {
   }
 
   matchID = Number(rawMatchID);
-  setNumber = Number(rawsetNumber);
+  setNumber = Number(rawSetNumber);
 
   if (!Number.isInteger(matchID)) {
     return Response.json({ error: 'Field "matchID" must be an integer' }, { status: 400 });
