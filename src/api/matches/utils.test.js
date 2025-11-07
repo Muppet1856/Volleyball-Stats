@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { normalizeMatchPayload } from './utils.js';
+import { deserializeMatchRow, normalizeMatchPayload } from './utils.js';
 
 test('normalizes timeout arrays to booleans with fixed length', () => {
   const input = {
@@ -39,4 +39,38 @@ test('normalizes time value to a trimmed string', () => {
 
   const normalizedMissingTime = normalizeMatchPayload({});
   assert.equal(normalizedMissingTime.time, '');
+});
+
+test('normalizes match type to an integer within range', () => {
+  const normalized = normalizeMatchPayload({ type: '3' });
+  assert.equal(normalized.type, 3);
+
+  const normalizedDefault = normalizeMatchPayload({ type: 'not-a-number' });
+  assert.equal(normalizedDefault.type, 0);
+
+  const normalizedOutOfRange = normalizeMatchPayload({ type: 99 });
+  assert.equal(normalizedOutOfRange.type, 0);
+});
+
+test('deserializes match rows with numeric type', () => {
+  const row = {
+    id: 1,
+    date: '2024-05-01T12:00:00Z',
+    location: 'Home',
+    type: '2',
+    opponent: 'Rivals',
+    jersey_color_home: 'blue',
+    jersey_color_opp: 'white',
+    result_home: 3,
+    result_opp: 1,
+    first_server: 'home',
+    players: JSON.stringify(['10']),
+    sets: JSON.stringify({}),
+    finalized_sets: JSON.stringify({}),
+    is_swapped: 0
+  };
+
+  const deserialized = deserializeMatchRow(row);
+
+  assert.equal(deserialized.type, 2);
 });
