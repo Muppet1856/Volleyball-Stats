@@ -179,8 +179,16 @@ export class MatchState {
 
       await this.state.storage.transaction(async (txn) => {
         const replicationResult = await txn.sql.exec(
-          `INSERT OR REPLACE INTO live_sets (id, match_id, set_number, set_score_home, set_score_opp, timeouts_home, timeouts_opp, final_flag)`
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO live_sets (
+            id,
+            match_id,
+            set_number,
+            set_score_home,
+            set_score_opp,
+            timeouts_home,
+            timeouts_opp,
+            final_flag
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             String(createdId),
             payload.matchID,
