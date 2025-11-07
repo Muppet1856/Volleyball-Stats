@@ -109,12 +109,24 @@ export class MatchState {
     }
 
     if (pathname === '/update-live-set' && method === 'POST') {
+      let identifiers;
+      try {
+        identifiers = normalizeMatchIdentifier(matchId);
+      } catch (error) {
+        return Response.json({ error: 'Invalid matchId' }, { status: 400 });
+      }
+
       const body = await request.json();
       await storage.transaction(async (txn) => {
         await txn.sql.exec(
-          `INSERT OR REPLACE INTO live_sets (set_number, live_score, timeouts, final_flag)
-           VALUES (?, ?, ?, FALSE)`,
-          [body.set_number, JSON.stringify(body.live_score), JSON.stringify(body.timeouts)]
+          `INSERT OR REPLACE INTO live_sets (match_id, set_number, live_score, timeouts, final_flag)
+           VALUES (?, ?, ?, ?, FALSE)`,
+          [
+            identifiers.dbValue,
+            body.set_number,
+            JSON.stringify(body.live_score),
+            JSON.stringify(body.timeouts)
+          ]
         );
       });
       return new Response('Live set updated');
@@ -469,19 +481,20 @@ export class MatchState {
     try {
       await storage.transaction(async (txn) => {
         await txn.sql.exec(
-          `UPDATE live_sets SET final_flag = TRUE WHERE set_number = ?`,
-          [setNumber]
+          `UPDATE live_sets SET final_flag = TRUE WHERE set_number = ? AND match_id = ?`,
+          [setNumber, identifiers.dbValue]
         );
 
         const { results: finalScoreResults } = await txn.sql.exec(
-          `SELECT live_score FROM live_sets WHERE set_number = ?`,
-          [setNumber]
+          `SELECT live_score FROM live_sets WHERE set_number = ? AND match_id = ?`,
+          [setNumber, identifiers.dbValue]
         );
         const finalScoreRow = finalScoreResults?.[0];
         const finalScore = parseLiveScore(finalScoreRow?.live_score);
 
         const { results: finalizedSets } = await txn.sql.exec(
-          `SELECT live_score FROM live_sets WHERE final_flag = TRUE`
+          `SELECT live_score FROM live_sets WHERE final_flag = TRUE AND match_id = ?`,
+          [identifiers.dbValue]
         );
         const matchScore = (finalizedSets ?? []).reduce((acc, set) => {
           const parsedScore = parseLiveScore(set.live_score);
@@ -547,13 +560,21 @@ export class MatchState {
   }
 
   async handleGetLive(storage, matchId) {
+    let identifiers;
+    try {
+      identifiers = normalizeMatchIdentifier(matchId);
+    } catch (error) {
+      return Response.json({ error: 'Invalid matchId' }, { status: 400 });
+    }
+
     const [liveSetsResult, matchInfoResult] = await Promise.all([
       storage.sql.exec(
-        `SELECT set_number, live_score, timeouts, final_flag FROM live_sets ORDER BY set_number`
+        `SELECT set_number, live_score, timeouts, final_flag FROM live_sets WHERE match_id = ? ORDER BY set_number`,
+        [identifiers.dbValue]
       ),
       storage.sql.exec(
         `SELECT id, opponent, date, time, jerseys, who_served_first, players_appeared, match_score, location, type FROM match_info WHERE id = ?`,
-        [matchId]
+        [identifiers.text]
       )
     ]);
 
