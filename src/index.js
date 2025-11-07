@@ -154,29 +154,32 @@ export class MatchState {
     }
 
     let createdId = null;
+    let replicated = false;
 
     try {
+      const insertStatement = this.db.prepare(
+        `INSERT INTO sets (
+          match_id,
+          set_number,
+          set_score_home,
+          set_score_opp
+        ) VALUES (?, ?, ?, ?)`
+      ).bind(
+        payload.matchID,
+        payload.setNumber,
+        payload.setScoreHome,
+        payload.setScoreOpp
+      );
+
+      const insertResult = await insertStatement.run();
+      createdId = insertResult?.meta?.last_row_id;
+      if (!createdId) {
+        throw new Error('Set creation failed');
+      }
+
       await this.state.storage.transaction(async (txn) => {
-        const insertStatement = this.db.prepare(
-          `INSERT INTO live_sets (
-            match_id, set_number, set_score_home, set_score_opp, timeouts_home, timeouts_opp, final_flag
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          payload.matchID,
-          payload.setNumber,
-          payload.setScoreHome,
-          payload.setScoreOpp,
-          payload.timeoutsHome,
-          payload.timeoutsOpp,
-          payload.finalFlag
-        );
-        const result = await insertStatement.run();
-        createdId = result?.meta?.last_row_id;
-        if (!createdId) {
-          throw new Error('Set creation failed');
-        }
-        await txn.sql.exec(
-          `INSERT OR REPLACE INTO live_sets (id, match_id, set_number, set_score_home, set_score_opp, timeouts_home, timeouts_opp, final_flag)
+        const replicationResult = await txn.sql.exec(
+          `INSERT OR REPLACE INTO live_sets (id, match_id, set_number, set_score_home, set_score_opp, timeouts_home, timeouts_opp, final_flag)`
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             String(createdId),
@@ -189,8 +192,24 @@ export class MatchState {
             payload.finalFlag
           ]
         );
+
+        if (replicationResult?.success === false) {
+          throw new Error('Failed to replicate set to Durable Object storage');
+        }
       });
+
+      replicated = true;
     } catch (error) {
+      if (createdId && !replicated) {
+        try {
+          await this.db.prepare('DELETE FROM sets WHERE id = ?')
+            .bind(createdId)
+            .run();
+        } catch (rollbackError) {
+          console.error('Failed to rollback set after Durable Object replication failure', rollbackError);
+        }
+      }
+
       console.error('Failed to create set via DO', error);
       return Response.json({ error: 'Failed to create set' }, { status: 500 });
     }
@@ -467,9 +486,21 @@ export class MatchState {
         }, createEmptyScore());
 
         await this.db.prepare(
-          `INSERT INTO sets (match_id, set_number, final_score) VALUES (?, ?, ?)`
+          `INSERT INTO sets (match_id, set_number, set_score_home, set_score_opp, final_score)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(match_id, set_number)
+           DO UPDATE SET
+             set_score_home = excluded.set_score_home,
+             set_score_opp = excluded.set_score_opp,
+             final_score = excluded.final_score`
         )
-          .bind(identifiers.dbValue, setNumber, JSON.stringify(finalScore))
+          .bind(
+            identifiers.dbValue,
+            setNumber,
+            finalScore.home,
+            finalScore.away,
+            JSON.stringify(finalScore)
+          )
           .run();
 
         await this.db.prepare(
