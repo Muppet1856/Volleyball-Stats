@@ -45,14 +45,30 @@ async function createPlayer(request, env) {
     return Response.json({ error: 'Invalid JSON payload' }, { status: 400 });
   }
 
-  const number = String(body?.number ?? '').trim();
+  const rawNumber = body?.number;
+  let number;
+  
+  if (rawNumber === null || rawNumber === undefined || rawNumber === '') {
+    return Response.json({ error: 'Missing required field: number' }, { status: 400 });
+  }
+
+  number = Number(rawNumber);
+
+  if (!Number.isInteger(number)) {
+    return Response.json({ error: 'Field "number" must be an integer' }, { status: 400 });
+  }
+
+  if (number < 0 || number > 99) {
+    return Response.json({ error: 'Number out of valid range' }, { status: 400 });
+  }
+  
   const lastName = String(body?.lastName ?? '').trim();
   const initial = String(body?.initial ?? '').trim();
 
   if (!number || !lastName) {
     return Response.json({ error: 'Player number and last name are required' }, { status: 400 });
   }
-
+  
   try {
     const db = getDatabase(env);
     const statement = db.prepare(
@@ -75,7 +91,19 @@ async function updatePlayer(request, env, id) {
     return Response.json({ error: 'Invalid JSON payload' }, { status: 400 });
   }
 
-  const number = String(body?.number ?? '').trim();
+  const rawNumber = body?.number;
+  let number;
+  
+  if (rawNumber === null || rawNumber === undefined || rawNumber === '') {
+    return Response.json({ error: 'Missing required field: number' }, { status: 400 });
+  }
+
+  number = Number(rawNumber);
+
+  if (!Number.isInteger(number)) {
+    return Response.json({ error: 'Field "number" must be an integer' }, { status: 400 });
+  }
+
   const lastName = String(body?.lastName ?? '').trim();
   const initial = String(body?.initial ?? '').trim();
 

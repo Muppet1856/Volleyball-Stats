@@ -1,9 +1,11 @@
 import { methodNotAllowed, notFound } from './api/responses.js';
 import { routeMatchById, routeMatches } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
+import { routeSetById, routeSets } from './api/sets.js';
 
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
 const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
+const SET_ID_PATTERN = /^\/api\/sets\/(\d+)$/;
 
 export default {
   async fetch(request, env, ctx) {
@@ -27,23 +29,38 @@ export class MatchState {
       const storage = this.state.storage;
       await storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS live_sets (
-          set_number INTEGER PRIMARY KEY,
-          live_score TEXT,  -- e.g., JSON {home: 25, away: 23}
-          timeouts JSON,    -- e.g., {home: 1, away: 0}
-          final_flag BOOLEAN DEFAULT FALSE
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          match_id INTEGER NOT NULL,
+          set_score_home INTEGER NOT NULL,
+          set_score_opp INTEGER NOT NULL,
+          timeouts_home INTEGER NOT NULL DEFAULT 2,
+          timeouts_opp INTEGER NOT NULL DEFAULT 2,
+          set_number INTEGER NOT NULL,
+          final_flag BOOLEAN DEFAULT FALSE,
+          UNIQUE (match_id, set_number),
+          FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
         );
-        CREATE TABLE IF NOT EXISTS match_info (
-          id TEXT PRIMARY KEY,  -- Match ID
+        CREATE TABLE IF NOT EXISTS players (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          number INTEGER NOT NULL,
+          last_name TEXT NOT NULL,
+          intial TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS matches (
+          id TEXT PRIMARY KEY AUTOINCREMENT,  -- Match ID
           opponent TEXT,
           date TEXT,
           time TEXT,
-          jerseys TEXT,
-          who_served_first TEXT,
+          jersey_home INTEGER,
+          jersey_opp INTEGER,
+          first_server BOOLEAN,  -- 0=home, 1=opp
           players_appeared JSON,
-          match_score TEXT,  -- Updated on finalization
+          result_home INTEGER,
+          result_opp INTEGER,
           location TEXT,
           type TEXT
         );
+        
       `);  // Use SQLite API (enable via compatibility_flags if needed)
     });
   }
@@ -105,6 +122,67 @@ export class MatchState {
     return new Response('Invalid request', { status: 400 });
   }
 
+  async handleCreateSet(request) {
+    let rawBody;
+    try {
+      rawBody = await request.json();
+    } catch (error) {
+      return Response.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
+
+    let payload;
+    try {
+      payload = prepareSetPayloadForPersistence(rawBody);
+    } catch (error) {
+      console.error('Failed to normalize set payload', error);
+      return Response.json({ error: 'Invalid set payload' }, { status: 400 });
+    }
+
+    let createdId = null;
+
+    try {
+      await this.state.storage.transaction(async (txn) => {
+        const insertStatement = this.db.prepare(
+          `INSERT INTO live_sets (
+            match_id, set_number, set_score_home, set_score_opp, timeouts_home, timeouts_opp, final_flag
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          payload.matchID,
+          payload.setNumber,
+          payload.setScoreHome,
+          payload.setScoreOpp,
+          payload.timeoutsHome,
+          payload.timeoutsOpp,
+          payload.finalFlag
+        );
+        const result = await insertStatement.run();
+        createdId = result?.meta?.last_row_id;
+        if (!createdId) {
+          throw new Error('Set creation failed');
+        }
+        await txn.sql.exec(
+          `INSERT OR REPLACE INTO live_sets (id, date, time, location, type, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players_appeared)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            String(createdId),
+            payload.matchID,
+            payload.setNumber,
+            payload.setScoreHome,
+            payload.setScoreOpp,
+            payload.timeoutsHome,
+            payload.timeoutsOpp,
+            payload.finalFlag
+          ]
+        );
+      });
+    } catch (error) {
+      console.error('Failed to create set via DO', error);
+      return Response.json({ error: 'Failed to create set' }, { status: 500 });
+    }
+
+    return Response.json({ id: createdId }, { status: 201 });
+  }
+
   async handleCreateMatch(request) {
     let rawBody;
     try {
@@ -121,26 +199,36 @@ export class MatchState {
       return Response.json({ error: 'Invalid match payload' }, { status: 400 });
     }
 
-    const jerseysJson = JSON.stringify(payload.jerseys);
-    const playersJson = JSON.stringify(payload.playersAppeared);
-    const matchScoreJson = JSON.stringify(payload.matchScore);
     let createdId = null;
 
     try {
       await this.state.storage.transaction(async (txn) => {
         const insertStatement = this.db.prepare(
-          `INSERT INTO matches (opponent, date, time, jerseys, who_served_first, players_appeared, location, type, match_score)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO matches (
+            date,
+            time,
+            location,
+            type,
+            opponent,
+            jersey_color_home,
+            jersey_color_opp,
+            result_home,
+            result_opp,
+            first_server,
+            players_appeared
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
-          payload.opponent,
           payload.date,
           payload.time,
-          jerseysJson,
-          payload.whoServedFirst,
-          playersJson,
           payload.location,
-          payload.type,
-          matchScoreJson
+          payload.types,
+          payload.opponent,
+          payload.jerseyColorHome,
+          payload.jerseyColorOpp,
+          payload.resultHome,
+          payload.resultOpp,
+          payload.firstServer,
+          JSON.stringify(payload.players)
         );
         const result = await insertStatement.run();
         createdId = result?.meta?.last_row_id;
@@ -148,19 +236,21 @@ export class MatchState {
           throw new Error('Match creation failed');
         }
         await txn.sql.exec(
-          `INSERT OR REPLACE INTO match_info (id, opponent, date, time, jerseys, who_served_first, players_appeared, match_score, location, type)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO matches (id, date, time, location, type, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players_appeared)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             String(createdId),
-            payload.opponent,
             payload.date,
             payload.time,
-            jerseysJson,
-            payload.whoServedFirst,
-            playersJson,
-            matchScoreJson,
             payload.location,
-            payload.type
+            payload.types,
+            payload.opponent,
+            payload.jerseyColorHome,
+            payload.jerseyColorOpp,
+            payload.resultHome,
+            payload.resultOpp,
+            payload.firstServer,
+            JSON.stringify(payload.players)
           ]
         );
       });
@@ -168,7 +258,6 @@ export class MatchState {
       console.error('Failed to create match via DO', error);
       return Response.json({ error: 'Failed to create match' }, { status: 500 });
     }
-
     return Response.json({ id: createdId }, { status: 201 });
   }
 
@@ -264,7 +353,7 @@ export class MatchState {
     let deleted = false;
     try {
       await this.state.storage.transaction(async (txn) => {
-        await txn.sql.exec(`DELETE FROM match_info WHERE id = ?`, [identifiers.text]);
+        await txn.sql.exec(`DELETE FROM match WHERE id = ?`, [identifiers.text]);
         const result = await this.db.prepare('DELETE FROM matches WHERE id = ?')
           .bind(identifiers.dbValue)
           .run();
@@ -474,6 +563,15 @@ function handleApiRequest(request, env, pathname) {
   const playerId = pathname.match(PLAYER_ID_PATTERN);
   if (playerId) {
     return routePlayerById(request, env, Number.parseInt(playerId[1], 10));
+  }
+
+  if (pathname === '/api/sets') {
+    return routeSets(request, env);
+  }
+
+  const setId = pathname.set(SET_ID_PATTERN);
+  if (setId) {
+    return routeSetById(request, env, Number.parseInt(setId[1], 10));
   }
 
   return notFound();

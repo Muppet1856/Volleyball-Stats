@@ -54,33 +54,29 @@ async function createMatch(request, env) {
     const statement = db.prepare(
       `INSERT INTO matches (
         date,
+        time,
         location,
         types,
         opponent,
-        jersey_color_sc,
+        jersey_color_home,
         jersey_color_opp,
-        result_sc,
+        result_home,
         result_opp,
         first_server,
-        players,
-        sets,
-        finalized_sets,
-        is_swapped
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        players
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       payload.date,
+      payload.time,
       payload.location,
-      JSON.stringify(payload.types),
+      payload.types,
       payload.opponent,
-      payload.jerseyColorSC,
+      payload.jerseyColorHome,
       payload.jerseyColorOpp,
-      payload.resultSC,
+      payload.resultHome,
       payload.resultOpp,
       payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0
+      JSON.stringify(payload.players)
     );
     const result = await statement.run();
     const id = result?.meta?.last_row_id;
@@ -122,33 +118,29 @@ async function updateMatch(request, env, id) {
     const statement = db.prepare(
       `UPDATE matches SET
         date = ?,
+        time = ?,
         location = ?,
         types = ?,
         opponent = ?,
-        jersey_color_sc = ?,
+        jersey_color_home = ?,
         jersey_color_opp = ?,
-        result_sc = ?,
+        result_home = ?,
         result_opp = ?,
         first_server = ?,
-        players = ?,
-        sets = ?,
-        finalized_sets = ?,
-        is_swapped = ?
+        players = ?
       WHERE id = ?`
     ).bind(
       payload.date,
+      payload.time,
       payload.location,
-      JSON.stringify(payload.types),
+      payload.types,
       payload.opponent,
-      payload.jerseyColorSC,
+      payload.jerseyColorHome,
       payload.jerseyColorOpp,
-      payload.resultSC,
+      payload.resultHome,
       payload.resultOpp,
       payload.firstServer,
       JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0,
       id
     );
     const result = await statement.run();
