@@ -4,7 +4,7 @@ import { getDatabase } from './database.js';
 export function routeSets(request, env) {
   switch (request.method.toUpperCase()) {
     case 'GET':
-      return listMatchSets(env);
+      return listMatchSets(request, env);
     case 'POST':
       return createSet(request, env);
     default:
@@ -23,15 +23,16 @@ export function routeSetById(request, env, id) {
   }
 }
 
-async function listMatchSets(env) {
-  const rawMatchID = body?.matchID;
-  let matchID;
-  
+async function listMatchSets(request, env) {
+  const url = new URL(request.url);
+  const rawMatchID =
+    url.searchParams.get('matchID') ?? url.searchParams.get('matchId') ?? undefined;
+
   if (rawMatchID === null || rawMatchID === undefined || rawMatchID === '') {
     return Response.json({ error: 'Missing required field: matchID' }, { status: 400 });
   }
 
-  matchID = Number(rawMatchID);
+  const matchID = Number(rawMatchID);
 
   if (!Number.isInteger(matchID)) {
     return Response.json({ error: 'Field "matchID" must be an integer' }, { status: 400 });
@@ -63,18 +64,30 @@ async function createSet(request, env) {
 
   const rawMatchID = body?.matchID;
   const rawSetNumber = body?.setNumber;
+  const rawSetScoreHome = body?.setScoreHome;
+  const rawSetScoreOpp = body?.setScoreOpp;
   let matchID;
   let setNumber;
-  
+  let setScoreHome;
+  let setScoreOpp;
+
   if (rawMatchID === null || rawMatchID === undefined || rawMatchID === '') {
     return Response.json({ error: 'Missing required field: matchID' }, { status: 400 });
   }
   if (rawSetNumber === null || rawSetNumber === undefined || rawSetNumber === '') {
     return Response.json({ error: 'Missing required field: setNumber' }, { status: 400 });
   }
+  if (rawSetScoreHome === null || rawSetScoreHome === undefined || rawSetScoreHome === '') {
+    return Response.json({ error: 'Missing required field: setScoreHome' }, { status: 400 });
+  }
+  if (rawSetScoreOpp === null || rawSetScoreOpp === undefined || rawSetScoreOpp === '') {
+    return Response.json({ error: 'Missing required field: setScoreOpp' }, { status: 400 });
+  }
 
   matchID = Number(rawMatchID);
   setNumber = Number(rawSetNumber);
+  setScoreHome = Number(rawSetScoreHome);
+  setScoreOpp = Number(rawSetScoreOpp);
 
   if (!Number.isInteger(matchID)) {
     return Response.json({ error: 'Field "matchID" must be an integer' }, { status: 400 });
@@ -82,19 +95,38 @@ async function createSet(request, env) {
   if (!Number.isInteger(setNumber)) {
     return Response.json({ error: 'Field "setNumber" must be an integer' }, { status: 400 });
   }
+  if (!Number.isInteger(setScoreHome)) {
+    return Response.json({ error: 'Field "setScoreHome" must be an integer' }, { status: 400 });
+  }
+  if (!Number.isInteger(setScoreOpp)) {
+    return Response.json({ error: 'Field "setScoreOpp" must be an integer' }, { status: 400 });
+  }
 
   if (!matchID || !setNumber) {
     return Response.json({ error: 'Set number and match ID required' }, { status: 400 });
   }
-  
+
   try {
     const db = getDatabase(env);
     const statement = db.prepare(
-      'INSERT INTO sets (match_id, set_number) VALUES (?, ?)'
-    ).bind(matchID, setNumber, initial);
+      'INSERT INTO sets (match_id, set_number, set_score_home, set_score_opp) VALUES (?, ?, ?, ?)'
+    ).bind(matchID, setNumber, setScoreHome, setScoreOpp);
     const result = await statement.run();
     const id = result?.meta?.last_row_id;
-    return Response.json({ id, match_id, set_number, set_score_home, set_score_opp }, { status: 201 });
+    if (!id) {
+      throw new Error('Failed to determine inserted ID');
+    }
+
+    const { results } = await db
+      .prepare(
+        'SELECT id, match_id, set_number, set_score_home, set_score_opp FROM sets WHERE id = ?'
+      )
+      .bind(id)
+      .all();
+
+    const row = results?.[0];
+
+    return Response.json(row ?? { id, match_id: matchID, set_number: setNumber, set_score_home: setScoreHome, set_score_opp: setScoreOpp }, { status: 201 });
   } catch (error) {
     console.error('Failed to create set', error);
     return Response.json({ error: 'Failed to create set' }, { status: 500 });
@@ -111,24 +143,42 @@ async function updateSet(request, env, id) {
 
   const rawMatchID = body?.matchID;
   const rawSetNumber = body?.setNumber;
+  const rawSetScoreHome = body?.setScoreHome;
+  const rawSetScoreOpp = body?.setScoreOpp;
   let matchID;
   let setNumber;
-  
+  let setScoreHome;
+  let setScoreOpp;
+
   if (rawMatchID === null || rawMatchID === undefined || rawMatchID === '') {
     return Response.json({ error: 'Missing required field: matchID' }, { status: 400 });
   }
   if (rawSetNumber === null || rawSetNumber === undefined || rawSetNumber === '') {
     return Response.json({ error: 'Missing required field: setNumber' }, { status: 400 });
   }
+  if (rawSetScoreHome === null || rawSetScoreHome === undefined || rawSetScoreHome === '') {
+    return Response.json({ error: 'Missing required field: setScoreHome' }, { status: 400 });
+  }
+  if (rawSetScoreOpp === null || rawSetScoreOpp === undefined || rawSetScoreOpp === '') {
+    return Response.json({ error: 'Missing required field: setScoreOpp' }, { status: 400 });
+  }
 
   matchID = Number(rawMatchID);
-  setNumber = Number(rawsetNumber);
+  setNumber = Number(rawSetNumber);
+  setScoreHome = Number(rawSetScoreHome);
+  setScoreOpp = Number(rawSetScoreOpp);
 
   if (!Number.isInteger(matchID)) {
     return Response.json({ error: 'Field "matchID" must be an integer' }, { status: 400 });
   }
   if (!Number.isInteger(setNumber)) {
     return Response.json({ error: 'Field "setNumber" must be an integer' }, { status: 400 });
+  }
+  if (!Number.isInteger(setScoreHome)) {
+    return Response.json({ error: 'Field "setScoreHome" must be an integer' }, { status: 400 });
+  }
+  if (!Number.isInteger(setScoreOpp)) {
+    return Response.json({ error: 'Field "setScoreOpp" must be an integer' }, { status: 400 });
   }
 
   if (!matchID || !setNumber) {
@@ -144,7 +194,20 @@ async function updateSet(request, env, id) {
     if (!result?.meta || result.meta.changes === 0) {
       return Response.json({ error: 'Set not found' }, { status: 404 });
     }
-    return Response.json({ id, match_id, set_number, set_score_home, set_score_opp });
+
+    const { results } = await db
+      .prepare(
+        'SELECT id, match_id, set_number, set_score_home, set_score_opp FROM sets WHERE id = ?'
+      )
+      .bind(id)
+      .all();
+
+    const row = results?.[0];
+    if (!row) {
+      return Response.json({ error: 'Set not found' }, { status: 404 });
+    }
+
+    return Response.json(row);
   } catch (error) {
     console.error('Failed to update set', error);
     return Response.json({ error: 'Failed to update set' }, { status: 500 });
