@@ -1,13 +1,19 @@
 const TIMEOUT_COUNT = 2;
+const MATCH_TYPE_MIN = 0;
+const MATCH_TYPE_MAX = 4;
+
+const parseMatchType = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return MATCH_TYPE_MIN;
+  }
+  if (parsed < MATCH_TYPE_MIN || parsed > MATCH_TYPE_MAX) {
+    return MATCH_TYPE_MIN;
+  }
+  return parsed;
+};
 
 export function normalizeMatchPayload(input = {}) {
-  const coerceTypes = (types = {}) => ({
-    tournament: Boolean(types.tournament),
-    league: Boolean(types.league),
-    postSeason: Boolean(types.postSeason),
-    nonLeague: Boolean(types.nonLeague)
-  });
-
   const coercePlayers = (players) =>
     Array.isArray(players)
       ? players.map((player) => String(player ?? '').trim()).filter(Boolean)
@@ -20,32 +26,36 @@ export function normalizeMatchPayload(input = {}) {
     return String(value).trim();
   };
 
-  const toTimeoutBoolean = (raw) => {
-    if (typeof raw === 'string') {
-      const normalized = raw.trim().toLowerCase();
-      if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-        return true;
-      }
-      if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') {
-        return false;
-      }
-    }
-    if (typeof raw === 'number') {
-      return raw !== 0;
-    }
-    return Boolean(raw);
-  };
-
   const normalizeTimeoutArray = (value) => {
     const normalized = Array(TIMEOUT_COUNT).fill(false);
+    const coerce = (raw) => {
+      if (typeof raw === 'string') {
+        const normalizedValue = raw.trim().toLowerCase();
+        if (normalizedValue === 'true' || normalizedValue === '1' || normalizedValue === 'yes') {
+          return true;
+        }
+        if (
+          normalizedValue === 'false' ||
+          normalizedValue === '0' ||
+          normalizedValue === 'no' ||
+          normalizedValue === ''
+        ) {
+          return false;
+        }
+      }
+      if (typeof raw === 'number') {
+        return raw !== 0;
+      }
+      return Boolean(raw);
+    };
     if (Array.isArray(value)) {
       for (let i = 0; i < Math.min(value.length, TIMEOUT_COUNT); i++) {
-        normalized[i] = toTimeoutBoolean(value[i]);
+        normalized[i] = coerce(value[i]);
       }
     } else if (value && typeof value === 'object') {
       for (let i = 0; i < TIMEOUT_COUNT; i++) {
         if (value[i] !== undefined) {
-          normalized[i] = toTimeoutBoolean(value[i]);
+          normalized[i] = coerce(value[i]);
         }
       }
     }
@@ -94,7 +104,7 @@ export function normalizeMatchPayload(input = {}) {
     date: input.date ? String(input.date) : '',
     time: coerceTime(input.time),
     location: input.location ? String(input.location) : '',
-    types: coerceTypes(input.types),
+    type: parseMatchType(input.type),
     opponent: input.opponent ? String(input.opponent) : '',
     jerseyColorHome: input.jerseyColorHome ? String(input.jerseyColorHome) : '',
     jerseyColorOpp: input.jerseyColorOpp ? String(input.jerseyColorOpp) : '',
@@ -107,13 +117,6 @@ export function normalizeMatchPayload(input = {}) {
     isSwapped: Boolean(input.isSwapped)
   };
 }
-
-const DEFAULT_TYPES = {
-  tournament: false,
-  league: false,
-  postSeason: false,
-  nonLeague: false
-};
 
 const parseJson = (value, fallback) => {
   if (value === null || value === undefined || value === '') {
@@ -131,10 +134,7 @@ export function deserializeMatchRow(row) {
     id: row.id,
     date: row.date ?? '',
     location: row.location ?? '',
-    types: {
-      ...DEFAULT_TYPES,
-      ...parseJson(row.types, DEFAULT_TYPES)
-    },
+    type: parseMatchType(row.type),
     opponent: row.opponent ?? '',
     jerseyColorHome: row.jersey_color_home ?? '',
     jerseyColorOpp: row.jersey_color_opp ?? '',

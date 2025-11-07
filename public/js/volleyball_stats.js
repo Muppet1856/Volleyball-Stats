@@ -113,6 +113,36 @@ let isResolvingJerseyColorConflict = false;
 const SCORE_MODAL_FULLSCREEN_HEIGHT = 500;
 const TIMEOUT_COUNT = 2;
 const TIMEOUT_DURATION_SECONDS = 60;
+const MATCH_TYPE_MIN = 0;
+const MATCH_TYPE_MAX = 4;
+
+function normalizeMatchTypeValue(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return MATCH_TYPE_MIN;
+  }
+  if (parsed < MATCH_TYPE_MIN || parsed > MATCH_TYPE_MAX) {
+    return MATCH_TYPE_MIN;
+  }
+  return parsed;
+}
+
+function getSelectedMatchType() {
+  const selected = document.querySelector('input[name="gameType"]:checked');
+  return selected ? normalizeMatchTypeValue(selected.value) : MATCH_TYPE_MIN;
+}
+
+function setSelectedMatchType(value) {
+  const normalized = normalizeMatchTypeValue(value);
+  document.querySelectorAll('input[name="gameType"]').forEach((input) => {
+    if (!(input instanceof HTMLInputElement)) return;
+    if (normalized === MATCH_TYPE_MIN) {
+      input.checked = false;
+      return;
+    }
+    input.checked = normalizeMatchTypeValue(input.value) === normalized;
+  });
+}
 const SET_NUMBERS = [1, 2, 3, 4, 5];
 const scoreGameState = {
   setNumber: null,
@@ -1967,12 +1997,7 @@ async function saveMatch({ showAlert = false } = {}) {
   const match = {
     date: document.getElementById('date').value,
     location: document.getElementById('location').value,
-    types: {
-      tournament: document.getElementById('tournament').checked,
-      league: document.getElementById('league').checked,
-      postSeason: document.getElementById('postSeason').checked,
-      nonLeague: document.getElementById('nonLeague').checked
-    },
+    type: getSelectedMatchType(),
     opponent: document.getElementById('opponent').value.trim() || 'Opponent',
     jerseyColorHome: document.getElementById('jerseyColorHome').value,
     jerseyColorOpp: document.getElementById('jerseyColorOpp').value,
@@ -2092,10 +2117,7 @@ async function loadMatchFromUrl() {
         loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
         document.getElementById('date').value = match.date || '';
         document.getElementById('location').value = match.location || '';
-        document.getElementById('tournament').checked = Boolean(match.types?.tournament);
-        document.getElementById('league').checked = Boolean(match.types?.league);
-        document.getElementById('postSeason').checked = Boolean(match.types?.postSeason);
-        document.getElementById('nonLeague').checked = Boolean(match.types?.nonLeague);
+        setSelectedMatchType(match.type);
         document.getElementById('opponent').value = match.opponent || '';
         document.getElementById('jerseyColorHome').value = match.jerseyColorHome || 'white';
         document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
@@ -2141,6 +2163,7 @@ async function loadMatchFromUrl() {
         loadedMatchPlayers = [];
         finalizedSets = {};
         resetFinalizeButtons();
+        setSelectedMatchType(0);
         updatePlayerList();
       }
     } catch (error) {
@@ -2150,6 +2173,7 @@ async function loadMatchFromUrl() {
       loadedMatchPlayers = [];
       finalizedSets = {};
       resetFinalizeButtons();
+      setSelectedMatchType(0);
       updatePlayerList();
     }
   } else {
@@ -2157,6 +2181,7 @@ async function loadMatchFromUrl() {
     loadedMatchPlayers = [];
     finalizedSets = {};
     resetFinalizeButtons();
+    setSelectedMatchType(0);
     updatePlayerList();
   }
   hasPendingChanges = false;
@@ -2285,6 +2310,7 @@ function startNewMatch() {
     dateInput.value = offsetDate.toISOString().slice(0, 16);
   }
 
+  setSelectedMatchType(0);
   updateOpponentName();
   updateFirstServeOptions();
   refreshJerseySelectDisplays();

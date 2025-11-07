@@ -6,6 +6,19 @@ import { routeSetById, routeSets } from './api/sets.js';
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
 const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
 const SET_ID_PATTERN = /^\/api\/sets\/(\d+)$/;
+const MATCH_TYPE_MIN = 0;
+const MATCH_TYPE_MAX = 4;
+
+const normalizeMatchType = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return MATCH_TYPE_MIN;
+  }
+  if (parsed < MATCH_TYPE_MIN || parsed > MATCH_TYPE_MAX) {
+    return MATCH_TYPE_MIN;
+  }
+  return parsed;
+};
 
 export default {
   async fetch(request, env, ctx) {
@@ -199,6 +212,8 @@ export class MatchState {
       return Response.json({ error: 'Invalid match payload' }, { status: 400 });
     }
 
+    payload.type = normalizeMatchType(payload.type);
+
     let createdId = null;
 
     try {
@@ -221,7 +236,7 @@ export class MatchState {
           payload.date,
           payload.time,
           payload.location,
-          payload.types,
+          payload.type,
           payload.opponent,
           payload.jerseyColorHome,
           payload.jerseyColorOpp,
@@ -243,7 +258,7 @@ export class MatchState {
             payload.date,
             payload.time,
             payload.location,
-            payload.types,
+            payload.type,
             payload.opponent,
             payload.jerseyColorHome,
             payload.jerseyColorOpp,
@@ -276,6 +291,8 @@ export class MatchState {
       console.error('Failed to normalize match payload', error);
       return Response.json({ error: 'Invalid match payload' }, { status: 400 });
     }
+
+    payload.type = normalizeMatchType(payload.type);
 
     let identifiers;
     try {
