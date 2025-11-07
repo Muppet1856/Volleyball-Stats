@@ -332,7 +332,6 @@ export class MatchState {
 
     const jerseysJson = JSON.stringify(payload.jerseys);
     const playersJson = JSON.stringify(payload.playersAppeared);
-    const matchScoreJson = JSON.stringify(payload.matchScore);
     const storedJerseys =
       typeof rawBody?.jerseys === 'string' && rawBody.jerseys.trim().length > 0
         ? rawBody.jerseys
@@ -399,7 +398,7 @@ export class MatchState {
     let deleted = false;
     try {
       await this.state.storage.transaction(async (txn) => {
-        await txn.sql.exec(`DELETE FROM match WHERE id = ?`, [identifiers.text]);
+        await txn.sql.exec(`DELETE FROM matches WHERE id = ?`, [identifiers.text]);
         const result = await this.db.prepare('DELETE FROM matches WHERE id = ?')
           .bind(identifiers.dbValue)
           .run();
@@ -523,7 +522,7 @@ export class MatchState {
         );
         const existingInfo = existingInfoResult?.results?.[0] ?? {};
         await txn.sql.exec(
-          `INSERT OR REPLACE INTO match_info (id, opponent, date, time, jerseys, who_served_first, players_appeared, location, type)
+          `INSERT OR REPLACE INTO matches (id, opponent, date, time, jerseys, who_served_first, players_appeared, location, type)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             identifiers.text,
