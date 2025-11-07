@@ -58,12 +58,12 @@ async function createMatch(request, env) {
         location,
         type,
         opponent,
-        jersey_color_home,
-        jersey_color_opp,
+        jersey_home,
+        jersey_opp,
         result_home,
         result_opp,
         first_server,
-        players
+        players_appeared
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       payload.date,
@@ -122,12 +122,12 @@ async function updateMatch(request, env, id) {
         location = ?,
         type = ?,
         opponent = ?,
-        jersey_color_home = ?,
-        jersey_color_opp = ?,
+        jersey_home = ?,
+        jersey_opp = ?,
         result_home = ?,
         result_opp = ?,
         first_server = ?,
-        players = ?
+        players_appeared = ?
       WHERE id = ?`
     ).bind(
       payload.date,

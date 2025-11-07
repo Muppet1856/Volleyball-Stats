@@ -225,8 +225,8 @@ export class MatchState {
             location,
             type,
             opponent,
-            jersey_color_home,
-            jersey_color_opp,
+            jersey_home,
+            jersey_opp,
             result_home,
             result_opp,
             first_server,
@@ -251,7 +251,7 @@ export class MatchState {
           throw new Error('Match creation failed');
         }
         await txn.sql.exec(
-          `INSERT OR REPLACE INTO matches (id, date, time, location, type, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players_appeared)
+          `INSERT OR REPLACE INTO matches (id, date, time, location, type, opponent, jersey_home, jersey_opp, result_home, result_opp, first_server, players_appeared)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             String(createdId),
