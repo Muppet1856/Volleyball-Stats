@@ -161,7 +161,7 @@ export class MatchState {
           throw new Error('Set creation failed');
         }
         await txn.sql.exec(
-          `INSERT OR REPLACE INTO live_sets (id, date, time, location, type, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players_appeared)
+          `INSERT OR REPLACE INTO live_sets (id, match_id, set_number, set_score_home, set_score_opp, timeouts_home, timeouts_opp, final_flag)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             String(createdId),
@@ -536,6 +536,7 @@ export class MatchState {
     // Parse message, broadcast to others with same tag
     this.state.getWebSockets({ matchId: ws.tag.matchId }).forEach(otherWs => otherWs.send(message));
   }
+
 }
 
 function handleApiRequest(request, env, pathname) {
