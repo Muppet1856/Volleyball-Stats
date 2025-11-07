@@ -2,6 +2,7 @@ import { methodNotAllowed, notFound } from './api/responses.js';
 import { routeMatchById, routeMatches } from './api/matches.js';
 import { routePlayerById, routePlayers } from './api/players.js';
 import { routeSetById, routeSets } from './api/sets.js';
+import { getDO } from './api/database.js';
 
 const MATCH_ID_PATTERN = /^\/api\/matches\/(\d+)$/;
 const PLAYER_ID_PATTERN = /^\/api\/players\/(\d+)$/;
@@ -36,7 +37,7 @@ export class MatchState {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    this.db = getDatabase(env);
+    this.db = getDO(env);
     this.state.blockConcurrencyWhile(async () => {
       // Initialize storage schema on first access (mirrors D1 tables for live data)
       const storage = this.state.storage;

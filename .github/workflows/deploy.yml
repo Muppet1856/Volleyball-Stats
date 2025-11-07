@@ -165,6 +165,16 @@ jobs:
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
           fi
 
+          # ——— Setup Durable Object ———
+          echo "[durable_objects]" >> wrangler.toml
+          echo "bindings = [" >> wrangler.toml
+          echo "  { name = \"MATCH_DO\", class_name = \"MatchState\" }" >> wrangler.toml
+          echo "]" >> wrangler.toml
+          
+          echo "[[migrations]]" >> wrangler.toml
+          echo "tag = \"v1\"" >> wrangler.toml
+          echo "new_sqlite_classes = [\"MatchState\"]" >> wrangler.toml
+
       # ————————————————————————
       # Resolve Worker Host
       # ————————————————————————
