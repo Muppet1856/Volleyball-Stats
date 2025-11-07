@@ -13,6 +13,13 @@ export function normalizeMatchPayload(input = {}) {
       ? players.map((player) => String(player ?? '').trim()).filter(Boolean)
       : [];
 
+  const coerceTime = (value) => {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).trim();
+  };
+
   const toTimeoutBoolean = (raw) => {
     if (typeof raw === 'string') {
       const normalized = raw.trim().toLowerCase();
@@ -85,6 +92,7 @@ export function normalizeMatchPayload(input = {}) {
 
   return {
     date: input.date ? String(input.date) : '',
+    time: coerceTime(input.time),
     location: input.location ? String(input.location) : '',
     types: coerceTypes(input.types),
     opponent: input.opponent ? String(input.opponent) : '',

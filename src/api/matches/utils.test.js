@@ -29,3 +29,14 @@ test('produces fresh timeout arrays per set', () => {
   assert.deepEqual(normalized.sets[2].timeouts.home, [false, false]);
   assert.notStrictEqual(normalized.sets[1].timeouts.home, normalized.sets[2].timeouts.home);
 });
+
+test('normalizes time value to a trimmed string', () => {
+  const normalizedWithTime = normalizeMatchPayload({ time: ' 7:05 PM ' });
+  assert.equal(normalizedWithTime.time, '7:05 PM');
+
+  const normalizedEmptyTime = normalizeMatchPayload({ time: '   ' });
+  assert.equal(normalizedEmptyTime.time, '');
+
+  const normalizedMissingTime = normalizeMatchPayload({});
+  assert.equal(normalizedMissingTime.time, '');
+});
