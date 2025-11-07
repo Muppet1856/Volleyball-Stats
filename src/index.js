@@ -44,12 +44,14 @@ export class MatchState {
         CREATE TABLE IF NOT EXISTS live_sets (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           match_id INTEGER NOT NULL,
-          set_score_home INTEGER NOT NULL,
-          set_score_opp INTEGER NOT NULL,
+          set_score_home INTEGER NOT NULL DEFAULT 0,
+          set_score_opp INTEGER NOT NULL DEFAULT 0,
           timeouts_home INTEGER NOT NULL DEFAULT 2,
           timeouts_opp INTEGER NOT NULL DEFAULT 2,
           set_number INTEGER NOT NULL,
-          final_flag BOOLEAN DEFAULT FALSE,
+          live_score TEXT,
+          timeouts TEXT,
+          final_flag INTEGER NOT NULL DEFAULT 0,
           UNIQUE (match_id, set_number),
           FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
         );
@@ -57,23 +59,23 @@ export class MatchState {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           number INTEGER NOT NULL,
           last_name TEXT NOT NULL,
-          intial TEXT DEFAULT ''
+          initial TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS matches (
-          id TEXT PRIMARY KEY AUTOINCREMENT,  -- Match ID
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
           opponent TEXT,
           date TEXT,
           time TEXT,
           jersey_home INTEGER,
           jersey_opp INTEGER,
-          first_server BOOLEAN,  -- 0=home, 1=opp
-          players_appeared JSON,
+          first_server INTEGER,
+          players_appeared TEXT,
           result_home INTEGER,
           result_opp INTEGER,
           location TEXT,
-          type TEXT
+          type INTEGER
         );
-        
+
       `);  // Use SQLite API (enable via compatibility_flags if needed)
     });
   }
