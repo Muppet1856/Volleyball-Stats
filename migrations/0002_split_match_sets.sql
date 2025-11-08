@@ -1,14 +1,8 @@
--- Initial schema for Volleyball Stats application
-CREATE TABLE IF NOT EXISTS players (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  number TEXT NOT NULL,
-  last_name TEXT NOT NULL,
-  initial TEXT DEFAULT '',
-  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+-- Normalize match set data into a dedicated table.
+BEGIN TRANSACTION;
 
--- Match metadata is stored in this table. Set-level scoring lives in match_sets.
-CREATE TABLE IF NOT EXISTS matches (
+-- Recreate matches table without the deprecated JSON sets column.
+CREATE TABLE matches_new (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT,
   location TEXT,
@@ -25,10 +19,46 @@ CREATE TABLE IF NOT EXISTS matches (
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date);
+INSERT INTO matches_new (
+  id,
+  date,
+  location,
+  types,
+  opponent,
+  jersey_color_home,
+  jersey_color_opp,
+  result_home,
+  result_opp,
+  first_server,
+  players,
+  finalized_sets,
+  is_swapped,
+  created_at
+)
+SELECT
+  id,
+  date,
+  location,
+  types,
+  opponent,
+  jersey_color_home,
+  jersey_color_opp,
+  result_home,
+  result_opp,
+  first_server,
+  players,
+  finalized_sets,
+  is_swapped,
+  created_at
+FROM matches;
 
--- Each row represents a single set for a match, including scores and timeout usage.
-CREATE TABLE IF NOT EXISTS match_sets (
+DROP TABLE matches;
+ALTER TABLE matches_new RENAME TO matches;
+
+CREATE INDEX idx_matches_date ON matches(date);
+
+-- Each record stores the scores and timeout usage for a single set.
+CREATE TABLE match_sets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   match_id INTEGER NOT NULL,
   set_number INTEGER NOT NULL CHECK (set_number BETWEEN 1 AND 5),
@@ -41,3 +71,5 @@ CREATE TABLE IF NOT EXISTS match_sets (
   FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
   UNIQUE (match_id, set_number)
 );
+
+COMMIT;

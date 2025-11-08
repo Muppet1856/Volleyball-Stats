@@ -1,5 +1,10 @@
 import { methodNotAllowed } from './responses.js';
-import { deserializeMatchRow, normalizeMatchPayload } from './matches/utils.js';
+import {
+  deserializeMatchRow,
+  mapMatchPayloadToRow,
+  mapMatchSetsToRows,
+  normalizeMatchPayload
+} from './matches/utils.js';
 import { getDatabase } from './database.js';
 
 export function routeMatches(request, env) {
@@ -49,8 +54,11 @@ async function createMatch(request, env) {
   }
 
   const payload = normalizeMatchPayload(body);
+  let db;
+  let createdMatchId;
   try {
-    const db = getDatabase(env);
+    db = getDatabase(env);
+    const row = mapMatchPayloadToRow(payload);
     const statement = db.prepare(
       `INSERT INTO matches (
         date,
@@ -63,30 +71,42 @@ async function createMatch(request, env) {
         result_opp,
         first_server,
         players,
-        sets,
         finalized_sets,
         is_swapped
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
-      payload.opponent,
-      payload.jerseyColorHome,
-      payload.jerseyColorOpp,
-      payload.resultHome,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0
+      row.date,
+      row.location,
+      row.types,
+      row.opponent,
+      row.jersey_color_home,
+      row.jersey_color_opp,
+      row.result_home,
+      row.result_opp,
+      row.first_server,
+      row.players,
+      row.finalized_sets,
+      row.is_swapped
     );
     const result = await statement.run();
     const id = result?.meta?.last_row_id;
+    if (!id) {
+      throw new Error('Failed to determine match id');
+    }
+    createdMatchId = id;
+
+    await replaceMatchSets(db, id, payload.sets);
     return Response.json({ id }, { status: 201 });
   } catch (error) {
     console.error('Failed to create match', error);
+    if (createdMatchId && db) {
+      try {
+        await db.prepare('DELETE FROM match_sets WHERE match_id = ?').bind(createdMatchId).run();
+        await db.prepare('DELETE FROM matches WHERE id = ?').bind(createdMatchId).run();
+      } catch (cleanupError) {
+        console.error('Failed to clean up partial match insert', cleanupError);
+      }
+    }
     return Response.json({ error: 'Failed to create match' }, { status: 500 });
   }
 }
@@ -102,7 +122,14 @@ async function getMatch(env, id) {
     if (!row) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
-    return Response.json(deserializeMatchRow(row));
+    const setStatement = db.prepare(
+      `SELECT set_number, home_score, opp_score, home_timeout_1, home_timeout_2, opp_timeout_1, opp_timeout_2
+       FROM match_sets
+       WHERE match_id = ?
+       ORDER BY set_number ASC`
+    ).bind(id);
+    const { results: setRows } = await setStatement.all();
+    return Response.json(deserializeMatchRow(row, setRows || []));
   } catch (error) {
     console.error('Failed to fetch match', error);
     return Response.json({ error: 'Failed to fetch match' }, { status: 500 });
@@ -119,6 +146,7 @@ async function updateMatch(request, env, id) {
   const payload = normalizeMatchPayload(body);
   try {
     const db = getDatabase(env);
+    const row = mapMatchPayloadToRow(payload);
     const statement = db.prepare(
       `UPDATE matches SET
         date = ?,
@@ -131,30 +159,29 @@ async function updateMatch(request, env, id) {
         result_opp = ?,
         first_server = ?,
         players = ?,
-        sets = ?,
         finalized_sets = ?,
         is_swapped = ?
       WHERE id = ?`
     ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
-      payload.opponent,
-      payload.jerseyColorHome,
-      payload.jerseyColorOpp,
-      payload.resultHome,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0,
+      row.date,
+      row.location,
+      row.types,
+      row.opponent,
+      row.jersey_color_home,
+      row.jersey_color_opp,
+      row.result_home,
+      row.result_opp,
+      row.first_server,
+      row.players,
+      row.finalized_sets,
+      row.is_swapped,
       id
     );
     const result = await statement.run();
     if (!result?.meta || result.meta.changes === 0) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
+    await replaceMatchSets(db, id, payload.sets);
     return Response.json({ id });
   } catch (error) {
     console.error('Failed to update match', error);
@@ -171,9 +198,47 @@ async function deleteMatch(env, id) {
     if (!result?.meta || result.meta.changes === 0) {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
+    await db.prepare('DELETE FROM match_sets WHERE match_id = ?').bind(id).run();
     return new Response(null, { status: 204 });
   } catch (error) {
     console.error('Failed to delete match', error);
     return Response.json({ error: 'Failed to delete match' }, { status: 500 });
+  }
+}
+
+async function replaceMatchSets(db, matchId, sets) {
+  const rows = mapMatchSetsToRows(matchId, sets);
+  for (const row of rows) {
+    await db
+      .prepare(
+        `INSERT INTO match_sets (
+          match_id,
+          set_number,
+          home_score,
+          opp_score,
+          home_timeout_1,
+          home_timeout_2,
+          opp_timeout_1,
+          opp_timeout_2
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(match_id, set_number) DO UPDATE SET
+          home_score = excluded.home_score,
+          opp_score = excluded.opp_score,
+          home_timeout_1 = excluded.home_timeout_1,
+          home_timeout_2 = excluded.home_timeout_2,
+          opp_timeout_1 = excluded.opp_timeout_1,
+          opp_timeout_2 = excluded.opp_timeout_2`
+      )
+      .bind(
+        row.matchId,
+        row.setNumber,
+        row.homeScore,
+        row.oppScore,
+        row.homeTimeout1,
+        row.homeTimeout2,
+        row.oppTimeout1,
+        row.oppTimeout2
+      )
+      .run();
   }
 }
