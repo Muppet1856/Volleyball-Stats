@@ -55,10 +55,10 @@ export function normalizeMatchPayload(input = {}) {
       };
       const timeoutSource = set.timeouts ?? {};
       normalized[i] = {
-        sc: normalizeScore(set.sc),
+        home: normalizeScore(set.home),
         opp: normalizeScore(set.opp),
         timeouts: {
-          sc: normalizeTimeoutArray(timeoutSource.sc),
+          home: normalizeTimeoutArray(timeoutSource.home),
           opp: normalizeTimeoutArray(timeoutSource.opp)
         }
       };
@@ -88,9 +88,9 @@ export function normalizeMatchPayload(input = {}) {
     location: input.location ? String(input.location) : '',
     types: coerceTypes(input.types),
     opponent: input.opponent ? String(input.opponent) : '',
-    jerseyColorSC: input.jerseyColorSC ? String(input.jerseyColorSC) : '',
+    jerseyColorHome: input.jerseyColorHome ? String(input.jerseyColorHome) : '',
     jerseyColorOpp: input.jerseyColorOpp ? String(input.jerseyColorOpp) : '',
-    resultSC: toIntegerOrNull(input.resultSC),
+    resultHome: toIntegerOrNull(input.resultHome),
     resultOpp: toIntegerOrNull(input.resultOpp),
     firstServer: input.firstServer ? String(input.firstServer) : '',
     players: coercePlayers(input.players),
@@ -128,9 +128,9 @@ export function deserializeMatchRow(row) {
       ...parseJson(row.types, DEFAULT_TYPES)
     },
     opponent: row.opponent ?? '',
-    jerseyColorSC: row.jersey_color_sc ?? '',
+    jerseyColorHome: row.jersey_color_home ?? '',
     jerseyColorOpp: row.jersey_color_opp ?? '',
-    resultSC: row.result_sc,
+    resultHome: row.result_home,
     resultOpp: row.result_opp,
     firstServer: row.first_server ?? '',
     players: parseJson(row.players, []),

@@ -157,16 +157,16 @@ let playerSortMode = 'number';
     const SET_NUMBERS = [1, 2, 3, 4, 5];
     const scoreGameState = {
       setNumber: null,
-      sc: null,
+      home: null,
       opp: null,
       timeouts: {
-        sc: Array(TIMEOUT_COUNT).fill(false),
+        home: Array(TIMEOUT_COUNT).fill(false),
         opp: Array(TIMEOUT_COUNT).fill(false)
       },
-      activeTimeout: { sc: null, opp: null },
-      timeoutTimers: { sc: null, opp: null },
+      activeTimeout: { home: null, opp: null },
+      timeoutTimers: { home: null, opp: null },
       timeoutRemainingSeconds: {
-        sc: TIMEOUT_DURATION_SECONDS,
+        home: TIMEOUT_DURATION_SECONDS,
         opp: TIMEOUT_DURATION_SECONDS
       }
     };
@@ -350,7 +350,7 @@ let playerSortMode = 'number';
 
     function maybeRecalculateFinalResult(target) {
       if (!target || !target.id) return;
-      const match = target.id.match(/^set(\d+)(SC|Opp)$/);
+      const match = target.id.match(/^set(\d+)(Home|Opp)$/);
       if (!match) return;
       const setNumber = parseInt(match[1], 10);
       if (Number.isNaN(setNumber)) return;
@@ -451,17 +451,17 @@ let playerSortMode = 'number';
 
     function updateFinalizeButtonState(setNumber) {
       const button = document.getElementById(`finalizeButton${setNumber}`);
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!button || !scInput || !oppInput) {
+      if (!button || !homeInput || !oppInput) {
         return { isTie: false, finalStateChanged: false };
       }
-      const scRaw = scInput.value.trim();
+      const homeRaw = homeInput.value.trim();
       const oppRaw = oppInput.value.trim();
-      const bothScoresEntered = scRaw !== '' && oppRaw !== '';
-      const scScore = parseScoreValue(scRaw);
+      const bothScoresEntered = homeRaw !== '' && oppRaw !== '';
+      const homeScore = parseScoreValue(homeRaw);
       const oppScore = parseScoreValue(oppRaw);
-      const isTie = bothScoresEntered && scScore === oppScore;
+      const isTie = bothScoresEntered && homeScore === oppScore;
       button.classList.toggle('finalize-btn-error', isTie);
       if (isTie) {
         button.setAttribute('aria-disabled', 'true');
@@ -491,9 +491,9 @@ let playerSortMode = 'number';
     }
 
     function updateScoreModalDisplay() {
-      const scDisplay = document.getElementById('scoreGameScDisplay');
+      const homeDisplay = document.getElementById('scoreGameHomeDisplay');
       const oppDisplay = document.getElementById('scoreGameOppDisplay');
-      if (scDisplay) scDisplay.textContent = formatScoreDisplay(scoreGameState.sc);
+      if (homeDisplay) homeDisplay.textContent = formatScoreDisplay(scoreGameState.home);
       if (oppDisplay) oppDisplay.textContent = formatScoreDisplay(scoreGameState.opp);
     }
 
@@ -505,8 +505,8 @@ let playerSortMode = 'number';
     }
 
     function getTimeoutTeamName(team) {
-      const homeTeamHeaderId = isSwapped ? 'oppHeader' : 'scHeader';
-      const opponentHeaderId = isSwapped ? 'scHeader' : 'oppHeader';
+      const homeTeamHeaderId = isSwapped ? 'oppHeader' : 'homeHeader';
+      const opponentHeaderId = isSwapped ? 'homeHeader' : 'oppHeader';
       if (team === 'opp') {
         return getTeamHeaderName(opponentHeaderId, 'Opponent');
       }
@@ -519,7 +519,7 @@ let playerSortMode = 'number';
 
     function createEmptySetTimeouts() {
       return {
-        sc: Array(TIMEOUT_COUNT).fill(false),
+        home: Array(TIMEOUT_COUNT).fill(false),
         opp: Array(TIMEOUT_COUNT).fill(false)
       };
     }
@@ -551,15 +551,15 @@ let playerSortMode = 'number';
 
     function setMatchTimeoutState(setNumber, timeouts) {
       matchTimeouts[setNumber] = {
-        sc: cloneTimeoutArray(timeouts?.sc),
+        home: cloneTimeoutArray(timeouts?.home),
         opp: cloneTimeoutArray(timeouts?.opp)
       };
     }
 
     function swapSetTimeoutState(state) {
       return {
-        sc: cloneTimeoutArray(state?.opp),
-        opp: cloneTimeoutArray(state?.sc)
+        home: cloneTimeoutArray(state?.opp),
+        opp: cloneTimeoutArray(state?.home)
       };
     }
 
@@ -574,13 +574,13 @@ let playerSortMode = 'number';
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
       const stored = getMatchTimeoutState(setNumber);
-      stored.sc = scoreGameState.timeouts.sc.slice(0, TIMEOUT_COUNT).map(Boolean);
+      stored.home = scoreGameState.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean);
       stored.opp = scoreGameState.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean);
     }
 
     function loadSetTimeoutsIntoScoreState(setNumber) {
       const stored = getMatchTimeoutState(setNumber);
-      ['sc', 'opp'].forEach(team => {
+      ['home', 'opp'].forEach(team => {
         stopTimeoutTimer(team);
         scoreGameState.timeouts[team] = stored[team].slice();
         scoreGameState.activeTimeout[team] = null;
@@ -611,7 +611,7 @@ let playerSortMode = 'number';
     }
 
     function getRunningTimeoutTeam() {
-      return ['sc', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team])) || null;
+      return ['home', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team])) || null;
     }
 
     function cancelActiveTimeoutTimer() {
@@ -697,46 +697,46 @@ let playerSortMode = 'number';
     }
 
     function refreshAllTimeoutDisplays() {
-      updateTimeoutUI('sc');
+      updateTimeoutUI('home');
       updateTimeoutUI('opp');
     }
 
     function swapScoreGameTimeoutState() {
       const wasRunning = {
-        sc: Boolean(scoreGameState.timeoutTimers.sc),
+        home: Boolean(scoreGameState.timeoutTimers.home),
         opp: Boolean(scoreGameState.timeoutTimers.opp)
       };
       const previousActive = {
-        sc: scoreGameState.activeTimeout.sc,
+        home: scoreGameState.activeTimeout.home,
         opp: scoreGameState.activeTimeout.opp
       };
       const previousRemaining = {
-        sc: scoreGameState.timeoutRemainingSeconds.sc ?? TIMEOUT_DURATION_SECONDS,
+        home: scoreGameState.timeoutRemainingSeconds.home ?? TIMEOUT_DURATION_SECONDS,
         opp: scoreGameState.timeoutRemainingSeconds.opp ?? TIMEOUT_DURATION_SECONDS
       };
 
-      stopTimeoutTimer('sc');
+      stopTimeoutTimer('home');
       stopTimeoutTimer('opp');
 
       const swappedTimeouts = swapSetTimeoutState(scoreGameState.timeouts);
-      scoreGameState.timeouts.sc = swappedTimeouts.sc;
+      scoreGameState.timeouts.home = swappedTimeouts.home;
       scoreGameState.timeouts.opp = swappedTimeouts.opp;
 
-      scoreGameState.activeTimeout.sc = previousActive.opp ?? null;
-      scoreGameState.activeTimeout.opp = previousActive.sc ?? null;
+      scoreGameState.activeTimeout.home = previousActive.opp ?? null;
+      scoreGameState.activeTimeout.opp = previousActive.home ?? null;
 
-      scoreGameState.timeoutRemainingSeconds.sc = previousRemaining.opp;
-      scoreGameState.timeoutRemainingSeconds.opp = previousRemaining.sc;
+      scoreGameState.timeoutRemainingSeconds.home = previousRemaining.opp;
+      scoreGameState.timeoutRemainingSeconds.opp = previousRemaining.home;
 
-      if (wasRunning.opp && scoreGameState.activeTimeout.sc !== null) {
-        startTimeoutTimer('sc');
+      if (wasRunning.opp && scoreGameState.activeTimeout.home !== null) {
+        startTimeoutTimer('home');
       }
 
-      if (wasRunning.sc && scoreGameState.activeTimeout.opp !== null) {
+      if (wasRunning.home && scoreGameState.activeTimeout.opp !== null) {
         startTimeoutTimer('opp');
       }
 
-      updateTimeoutUI('sc');
+      updateTimeoutUI('home');
       updateTimeoutUI('opp');
     }
 
@@ -801,17 +801,17 @@ let playerSortMode = 'number';
       if (resetStored) {
         matchTimeouts = createEmptyMatchTimeouts();
       }
-      resetTeamTimeouts('sc', { skipPersist: true });
+      resetTeamTimeouts('home', { skipPersist: true });
       resetTeamTimeouts('opp', { skipPersist: true });
       persistCurrentSetTimeouts();
     }
 
     function updateScoreColorClasses() {
-      const scHeader = document.getElementById('scHeader');
+      const homeHeader = document.getElementById('homeHeader');
       const oppHeader = document.getElementById('oppHeader');
-      if (scHeader) {
-        scHeader.classList.add('left-score');
-        scHeader.classList.remove('right-score');
+      if (homeHeader) {
+        homeHeader.classList.add('left-score');
+        homeHeader.classList.remove('right-score');
       }
       if (oppHeader) {
         oppHeader.classList.add('right-score');
@@ -819,11 +819,11 @@ let playerSortMode = 'number';
       }
 
       for (let i = 1; i <= 5; i++) {
-        const scInput = document.getElementById(`set${i}SC`);
+        const homeInput = document.getElementById(`set${i}Home`);
         const oppInput = document.getElementById(`set${i}Opp`);
-        if (scInput) {
-          scInput.classList.add('left-score');
-          scInput.classList.remove('right-score');
+        if (homeInput) {
+          homeInput.classList.add('left-score');
+          homeInput.classList.remove('right-score');
         }
         if (oppInput) {
           oppInput.classList.add('right-score');
@@ -844,16 +844,16 @@ let playerSortMode = 'number';
     function updateScoreModalLabels() {
       const leftLabel = document.getElementById('scoreGameLeftLabel');
       const rightLabel = document.getElementById('scoreGameRightLabel');
-      const leftName = getTeamHeaderName('scHeader', getHomeTeamName());
+      const leftName = getTeamHeaderName('homeHeader', getHomeTeamName());
       const rightName = getTeamHeaderName('oppHeader', 'Opponent');
       if (leftLabel) leftLabel.textContent = leftName;
       if (rightLabel) rightLabel.textContent = rightName;
-      const scIncrementZone = document.querySelector('#scoreGameModal .score-zone.increment[data-team="sc"]');
-      const scDecrementZone = document.querySelector('#scoreGameModal .score-zone.decrement[data-team="sc"]');
+      const homeIncrementZone = document.querySelector('#scoreGameModal .score-zone.increment[data-team="home"]');
+      const homeDecrementZone = document.querySelector('#scoreGameModal .score-zone.decrement[data-team="home"]');
       const oppIncrementZone = document.querySelector('#scoreGameModal .score-zone.increment[data-team="opp"]');
       const oppDecrementZone = document.querySelector('#scoreGameModal .score-zone.decrement[data-team="opp"]');
-      if (scIncrementZone) scIncrementZone.setAttribute('aria-label', `Increase ${leftName} score`);
-      if (scDecrementZone) scDecrementZone.setAttribute('aria-label', `Decrease ${leftName} score`);
+      if (homeIncrementZone) homeIncrementZone.setAttribute('aria-label', `Increase ${leftName} score`);
+      if (homeDecrementZone) homeDecrementZone.setAttribute('aria-label', `Decrease ${leftName} score`);
       if (oppIncrementZone) oppIncrementZone.setAttribute('aria-label', `Increase ${rightName} score`);
       if (oppDecrementZone) oppDecrementZone.setAttribute('aria-label', `Decrease ${rightName} score`);
       refreshAllTimeoutDisplays();
@@ -864,9 +864,9 @@ let playerSortMode = 'number';
     function applyScoreModalToInputs({ triggerSave = true } = {}) {
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (scInput) scInput.value = formatScoreInputValue(scoreGameState.sc);
+      if (homeInput) homeInput.value = formatScoreInputValue(scoreGameState.home);
       if (oppInput) oppInput.value = formatScoreInputValue(scoreGameState.opp);
       const { finalStateChanged } = updateFinalizeButtonState(setNumber);
       if (triggerSave) {
@@ -878,7 +878,7 @@ let playerSortMode = 'number';
     }
 
     function adjustScoreModal(team, delta) {
-      const key = team === 'opp' ? 'opp' : 'sc';
+      const key = team === 'opp' ? 'opp' : 'home';
       const currentValue = scoreGameState[key];
       const baseValue = currentValue === null || currentValue === undefined ? 0 : currentValue;
       const newValue = clampScoreValue(baseValue + delta);
@@ -889,9 +889,9 @@ let playerSortMode = 'number';
     }
 
     function openScoreGameModal(setNumber) {
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!scInput || !oppInput) return;
+      if (!homeInput || !oppInput) return;
       if (scoreGameState.setNumber !== null) {
         persistCurrentSetTimeouts();
         if (scoreGameState.setNumber !== setNumber) {
@@ -899,7 +899,7 @@ let playerSortMode = 'number';
         }
       }
       scoreGameState.setNumber = setNumber;
-      scoreGameState.sc = parseScoreValue(scInput.value);
+      scoreGameState.home = parseScoreValue(homeInput.value);
       scoreGameState.opp = parseScoreValue(oppInput.value);
       loadSetTimeoutsIntoScoreState(setNumber);
       updateScoreModalLabels();
@@ -1141,7 +1141,7 @@ let playerSortMode = 'number';
       const baseHomeName = getHomeTeamName();
       const homeName = swapped ? opponentName : baseHomeName;
       const awayName = swapped ? baseHomeName : opponentName;
-      setTeamHeaderName('scHeader', homeName, { roleDescription: 'Home team' });
+      setTeamHeaderName('homeHeader', homeName, { roleDescription: 'Home team' });
       setTeamHeaderName('oppHeader', awayName, { roleDescription: 'Opponent team' });
       updateScoreModalLabels();
     }
@@ -1152,10 +1152,10 @@ let playerSortMode = 'number';
       updateScoreModalLabels();
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!scInput || !oppInput) return;
-      scoreGameState.sc = parseScoreValue(scInput.value);
+      if (!homeInput || !oppInput) return;
+      scoreGameState.home = parseScoreValue(homeInput.value);
       scoreGameState.opp = parseScoreValue(oppInput.value);
       updateScoreModalDisplay();
     }
@@ -1168,10 +1168,10 @@ let playerSortMode = 'number';
       const opponentInput = document.getElementById('opponent').value.trim();
       const opponentName = opponentInput || 'Opponent';
       for (let i = 1; i <= 5; i++) {
-        const scScore = document.getElementById(`set${i}SC`).value;
+        const homeScore = document.getElementById(`set${i}Home`).value;
         const oppScore = document.getElementById(`set${i}Opp`).value;
-        document.getElementById(`set${i}SC`).value = oppScore;
-        document.getElementById(`set${i}Opp`).value = scScore;
+        document.getElementById(`set${i}Home`).value = oppScore;
+        document.getElementById(`set${i}Opp`).value = homeScore;
       }
       updateAllFinalizeButtonStates();
       updateSetHeaders(opponentName, isSwapped); // Update headers after swap
@@ -1439,7 +1439,7 @@ let playerSortMode = 'number';
     }
 
     function refreshJerseySelectDisplays() {
-      updateJerseySelectDisplay(document.getElementById('jerseyColorSC'));
+      updateJerseySelectDisplay(document.getElementById('jerseyColorHome'));
       updateJerseySelectDisplay(document.getElementById('jerseyColorOpp'));
     }
 
@@ -1510,7 +1510,7 @@ let playerSortMode = 'number';
 
     function ensureDistinctJerseyColors(changedSelect, { showModal = true } = {}) {
       if (isResolvingJerseyColorConflict) return;
-      const homeSelect = document.getElementById('jerseyColorSC');
+      const homeSelect = document.getElementById('jerseyColorHome');
       const opponentSelect = document.getElementById('jerseyColorOpp');
       if (!homeSelect || !opponentSelect) return;
 
@@ -1839,7 +1839,7 @@ let playerSortMode = 'number';
     });
 
     function applyJerseyColorToNumbers() {
-      const jerseySelect = document.getElementById('jerseyColorSC');
+      const jerseySelect = document.getElementById('jerseyColorHome');
       if (!jerseySelect) return;
       updateJerseySelectDisplay(jerseySelect);
       const { backgroundColor, textColor } = getJerseyColorStyles(jerseySelect.value);
@@ -1861,7 +1861,7 @@ let playerSortMode = 'number';
         const numberCircle = document.createElement('span');
         numberCircle.className = 'player-number-circle';
         numberCircle.textContent = numberPart;
-        const jerseyColor = document.getElementById('jerseyColorSC').value;
+        const jerseyColor = document.getElementById('jerseyColorHome').value;
         const { backgroundColor, textColor } = getJerseyColorStyles(jerseyColor);
         numberCircle.style.backgroundColor = backgroundColor;
         numberCircle.style.color = textColor;
@@ -1946,14 +1946,14 @@ let playerSortMode = 'number';
     function finalizeSet(setNumber) {
       const button = document.getElementById(`finalizeButton${setNumber}`);
       if (!button) return;
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      const scRaw = scInput ? scInput.value.trim() : '';
+      const homeRaw = homeInput ? homeInput.value.trim() : '';
       const oppRaw = oppInput ? oppInput.value.trim() : '';
-      const bothScoresEntered = scRaw !== '' && oppRaw !== '';
-      const scScore = parseScoreValue(scRaw);
+      const bothScoresEntered = homeRaw !== '' && oppRaw !== '';
+      const homeScore = parseScoreValue(homeRaw);
       const oppScore = parseScoreValue(oppRaw);
-      if (bothScoresEntered && scScore === oppScore) {
+      if (bothScoresEntered && homeScore === oppScore) {
         updateFinalizeButtonState(setNumber);
         showFinalizeTiePopover(button);
         return;
@@ -1971,25 +1971,25 @@ let playerSortMode = 'number';
     }
 
     function calculateResult() {
-      let scWins = 0;
+      let homeWins = 0;
       let oppWins = 0;
       for (let i = 1; i <= 5; i++) {
         if (finalizedSets[i]) {
-          const scScore = parseScoreValue(document.getElementById(`set${i}SC`).value);
+          const homeScore = parseScoreValue(document.getElementById(`set${i}Home`).value);
           const oppScore = parseScoreValue(document.getElementById(`set${i}Opp`).value);
-          if (scScore === null || oppScore === null) {
+          if (homeScore === null || oppScore === null) {
             continue;
           }
           if (isSwapped) {
-            if (oppScore > scScore) scWins++;
-            else if (scScore > oppScore) oppWins++;
+            if (oppScore > homeScore) homeWins++;
+            else if (homeScore > oppScore) oppWins++;
           } else {
-            if (scScore > oppScore) scWins++;
-            else if (oppScore > scScore) oppWins++;
+            if (homeScore > oppScore) homeWins++;
+            else if (oppScore > homeScore) oppWins++;
           }
         }
       }
-      document.getElementById('resultSC').value = Math.min(scWins, 3);
+      document.getElementById('resultHome').value = Math.min(homeWins, 3);
       document.getElementById('resultOpp').value = Math.min(oppWins, 3);
     }
 
@@ -1997,7 +1997,7 @@ let playerSortMode = 'number';
     function getSerializedSetTimeouts(setNumber) {
       const stored = getMatchTimeoutState(setNumber);
       return {
-        sc: stored.sc.slice(0, TIMEOUT_COUNT).map(Boolean),
+        home: stored.home.slice(0, TIMEOUT_COUNT).map(Boolean),
         opp: stored.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
       };
     }
@@ -2028,35 +2028,35 @@ let playerSortMode = 'number';
           nonLeague: document.getElementById('nonLeague').checked
         },
         opponent: document.getElementById('opponent').value.trim() || 'Opponent',
-        jerseyColorSC: document.getElementById('jerseyColorSC').value,
+        jerseyColorHome: document.getElementById('jerseyColorHome').value,
         jerseyColorOpp: document.getElementById('jerseyColorOpp').value,
-        resultSC: parseResultValue('resultSC'),
+        resultHome: parseResultValue('resultHome'),
         resultOpp: parseResultValue('resultOpp'),
         firstServer: document.getElementById('firstServer').value,
         players: Array.from(document.querySelectorAll('#playerList input[type="checkbox"]:checked')).map(cb => cb.value),
         sets: {
           1: {
-            sc: normalizeScoreInputValue(document.getElementById('set1SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set1Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set1Opp').value),
             timeouts: getSerializedSetTimeouts(1)
           },
           2: {
-            sc: normalizeScoreInputValue(document.getElementById('set2SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set2Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set2Opp').value),
             timeouts: getSerializedSetTimeouts(2)
           },
           3: {
-            sc: normalizeScoreInputValue(document.getElementById('set3SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set3Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set3Opp').value),
             timeouts: getSerializedSetTimeouts(3)
           },
           4: {
-            sc: normalizeScoreInputValue(document.getElementById('set4SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set4Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set4Opp').value),
             timeouts: getSerializedSetTimeouts(4)
           },
           5: {
-            sc: normalizeScoreInputValue(document.getElementById('set5SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set5Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set5Opp').value),
             timeouts: getSerializedSetTimeouts(5)
           }
@@ -2153,22 +2153,22 @@ let playerSortMode = 'number';
             document.getElementById('postSeason').checked = Boolean(match.types?.postSeason);
             document.getElementById('nonLeague').checked = Boolean(match.types?.nonLeague);
             document.getElementById('opponent').value = match.opponent || '';
-            document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
+            document.getElementById('jerseyColorHome').value = match.jerseyColorHome || 'white';
             document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
             refreshJerseySelectDisplays();
-            ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
+            ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
             applyJerseyColorToNumbers();
-            document.getElementById('resultSC').value = match.resultSC ?? 0;
+            document.getElementById('resultHome').value = match.resultHome ?? 0;
             document.getElementById('resultOpp').value = match.resultOpp ?? 0;
             const storedFirstServer = match.firstServer || '';
             updateOpponentName();
             setFirstServerSelection(storedFirstServer);
             updatePlayerList();
             for (let i = 1; i <= 5; i++) {
-              const scInput = document.getElementById(`set${i}SC`);
+              const homeInput = document.getElementById(`set${i}Home`);
               const oppInput = document.getElementById(`set${i}Opp`);
-              if (scInput) {
-                scInput.value = normalizeStoredScoreValue(match.sets?.[i]?.sc);
+              if (homeInput) {
+                homeInput.value = normalizeStoredScoreValue(match.sets?.[i]?.home);
               }
               if (oppInput) {
                 oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
@@ -2316,10 +2316,10 @@ let playerSortMode = 'number';
       }
 
       for (let i = 1; i <= 5; i++) {
-        const scInput = document.getElementById(`set${i}SC`);
+        const homeInput = document.getElementById(`set${i}Home`);
         const oppInput = document.getElementById(`set${i}Opp`);
         const finalizeButton = document.getElementById(`finalizeButton${i}`);
-        if (scInput) scInput.value = '';
+        if (homeInput) homeInput.value = '';
         if (oppInput) oppInput.value = '';
         if (finalizeButton) finalizeButton.classList.remove('finalized-btn');
       }
@@ -2330,7 +2330,7 @@ let playerSortMode = 'number';
       });
 
       resetAllTimeouts({ resetStored: true });
-      scoreGameState.sc = null;
+      scoreGameState.home = null;
       scoreGameState.opp = null;
       updateScoreModalDisplay();
 
@@ -2347,7 +2347,7 @@ let playerSortMode = 'number';
       updateOpponentName();
       updateFirstServeOptions();
       refreshJerseySelectDisplays();
-      ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
+      ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
       applyJerseyColorToNumbers();
       setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
 
@@ -2376,11 +2376,11 @@ let playerSortMode = 'number';
       if (jerseyConflictModalElement) {
         jerseyConflictModalInstance = new bootstrap.Modal(jerseyConflictModalElement);
       }
-      initializeJerseySelect(document.getElementById('jerseyColorSC'), { applyToNumbers: true });
+      initializeJerseySelect(document.getElementById('jerseyColorHome'), { applyToNumbers: true });
       initializeJerseySelect(document.getElementById('jerseyColorOpp'));
       setupJerseyThemeObserver();
       handleJerseyThemeChange();
-      ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
+      ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
       const sortToggleBtn = document.getElementById('playerSortToggleBtn');
       if (sortToggleBtn) {
         sortToggleBtn.addEventListener('click', () => {
@@ -2428,7 +2428,7 @@ let playerSortMode = 'number';
           persistCurrentSetTimeouts();
           cancelActiveTimeoutTimer();
           scoreGameState.setNumber = null;
-          scoreGameState.sc = null;
+          scoreGameState.home = null;
           scoreGameState.opp = null;
           updateScoreModalDisplay();
           refreshAllTimeoutDisplays();
