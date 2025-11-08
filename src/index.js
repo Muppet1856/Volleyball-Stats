@@ -13,7 +13,11 @@ export default {
       return handleApiRequest(request, env, url.pathname);
     }
 
-    return env.ASSETS.fetch(request);
+    if (env?.ASSETS?.fetch) {
+      return env.ASSETS.fetch(request);
+    }
+
+    return notFound();
   }
 };
 
