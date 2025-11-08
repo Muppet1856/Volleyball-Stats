@@ -6,11 +6,12 @@ export class MatchStore {
   constructor(state) {
     this.state = state;
     this.storage = state.storage;
+    this.sql = createSqlDatabase(this.storage?.sql);
     this.initialized = this.initialize();
   }
 
   async initialize() {
-    await this.storage.sql.exec(
+    await this.sql.exec(
       `CREATE TABLE IF NOT EXISTS players (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         number TEXT NOT NULL,
@@ -19,7 +20,7 @@ export class MatchStore {
       )`
     );
 
-    await this.storage.sql.exec(
+    await this.sql.exec(
       `CREATE TABLE IF NOT EXISTS matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL DEFAULT '',
@@ -40,7 +41,7 @@ export class MatchStore {
       )`
     );
 
-    await this.storage.sql.exec(
+    await this.sql.exec(
       `CREATE TABLE IF NOT EXISTS match_sets (
         match_id INTEGER NOT NULL,
         set_number INTEGER NOT NULL,
@@ -100,7 +101,7 @@ export class MatchStore {
   }
 
   async listPlayers() {
-    const { results = [] } = await this.storage.sql
+    const { results = [] } = await this.sql
       .prepare(
         `SELECT id, number, last_name AS lastName, initial
          FROM players`
@@ -145,7 +146,7 @@ export class MatchStore {
       );
     }
 
-    const record = await this.storage.sql
+    const record = await this.sql
       .prepare(
         `INSERT INTO players (number, last_name, initial)
          VALUES (?, ?, ?)
@@ -174,7 +175,7 @@ export class MatchStore {
       );
     }
 
-    const record = await this.storage.sql
+    const record = await this.sql
       .prepare(
         `UPDATE players
          SET number = ?, last_name = ?, initial = ?
@@ -197,7 +198,7 @@ export class MatchStore {
       return Response.json({ error: 'Player not found' }, { status: 404 });
     }
 
-    const result = await this.storage.sql
+    const result = await this.sql
       .prepare(`DELETE FROM players WHERE id = ? RETURNING id`)
       .bind(id)
       .first();
@@ -210,7 +211,7 @@ export class MatchStore {
   }
 
   async listMatches() {
-    const { results = [] } = await this.storage.sql
+    const { results = [] } = await this.sql
       .prepare(
         `SELECT id, date, opponent
          FROM matches
@@ -233,7 +234,7 @@ export class MatchStore {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
 
-    const match = await this.storage.sql
+    const match = await this.sql
       .prepare(
         `SELECT
            id,
@@ -262,7 +263,7 @@ export class MatchStore {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
 
-    const { results: setRows = [] } = await this.storage.sql
+    const { results: setRows = [] } = await this.sql
       .prepare(
         `SELECT
            set_number AS setNumber,
@@ -314,7 +315,7 @@ export class MatchStore {
     }
 
     const id = await this.withTransaction(async () => {
-      const matchRow = await this.storage.sql
+      const matchRow = await this.sql
         .prepare(
           `INSERT INTO matches (
              date,
@@ -342,7 +343,7 @@ export class MatchStore {
         throw new Error('Failed to create match');
       }
 
-      await insertMatchSets(this.storage.sql, matchRow.id, normalized.sets);
+      await insertMatchSets(this.sql, matchRow.id, normalized.sets);
       return matchRow.id;
     });
 
@@ -363,7 +364,7 @@ export class MatchStore {
     }
 
     const updated = await this.withTransaction(async () => {
-      const existing = await this.storage.sql
+      const existing = await this.sql
         .prepare('SELECT id FROM matches WHERE id = ?')
         .bind(id)
         .first();
@@ -372,7 +373,7 @@ export class MatchStore {
         return false;
       }
 
-      await this.storage.sql
+      await this.sql
         .prepare(
           `UPDATE matches
              SET date = ?,
@@ -395,12 +396,12 @@ export class MatchStore {
         .bind(...createMatchBindings(normalized), id)
         .run();
 
-      await this.storage.sql
+      await this.sql
         .prepare('DELETE FROM match_sets WHERE match_id = ?')
         .bind(id)
         .run();
 
-      await insertMatchSets(this.storage.sql, id, normalized.sets);
+      await insertMatchSets(this.sql, id, normalized.sets);
       return true;
     });
 
@@ -418,7 +419,7 @@ export class MatchStore {
     }
 
     const deleted = await this.withTransaction(async () => {
-      const existing = await this.storage.sql
+      const existing = await this.sql
         .prepare('SELECT id FROM matches WHERE id = ?')
         .bind(id)
         .first();
@@ -427,12 +428,12 @@ export class MatchStore {
         return false;
       }
 
-      await this.storage.sql
+      await this.sql
         .prepare('DELETE FROM match_sets WHERE match_id = ?')
         .bind(id)
         .run();
 
-      await this.storage.sql
+      await this.sql
         .prepare('DELETE FROM matches WHERE id = ?')
         .bind(id)
         .run();
@@ -449,20 +450,173 @@ export class MatchStore {
 
   async withTransaction(callback) {
     await this.initialized;
-    await this.storage.sql.exec('BEGIN TRANSACTION');
+    await this.sql.exec('BEGIN TRANSACTION');
     try {
       const result = await callback();
-      await this.storage.sql.exec('COMMIT');
+      await this.sql.exec('COMMIT');
       return result;
     } catch (error) {
       try {
-        await this.storage.sql.exec('ROLLBACK');
+        await this.sql.exec('ROLLBACK');
       } catch (rollbackError) {
         // no-op
       }
       throw error;
     }
   }
+}
+
+function createSqlDatabase(rawSql) {
+  if (!rawSql) {
+    throw new Error('Durable Object SQL storage is not available.');
+  }
+
+  if (typeof rawSql.prepare === 'function') {
+    return rawSql;
+  }
+
+  if (typeof rawSql.exec !== 'function') {
+    throw new Error('Durable Object SQL storage does not expose an exec method.');
+  }
+
+  return new SqlExecWrapper(rawSql);
+}
+
+class SqlExecWrapper {
+  constructor(rawSql) {
+    this.rawSql = rawSql;
+  }
+
+  exec(statement) {
+    return this.rawSql.exec(statement);
+  }
+
+  prepare(query) {
+    return new FallbackPreparedStatement(this.rawSql, query);
+  }
+}
+
+class FallbackPreparedStatement {
+  constructor(rawSql, query) {
+    this.rawSql = rawSql;
+    this.query = query;
+    this.bindings = [];
+  }
+
+  bind(...values) {
+    this.bindings = values;
+    return this;
+  }
+
+  async all() {
+    return executeStatement(this.rawSql, this.query, this.bindings);
+  }
+
+  async run() {
+    return executeStatement(this.rawSql, this.query, this.bindings);
+  }
+
+  async first(columnName) {
+    const { results = [] } = await this.all();
+    if (results.length === 0) {
+      return undefined;
+    }
+
+    const row = results[0];
+    if (!columnName) {
+      return row;
+    }
+
+    if (row && typeof row === 'object' && columnName in row) {
+      return row[columnName];
+    }
+
+    return undefined;
+  }
+
+  async raw() {
+    const { results = [] } = await this.all();
+    return results;
+  }
+}
+
+async function executeStatement(rawSql, query, bindings) {
+  const statement = formatSqlQuery(query, bindings);
+  const result = await rawSql.exec(statement);
+
+  if (result && result.error) {
+    throw new Error(result.error);
+  }
+
+  return normalizeExecResult(result);
+}
+
+function normalizeExecResult(result) {
+  if (Array.isArray(result)) {
+    if (result.length === 0) {
+      return {
+        results: [],
+        lastRowId: null,
+        changes: 0,
+        duration: 0
+      };
+    }
+
+    return normalizeExecResult(result[result.length - 1]);
+  }
+
+  if (!result || typeof result !== 'object') {
+    return {
+      results: [],
+      lastRowId: null,
+      changes: 0,
+      duration: 0
+    };
+  }
+
+  const { results = [], lastRowId = null, changes = 0, duration = 0 } = result;
+  return { results, lastRowId, changes, duration };
+}
+
+function formatSqlQuery(query, bindings = []) {
+  let index = 0;
+  const formatted = query.replace(/\?/g, () => {
+    if (index >= bindings.length) {
+      throw new Error('Insufficient parameter bindings for SQL statement.');
+    }
+    const value = bindings[index++];
+    return escapeSqlValue(value);
+  });
+
+  if (index < bindings.length) {
+    throw new Error('Too many parameter bindings supplied for SQL statement.');
+  }
+
+  return formatted;
+}
+
+function escapeSqlValue(value) {
+  if (value === null || value === undefined) {
+    return 'NULL';
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return 'NULL';
+    }
+    return String(value);
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? '1' : '0';
+  }
+
+  if (value instanceof Date) {
+    return `'${value.toISOString().replace(/'/g, "''")}'`;
+  }
+
+  const stringValue = String(value).replace(/'/g, "''");
+  return `'${stringValue}'`;
 }
 
 function createMatchBindings(normalized) {
