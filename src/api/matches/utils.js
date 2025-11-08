@@ -1,3 +1,4 @@
+const SET_COUNT = 5;
 const TIMEOUT_COUNT = 2;
 
 export function normalizeMatchPayload(input = {}) {
@@ -47,7 +48,7 @@ export function normalizeMatchPayload(input = {}) {
 
   const coerceSets = (sets = {}) => {
     const normalized = {};
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= SET_COUNT; i++) {
       const set = sets[i] ?? sets[String(i)] ?? {};
       const normalizeScore = (value) => {
         if (value === null || value === undefined) return '';
@@ -70,7 +71,8 @@ export function normalizeMatchPayload(input = {}) {
     const normalized = {};
     if (finalized && typeof finalized === 'object') {
       for (const key of Object.keys(finalized)) {
-        if ([1, 2, 3, 4, 5].includes(Number(key))) {
+        const index = Number(key);
+        if (Number.isInteger(index) && index >= 1 && index <= SET_COUNT) {
           normalized[key] = Boolean(finalized[key]);
         }
       }
@@ -118,7 +120,76 @@ const parseJson = (value, fallback) => {
   }
 };
 
-export function deserializeMatchRow(row) {
+const createEmptyTimeoutArray = () => Array(TIMEOUT_COUNT).fill(false);
+
+const createEmptySet = () => ({
+  sc: '',
+  opp: '',
+  timeouts: {
+    sc: createEmptyTimeoutArray(),
+    opp: createEmptyTimeoutArray()
+  }
+});
+
+export function serializeMatchSets(sets = {}, finalizedSets = {}) {
+  const rows = [];
+  for (let i = 1; i <= SET_COUNT; i++) {
+    const set = sets[i] ?? sets[String(i)] ?? {};
+    const timeouts = set.timeouts ?? {};
+    const scTimeouts = Array.isArray(timeouts.sc) ? timeouts.sc : [];
+    const oppTimeouts = Array.isArray(timeouts.opp) ? timeouts.opp : [];
+    const finalizedValue = finalizedSets[i] ?? finalizedSets[String(i)];
+    rows.push({
+      setNumber: i,
+      scScore: set.sc ?? '',
+      oppScore: set.opp ?? '',
+      scTimeout1: scTimeouts[0] ? 1 : 0,
+      scTimeout2: scTimeouts[1] ? 1 : 0,
+      oppTimeout1: oppTimeouts[0] ? 1 : 0,
+      oppTimeout2: oppTimeouts[1] ? 1 : 0,
+      finalized:
+        finalizedValue === undefined || finalizedValue === null
+          ? null
+          : finalizedValue
+          ? 1
+          : 0
+    });
+  }
+  return rows;
+}
+
+export function deserializeMatchSets(rows = []) {
+  const sets = {};
+  for (let i = 1; i <= SET_COUNT; i++) {
+    sets[i] = createEmptySet();
+  }
+
+  const finalizedSets = {};
+
+  for (const row of rows) {
+    const index = Number(row.set_number ?? row.setNumber);
+    if (!Number.isInteger(index) || index < 1 || index > SET_COUNT) {
+      continue;
+    }
+    const target = sets[index];
+    target.sc = row.sc_score ?? row.scScore ?? '';
+    target.opp = row.opp_score ?? row.oppScore ?? '';
+    target.timeouts = {
+      sc: [Boolean(row.sc_timeout_1 ?? row.scTimeout1), Boolean(row.sc_timeout_2 ?? row.scTimeout2)],
+      opp: [Boolean(row.opp_timeout_1 ?? row.oppTimeout1), Boolean(row.opp_timeout_2 ?? row.oppTimeout2)]
+    };
+
+    const finalized = row.finalized ?? null;
+    if (finalized !== null && finalized !== undefined) {
+      finalizedSets[index] = Boolean(finalized);
+    }
+  }
+
+  return { sets, finalizedSets };
+}
+
+export function deserializeMatchRow(row, setRows = []) {
+  const { sets, finalizedSets } = deserializeMatchSets(setRows);
   return {
     id: row.id,
     date: row.date ?? '',
@@ -134,8 +205,8 @@ export function deserializeMatchRow(row) {
     resultOpp: row.result_opp,
     firstServer: row.first_server ?? '',
     players: parseJson(row.players, []),
-    sets: parseJson(row.sets, {}),
-    finalizedSets: parseJson(row.finalized_sets, {}),
+    sets,
+    finalizedSets,
     isSwapped: Boolean(row.is_swapped)
   };
 }
