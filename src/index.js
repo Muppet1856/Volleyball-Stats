@@ -17,6 +17,8 @@ export default {
   }
 };
 
+export { MatchStore } from './storage/match-store.js';
+
 function handleApiRequest(request, env, pathname) {
   if (pathname === '/api/matches') {
     return routeMatches(request, env);
