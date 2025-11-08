@@ -1,6 +1,6 @@
 import { methodNotAllowed } from './responses.js';
-import { deserializeMatchRow, normalizeMatchPayload } from './matches/utils.js';
-import { getDatabase } from './database.js';
+import { normalizeMatchPayload } from './matches/utils.js';
+import { callStatsDurableObject } from './storage.js';
 
 export function routeMatches(request, env) {
   switch (request.method.toUpperCase()) {
@@ -28,12 +28,7 @@ export function routeMatchById(request, env, id) {
 
 async function listMatches(env) {
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      'SELECT id, date, opponent FROM matches ORDER BY date ASC, opponent ASC, id ASC'
-    );
-    const { results } = await statement.all();
-    return Response.json(results || []);
+    return await callStatsDurableObject(env, '/matches', { method: 'GET' });
   } catch (error) {
     console.error('Failed to fetch matches', error);
     return Response.json({ error: 'Failed to fetch matches' }, { status: 500 });
@@ -50,41 +45,10 @@ async function createMatch(request, env) {
 
   const payload = normalizeMatchPayload(body);
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      `INSERT INTO matches (
-        date,
-        location,
-        types,
-        opponent,
-        jersey_color_sc,
-        jersey_color_opp,
-        result_sc,
-        result_opp,
-        first_server,
-        players,
-        sets,
-        finalized_sets,
-        is_swapped
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
-      payload.opponent,
-      payload.jerseyColorSC,
-      payload.jerseyColorOpp,
-      payload.resultSC,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0
-    );
-    const result = await statement.run();
-    const id = result?.meta?.last_row_id;
-    return Response.json({ id }, { status: 201 });
+    return await callStatsDurableObject(env, '/matches', {
+      method: 'POST',
+      body: payload
+    });
   } catch (error) {
     console.error('Failed to create match', error);
     return Response.json({ error: 'Failed to create match' }, { status: 500 });
@@ -93,16 +57,7 @@ async function createMatch(request, env) {
 
 async function getMatch(env, id) {
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      'SELECT * FROM matches WHERE id = ?'
-    ).bind(id);
-    const { results } = await statement.all();
-    const row = results?.[0];
-    if (!row) {
-      return Response.json({ error: 'Match not found' }, { status: 404 });
-    }
-    return Response.json(deserializeMatchRow(row));
+    return await callStatsDurableObject(env, `/matches/${id}`, { method: 'GET' });
   } catch (error) {
     console.error('Failed to fetch match', error);
     return Response.json({ error: 'Failed to fetch match' }, { status: 500 });
@@ -118,44 +73,10 @@ async function updateMatch(request, env, id) {
   }
   const payload = normalizeMatchPayload(body);
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      `UPDATE matches SET
-        date = ?,
-        location = ?,
-        types = ?,
-        opponent = ?,
-        jersey_color_sc = ?,
-        jersey_color_opp = ?,
-        result_sc = ?,
-        result_opp = ?,
-        first_server = ?,
-        players = ?,
-        sets = ?,
-        finalized_sets = ?,
-        is_swapped = ?
-      WHERE id = ?`
-    ).bind(
-      payload.date,
-      payload.location,
-      JSON.stringify(payload.types),
-      payload.opponent,
-      payload.jerseyColorSC,
-      payload.jerseyColorOpp,
-      payload.resultSC,
-      payload.resultOpp,
-      payload.firstServer,
-      JSON.stringify(payload.players),
-      JSON.stringify(payload.sets),
-      JSON.stringify(payload.finalizedSets),
-      payload.isSwapped ? 1 : 0,
-      id
-    );
-    const result = await statement.run();
-    if (!result?.meta || result.meta.changes === 0) {
-      return Response.json({ error: 'Match not found' }, { status: 404 });
-    }
-    return Response.json({ id });
+    return await callStatsDurableObject(env, `/matches/${id}`, {
+      method: 'PUT',
+      body: payload
+    });
   } catch (error) {
     console.error('Failed to update match', error);
     return Response.json({ error: 'Failed to update match' }, { status: 500 });
@@ -164,14 +85,9 @@ async function updateMatch(request, env, id) {
 
 async function deleteMatch(env, id) {
   try {
-    const db = getDatabase(env);
-    const result = await db.prepare(
-      'DELETE FROM matches WHERE id = ?'
-    ).bind(id).run();
-    if (!result?.meta || result.meta.changes === 0) {
-      return Response.json({ error: 'Match not found' }, { status: 404 });
-    }
-    return new Response(null, { status: 204 });
+    return await callStatsDurableObject(env, `/matches/${id}`, {
+      method: 'DELETE'
+    });
   } catch (error) {
     console.error('Failed to delete match', error);
     return Response.json({ error: 'Failed to delete match' }, { status: 500 });

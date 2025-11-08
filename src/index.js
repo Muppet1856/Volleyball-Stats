@@ -17,6 +17,8 @@ export default {
   }
 };
 
+export { VolleyballStatsDurableObject } from './durable/volleyball-stats.js';
+
 function handleApiRequest(request, env, pathname) {
   if (pathname === '/api/matches') {
     return routeMatches(request, env);
