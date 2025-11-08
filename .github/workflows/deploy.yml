@@ -160,6 +160,18 @@ jobs:
             echo "No assets directory found (public/dist/build) – skipping assets binding."
           fi
 
+          DO_BINDING="${BINDING_NAME:-MATCH_STORE}"
+
+          echo "" >> wrangler.toml
+          echo "[durable_objects]" >> wrangler.toml
+          echo "bindings = [" >> wrangler.toml
+          echo "  { name = \"${DO_BINDING}\", class_name = \"MatchStore\" }" >> wrangler.toml
+          echo "]" >> wrangler.toml
+          echo "" >> wrangler.toml
+          echo "[[migrations]]" >> wrangler.toml
+          echo "tag = \"v1\"" >> wrangler.toml
+          echo "new_classes = [\"MatchStore\"]" >> wrangler.toml
+
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
           if [ -n "$SELECTED" ]; then
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
@@ -217,53 +229,6 @@ jobs:
           echo "Resolved host: $HOST"
 
       # ————————————————————————
-      # D1: Create / Bind
-      # ————————————————————————
-      - name: Create/Get D1 + Bind
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
-
-          DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
-          DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
-            echo "$WORKER_NAME"
-          else
-            echo "${DEPLOY_ENV}-${WORKER_NAME}"
-          fi)
-
-          DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
-
-          if [ -z "$DB_ID" ]; then
-            npx wrangler d1 create "$DB_NAME"
-            DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
-          fi
-
-          if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
-            cat >> wrangler.toml <<EOF
-
-          [[d1_databases]]
-          binding = "$BINDING_NAME"
-          database_name = "$DB_NAME"
-          database_id = "$DB_ID"
-          EOF
-          fi
-
-          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
-
-      # ————————————————————————
-      # Apply Migrations
-      # ————————————————————————
-      - name: Apply Migrations
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
-
-          shopt -s nullglob
-          for f in migrations/*.sql; do
-            npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
-          done
-
-      # ————————————————————————
       # Load env vars from .cloudflare/vars.json → wrangler.toml
       # ————————————————————————
       - name: Inject .cloudflare/vars.json into wrangler.toml
@@ -319,7 +284,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy ${{ steps.vars.outputs.var_flags }}
+          command: deploy --migrations ${{ steps.vars.outputs.var_flags }}
 
       # ————————————————————————
       # Comment on PR
