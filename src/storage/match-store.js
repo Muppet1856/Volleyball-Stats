@@ -146,14 +146,23 @@ export class MatchStore {
       );
     }
 
-    const record = await this.sql
+    await this.sql
       .prepare(
         `INSERT INTO players (number, last_name, initial)
-         VALUES (?, ?, ?)
-         RETURNING id, number, last_name AS lastName, initial`
+         VALUES (?, ?, ?)`
       )
       .bind(number, lastName, initial)
-      .first();
+      .run();
+
+    const id = await getLastInsertRowId(this.sql);
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: 'Failed to create player' }, { status: 500 });
+    }
+
+    const record = await readPlayerById(this.sql, id);
+    if (!record) {
+      return Response.json({ error: 'Failed to create player' }, { status: 500 });
+    }
 
     return Response.json(record, { status: 201 });
   }
@@ -175,21 +184,26 @@ export class MatchStore {
       );
     }
 
-    const record = await this.sql
-      .prepare(
-        `UPDATE players
-         SET number = ?, last_name = ?, initial = ?
-         WHERE id = ?
-         RETURNING id, number, last_name AS lastName, initial`
-      )
-      .bind(number, lastName, initial, id)
-      .first();
-
-    if (!record) {
+    const existing = await readPlayerById(this.sql, id);
+    if (!existing) {
       return Response.json({ error: 'Player not found' }, { status: 404 });
     }
 
-    return Response.json(record);
+    await this.sql
+      .prepare(
+        `UPDATE players
+         SET number = ?, last_name = ?, initial = ?
+         WHERE id = ?`
+      )
+      .bind(number, lastName, initial, id)
+      .run();
+
+    const updated = await readPlayerById(this.sql, id);
+    if (!updated) {
+      return Response.json({ error: 'Player not found' }, { status: 404 });
+    }
+
+    return Response.json(updated);
   }
 
   async deletePlayer(payload) {
@@ -198,14 +212,12 @@ export class MatchStore {
       return Response.json({ error: 'Player not found' }, { status: 404 });
     }
 
-    const result = await this.sql
-      .prepare(`DELETE FROM players WHERE id = ? RETURNING id`)
-      .bind(id)
-      .first();
-
-    if (!result) {
+    const existing = await readPlayerById(this.sql, id);
+    if (!existing) {
       return Response.json({ error: 'Player not found' }, { status: 404 });
     }
+
+    await this.sql.prepare('DELETE FROM players WHERE id = ?').bind(id).run();
 
     return new Response(null, { status: 204 });
   }
@@ -315,7 +327,7 @@ export class MatchStore {
     }
 
     const id = await this.withTransaction(async () => {
-      const matchRow = await this.sql
+      await this.sql
         .prepare(
           `INSERT INTO matches (
              date,
@@ -333,18 +345,18 @@ export class MatchStore {
              type_non_league,
              finalized_sets,
              is_swapped
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           RETURNING id`
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(...createMatchBindings(normalized))
-        .first();
+        .run();
 
-      if (!matchRow) {
+      const insertedId = await getLastInsertRowId(this.sql);
+      if (!Number.isInteger(insertedId) || insertedId <= 0) {
         throw new Error('Failed to create match');
       }
 
-      await insertMatchSets(this.sql, matchRow.id, normalized.sets);
-      return matchRow.id;
+      await insertMatchSets(this.sql, insertedId, normalized.sets);
+      return insertedId;
     });
 
     return Response.json({ id }, { status: 201 });
@@ -617,6 +629,27 @@ function escapeSqlValue(value) {
 
   const stringValue = String(value).replace(/'/g, "''");
   return `'${stringValue}'`;
+}
+
+async function getLastInsertRowId(database) {
+  const rawId = await database
+    .prepare('SELECT last_insert_rowid() AS id')
+    .first('id');
+
+  const value = rawId && typeof rawId === 'object' ? rawId.id : rawId;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+async function readPlayerById(database, id) {
+  return database
+    .prepare(
+      `SELECT id, number, last_name AS lastName, initial
+         FROM players
+         WHERE id = ?`
+    )
+    .bind(id)
+    .first();
 }
 
 function createMatchBindings(normalized) {

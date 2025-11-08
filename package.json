@@ -1,0 +1,17 @@
+{
+  "name": "volleyball-stats",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker and Durable Object for volleyball stats.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {},
+  "devDependencies": {
+    "better-sqlite3": "^12.4.1"
+  }
+}
