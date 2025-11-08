@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 
-import { MatchStore } from './match-store.js';
+import { MatchStore } from '../../src/storage/match-store.js';
 
 class ExecOnlySqlStorage {
   constructor(db) {
