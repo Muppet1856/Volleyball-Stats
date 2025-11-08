@@ -36,7 +36,7 @@ Everything described below can be completed entirely from the Cloudflare and Git
 2. Enable **Pages Functions**. Cloudflare will deploy the Worker entrypoint in `src/index.js`, which serves static assets and routes API requests through the Durable Object helper.【F:src/index.js†L1-L63】【F:src/api/match-store.js†L1-L15】
 3. Scroll to **KV, Durable Object, and D1 bindings** and click **Add binding → Durable Object namespace**.
 4. Choose **Create a new namespace**, set the class name to `MatchStore`, and save the binding.
-5. Set the binding name to `MATCH_STORE` so the Worker can reach it during requests. The Worker always obtains instances through the `getMatchStore` helper, so no additional bindings (like `VOLLEYBALL_STATS_DB`) are required.【F:src/api/match-store.js†L1-L15】
+5. Set the binding name to `MATCH_STORE` so the Worker can reach it during requests. If you must use a different binding name, expose it as a plain text variable called `MATCH_STORE_BINDING` and the Worker will automatically look up the namespace at runtime. The Worker always obtains instances through the `getMatchStore` helper, so no additional bindings (like `VOLLEYBALL_STATS_DB`) are required.【F:src/api/match-store.js†L1-L63】
 6. Run the Durable Object migration once so Cloudflare registers the `MatchStore` class. If you primarily use the dashboard, complete this step locally:
    1. Install [Wrangler](https://developers.cloudflare.com/workers/wrangler/install-and-update/) and run `wrangler login`.
    2. Execute `wrangler deploy --minify`. This applies the migration defined in `wrangler.toml` (`tag = "v1"`) that creates the `MatchStore` class without requiring any SQL files.【F:wrangler.toml†L1-L16】
