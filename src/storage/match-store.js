@@ -146,7 +146,7 @@ export class MatchStore {
       );
     }
 
-    await this.sql
+    const insertResult = await this.sql
       .prepare(
         `INSERT INTO players (number, last_name, initial)
          VALUES (?, ?, ?)`
@@ -154,7 +154,10 @@ export class MatchStore {
       .bind(number, lastName, initial)
       .run();
 
-    const id = await getLastInsertRowId(this.sql);
+    let id = extractLastRowId(insertResult);
+    if (!Number.isInteger(id) || id <= 0) {
+      id = await getLastInsertRowId(this.sql);
+    }
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: 'Failed to create player' }, { status: 500 });
     }
@@ -326,8 +329,8 @@ export class MatchStore {
       return Response.json({ error: 'Invalid match payload' }, { status: 400 });
     }
 
-    const id = await this.withTransaction(async () => {
-      await this.sql
+    const id = await this.withTransaction(async (sql) => {
+      const insertResult = await sql
         .prepare(
           `INSERT INTO matches (
              date,
@@ -350,12 +353,15 @@ export class MatchStore {
         .bind(...createMatchBindings(normalized))
         .run();
 
-      const insertedId = await getLastInsertRowId(this.sql);
+      let insertedId = extractLastRowId(insertResult);
+      if (!Number.isInteger(insertedId) || insertedId <= 0) {
+        insertedId = await getLastInsertRowId(sql);
+      }
       if (!Number.isInteger(insertedId) || insertedId <= 0) {
         throw new Error('Failed to create match');
       }
 
-      await insertMatchSets(this.sql, insertedId, normalized.sets);
+      await insertMatchSets(sql, insertedId, normalized.sets);
       return insertedId;
     });
 
@@ -375,8 +381,8 @@ export class MatchStore {
       return Response.json({ error: 'Invalid match payload' }, { status: 400 });
     }
 
-    const updated = await this.withTransaction(async () => {
-      const existing = await this.sql
+    const updated = await this.withTransaction(async (sql) => {
+      const existing = await sql
         .prepare('SELECT id FROM matches WHERE id = ?')
         .bind(id)
         .first();
@@ -385,7 +391,7 @@ export class MatchStore {
         return false;
       }
 
-      await this.sql
+      await sql
         .prepare(
           `UPDATE matches
              SET date = ?,
@@ -408,12 +414,12 @@ export class MatchStore {
         .bind(...createMatchBindings(normalized), id)
         .run();
 
-      await this.sql
+      await sql
         .prepare('DELETE FROM match_sets WHERE match_id = ?')
         .bind(id)
         .run();
 
-      await insertMatchSets(this.sql, id, normalized.sets);
+      await insertMatchSets(sql, id, normalized.sets);
       return true;
     });
 
@@ -430,8 +436,8 @@ export class MatchStore {
       return Response.json({ error: 'Match not found' }, { status: 404 });
     }
 
-    const deleted = await this.withTransaction(async () => {
-      const existing = await this.sql
+    const deleted = await this.withTransaction(async (sql) => {
+      const existing = await sql
         .prepare('SELECT id FROM matches WHERE id = ?')
         .bind(id)
         .first();
@@ -440,12 +446,12 @@ export class MatchStore {
         return false;
       }
 
-      await this.sql
+      await sql
         .prepare('DELETE FROM match_sets WHERE match_id = ?')
         .bind(id)
         .run();
 
-      await this.sql
+      await sql
         .prepare('DELETE FROM matches WHERE id = ?')
         .bind(id)
         .run();
@@ -462,9 +468,17 @@ export class MatchStore {
 
   async withTransaction(callback) {
     await this.initialized;
+
+    if (typeof this.storage?.transaction === 'function') {
+      return this.storage.transaction(async (txn) => {
+        const transactionalSql = createSqlDatabase(txn.sql ?? txn);
+        return callback(transactionalSql);
+      });
+    }
+
     await this.sql.exec('BEGIN TRANSACTION');
     try {
-      const result = await callback();
+      const result = await callback(this.sql);
       await this.sql.exec('COMMIT');
       return result;
     } catch (error) {
@@ -629,6 +643,20 @@ function escapeSqlValue(value) {
 
   const stringValue = String(value).replace(/'/g, "''");
   return `'${stringValue}'`;
+}
+
+function extractLastRowId(result) {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+
+  const value = 'lastRowId' in result ? result.lastRowId : undefined;
+  if (Number.isInteger(value)) {
+    return value;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 async function getLastInsertRowId(database) {
