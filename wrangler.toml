@@ -1,6 +1,6 @@
 name = "volleyball-stats"
 main = "src/index.js"
-compatibility_date = "2024-04-03"
+compatibility_date = "2025-11-7"
 
 assets = { directory = "public" }
 vars = { HOME_TEAM = "Home" }
