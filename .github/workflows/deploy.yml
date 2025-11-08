@@ -170,7 +170,7 @@ jobs:
           echo "" >> wrangler.toml
           echo "[[migrations]]" >> wrangler.toml
           echo "tag = \"v1\"" >> wrangler.toml
-          echo "new_classes = [\"MatchStore\"]" >> wrangler.toml
+          echo "new_sqlite_classes = [\"MatchStore\"]" >> wrangler.toml
 
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
           if [ -n "$SELECTED" ]; then
