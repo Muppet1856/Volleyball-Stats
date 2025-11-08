@@ -600,7 +600,20 @@ function normalizeExecResult(result) {
     };
   }
 
-  const { results = [], lastRowId = null, changes = 0, duration = 0 } = result;
+  const meta = typeof result.meta === 'object' && result.meta !== null ? result.meta : {};
+  const results = Array.isArray(result.results) ? result.results : [];
+
+  const lastRowId = normalizeInteger(
+    result.lastRowId ??
+      meta.lastRowId ??
+      meta.last_row_id ??
+      meta.last_insert_rowid ??
+      null
+  );
+
+  const changes = normalizeInteger(result.changes ?? meta.changes ?? null) ?? 0;
+  const duration = normalizeNumber(result.duration ?? meta.duration ?? null);
+
   return { results, lastRowId, changes, duration };
 }
 
@@ -643,6 +656,32 @@ function escapeSqlValue(value) {
 
   const stringValue = String(value).replace(/'/g, "''");
   return `'${stringValue}'`;
+}
+
+function normalizeInteger(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function normalizeNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function extractLastRowId(result) {
