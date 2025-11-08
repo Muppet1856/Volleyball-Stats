@@ -1,5 +1,5 @@
 import { methodNotAllowed } from './responses.js';
-import { getDatabase } from './database.js';
+import { sendMatchStoreRequest, translateStoreResponse } from './match-store-client.js';
 
 export function routePlayers(request, env) {
   switch (request.method.toUpperCase()) {
@@ -25,12 +25,8 @@ export function routePlayerById(request, env, id) {
 
 async function listPlayers(env) {
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      'SELECT id, number, last_name AS lastName, initial FROM players ORDER BY CAST(number AS INTEGER) ASC, last_name ASC, id ASC'
-    );
-    const { results } = await statement.all();
-    return Response.json(results || []);
+    const response = await sendMatchStoreRequest(env, 'LIST_PLAYERS');
+    return await translateStoreResponse(response);
   } catch (error) {
     console.error('Failed to fetch players', error);
     return Response.json({ error: 'Failed to fetch players' }, { status: 500 });
@@ -54,13 +50,12 @@ async function createPlayer(request, env) {
   }
 
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      'INSERT INTO players (number, last_name, initial) VALUES (?, ?, ?)'
-    ).bind(number, lastName, initial);
-    const result = await statement.run();
-    const id = result?.meta?.last_row_id;
-    return Response.json({ id, number, lastName, initial }, { status: 201 });
+    const response = await sendMatchStoreRequest(env, 'CREATE_PLAYER', {
+      number,
+      lastName,
+      initial
+    });
+    return await translateStoreResponse(response);
   } catch (error) {
     console.error('Failed to create player', error);
     return Response.json({ error: 'Failed to create player' }, { status: 500 });
@@ -84,15 +79,13 @@ async function updatePlayer(request, env, id) {
   }
 
   try {
-    const db = getDatabase(env);
-    const statement = db.prepare(
-      'UPDATE players SET number = ?, last_name = ?, initial = ? WHERE id = ?'
-    ).bind(number, lastName, initial, id);
-    const result = await statement.run();
-    if (!result?.meta || result.meta.changes === 0) {
-      return Response.json({ error: 'Player not found' }, { status: 404 });
-    }
-    return Response.json({ id, number, lastName, initial });
+    const response = await sendMatchStoreRequest(env, 'UPDATE_PLAYER', {
+      id,
+      number,
+      lastName,
+      initial
+    });
+    return await translateStoreResponse(response);
   } catch (error) {
     console.error('Failed to update player', error);
     return Response.json({ error: 'Failed to update player' }, { status: 500 });
@@ -101,14 +94,8 @@ async function updatePlayer(request, env, id) {
 
 async function deletePlayer(env, id) {
   try {
-    const db = getDatabase(env);
-    const result = await db.prepare(
-      'DELETE FROM players WHERE id = ?'
-    ).bind(id).run();
-    if (!result?.meta || result.meta.changes === 0) {
-      return Response.json({ error: 'Player not found' }, { status: 404 });
-    }
-    return new Response(null, { status: 204 });
+    const response = await sendMatchStoreRequest(env, 'DELETE_PLAYER', { id });
+    return await translateStoreResponse(response);
   } catch (error) {
     console.error('Failed to delete player', error);
     return Response.json({ error: 'Failed to delete player' }, { status: 500 });

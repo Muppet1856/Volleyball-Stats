@@ -8,13 +8,12 @@ This repository contains a Cloudflare Worker that serves a static single-page ap
 1. [Prerequisites](#prerequisites)
 2. [Deploy from the Cloudflare dashboard](#deploy-from-the-cloudflare-dashboard)
 3. [Bind the MatchStore Durable Object in the dashboard](#bind-the-matchstore-durable-object-in-the-dashboard)
-4. [Run migrations from the dashboard](#run-migrations-from-the-dashboard)
-5. [Optional: Use Wrangler locally](#optional-use-wrangler-locally)
-6. [API surface](#api-surface)
+4. [Optional: Use Wrangler locally](#optional-use-wrangler-locally)
+5. [API surface](#api-surface)
 
 ## Prerequisites
 
-- A Cloudflare account with access to Workers and Durable Objects (and D1 if you plan to use it for persistence).
+- A Cloudflare account with access to Workers and Durable Objects.
 - A GitHub account if you plan to deploy via Cloudflare's Git integration.
 - (Optional) Node.js 18+ and npm if you want to work with Wrangler locally.
 
@@ -38,13 +37,6 @@ Everything described below can be completed entirely from the Cloudflare and Git
 4. Choose **Create a new namespace**, set the class name to `MatchStore`, and save the binding.
 5. Set the binding name to `MATCH_STORE` so the Worker can reach it during requests. You can optionally bind other resources (like a D1 database) directly to the Durable Object implementation if it needs persistent storage.
 
-## Run migrations from the dashboard
-
-1. If your MatchStore Durable Object uses a D1 database for persistence, open that database from **Settings → Functions** in the Pages project.
-2. Switch to the **Tables** tab and click **Import**.
-3. Upload `migrations/0001_init.sql` to seed the schema. The SQL file creates the tables used by the API endpoints, including the `match_sets` table that stores per-set scores and timeout usage with a cascading relationship to `matches`.【F:migrations/0001_init.sql†L1-L33】
-4. After the import finishes, confirm the tables exist by browsing the schema view.
-
 ## Optional: Use Wrangler locally
 
 If you prefer the CLI, you can still install and use Wrangler. Authenticate with `wrangler login`, bind the MatchStore Durable Object namespace in `wrangler.toml`, and run `wrangler dev` or `wrangler deploy` as usual. The Worker expects the `MATCH_STORE` binding to resolve to the Durable Object that manages match data (which can in turn talk to D1 or another backing store as needed).
@@ -53,15 +45,15 @@ If you prefer the CLI, you can still install and use Wrangler. Authenticate with
 
 The Worker exposes REST-style endpoints for matches and players. All routes return JSON and require the `MATCH_STORE` binding configured above so that requests can reach the MatchStore Durable Object.
 
-- `GET /api/matches` — list matches ordered by date/opponent.【F:src/api/matches.js†L1-L45】
-- `POST /api/matches` — create a match (expects JSON payload).【F:src/api/matches.js†L1-L79】
-- `GET /api/matches/:id` — fetch a single match.【F:src/api/matches.js†L81-L115】
-- `PUT /api/matches/:id` — update a match.【F:src/api/matches.js†L117-L166】
-- `DELETE /api/matches/:id` — remove a match.【F:src/api/matches.js†L168-L191】
-- `GET /api/players` — list players ordered by jersey number and name.【F:src/api/players.js†L1-L36】
-- `POST /api/players` — create a player (number and last name required).【F:src/api/players.js†L38-L75】
-- `PUT /api/players/:id` — update a player.【F:src/api/players.js†L77-L112】
-- `DELETE /api/players/:id` — delete a player.【F:src/api/players.js†L114-L135】
+- `GET /api/matches` — list matches ordered by date/opponent.【F:src/api/matches.js†L1-L36】
+- `POST /api/matches` — create a match (expects JSON payload).【F:src/api/matches.js†L39-L55】
+- `GET /api/matches/:id` — fetch a single match.【F:src/api/matches.js†L57-L72】
+- `PUT /api/matches/:id` — update a match.【F:src/api/matches.js†L74-L92】
+- `DELETE /api/matches/:id` — remove a match.【F:src/api/matches.js†L94-L102】
+- `GET /api/players` — list players ordered by jersey number and name.【F:src/api/players.js†L1-L33】
+- `POST /api/players` — create a player (number and last name required).【F:src/api/players.js†L36-L63】
+- `PUT /api/players/:id` — update a player.【F:src/api/players.js†L65-L93】
+- `DELETE /api/players/:id` — delete a player.【F:src/api/players.js†L95-L102】
 
 Static assets are served for any non-API path by Cloudflare's asset handler, so the frontend in `public/` receives all other requests.【F:src/worker.js†L1-L19】
 
