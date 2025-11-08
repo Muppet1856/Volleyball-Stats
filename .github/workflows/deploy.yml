@@ -1,4 +1,4 @@
-name: Deploy & Update Preview Badge
+name: Deploy
 
 on:
   push:
@@ -8,10 +8,10 @@ on:
     types: [ opened, synchronize ]
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   workflow_dispatch:
-    inputs:
-      badge_label:
-        description: 'Override badge label (defaults to branch/PR name or "production")'
-        required: false
+    # inputs:
+      # badge_label:
+        # description: 'Override badge label (defaults to branch/PR name or "production")'
+        # required: false
 
 concurrency:
   group: deploy-${{ github.event_name }}-${{ github.ref }}
