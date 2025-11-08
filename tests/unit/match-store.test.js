@@ -63,6 +63,22 @@ class ExecOnlySqlStorage {
   }
 }
 
+class TransactionalSqlStorage {
+  constructor(db) {
+    this.db = db;
+    this.sql = new ExecOnlySqlStorage(db);
+    this.transactionCalls = 0;
+  }
+
+  async transaction(callback) {
+    this.transactionCalls++;
+    const txn = {
+      sql: () => new ExecOnlySqlStorage(this.db)
+    };
+    return callback(txn);
+  }
+}
+
 function splitStatements(sql) {
   return sql
     .split(/;(?=(?:[^']*'[^']*')*[^']*$)/g)
@@ -105,4 +121,46 @@ test('creates players using exec-only SQL storage', async () => {
   const emptyList = await store.listPlayers();
   const remaining = await emptyList.json();
   assert.equal(remaining.length, 0);
+});
+
+test('creates matches using transactional SQL storage with callable bindings', async () => {
+  const db = new Database(':memory:');
+  const storage = new TransactionalSqlStorage(db);
+  const state = { storage };
+  const store = new MatchStore(state);
+  await store.initialized;
+
+  const createResponse = await store.createMatch({
+    date: '2024-10-01',
+    location: 'Main Gym',
+    opponent: 'Rivals',
+    jerseyColorHome: 'Red',
+    jerseyColorOpp: 'Blue',
+    resultHome: 25,
+    resultOpp: 20,
+    firstServer: 'Alice',
+    players: ['12', '8'],
+    sets: {
+      1: {
+        home: '25',
+        opp: '20',
+        timeouts: { home: [false, true], opp: [false, false] }
+      }
+    },
+    finalizedSets: { 1: true },
+    isSwapped: false
+  });
+
+  assert.equal(createResponse.status, 201);
+  const created = await createResponse.json();
+  assert.ok(Number.isInteger(created.id));
+  assert.ok(created.id > 0);
+
+  const storedMatch = db.prepare('SELECT location FROM matches WHERE id = ?').get(created.id);
+  assert.equal(storedMatch.location, 'Main Gym');
+
+  const setCount = db.prepare('SELECT COUNT(*) AS count FROM match_sets WHERE match_id = ?').get(created.id);
+  assert.equal(setCount.count, 5);
+
+  assert.equal(storage.transactionCalls, 1);
 });

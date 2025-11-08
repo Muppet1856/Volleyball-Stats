@@ -471,7 +471,9 @@ export class MatchStore {
 
     if (typeof this.storage?.transaction === 'function') {
       return this.storage.transaction(async (txn) => {
-        const transactionalSql = createSqlDatabase(txn.sql ?? txn);
+        const transactionalSql = createSqlDatabase(
+          await resolveTransactionalSqlSource(txn)
+        );
         return callback(transactionalSql);
       });
     }
@@ -490,6 +492,39 @@ export class MatchStore {
       throw error;
     }
   }
+}
+
+async function resolveTransactionalSqlSource(txn) {
+  if (!txn || typeof txn !== 'object') {
+    return undefined;
+  }
+
+  const candidates = [txn.sql, txn.storage?.sql, txn];
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    let value = candidate;
+    if (typeof value === 'function') {
+      value = value.call(txn);
+    }
+
+    if (value && typeof value.then === 'function') {
+      value = await value;
+    }
+
+    if (
+      value &&
+      typeof value === 'object' &&
+      (typeof value.exec === 'function' || typeof value.prepare === 'function')
+    ) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function createSqlDatabase(rawSql) {
