@@ -5,19 +5,11 @@ compatibility_date = "2025-11-7"
 assets = { directory = "public" }
 vars = { HOME_TEAM = "Home" }
 
-# npx wrangler d1 migrations apply local-volleyball-stats --local --persist-to=.wrangler/state
-[[d1_databases]]
-binding = "VOLLEYBALL_STATS_DB"
-database_name = "local-volleyball-stats"
-database_id = "00000000-0000-0000-0000-000000000000"
-migrations_dir = "migrations"
-preview_database_id = "local-volleyball-stats"
+[durable_objects]
+bindings = [
+  { name = "MATCH_STORE", class_name = "MatchStore" }
+]
 
-#[durable_objects]
-#bindings = [
-#  { name = "MATCH_DO", class_name = "MatchState" }
-#]
-
-#[[migrations]]
-#tag = "v1"
-#new_sqlite_classes = [ "MatchState" ]
+[[migrations]]
+tag = "v1"
+new_classes = ["MatchStore"]
