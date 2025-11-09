@@ -1,5 +1,6 @@
 export function getDatabase(env) {
   const binding =
+    env.STATS_DB_DO ??
     env.VOLLEYBALL_STATS_DB ??
     env.DB ??
     env.db ??
@@ -8,7 +9,9 @@ export function getDatabase(env) {
     env.volleyball_stats_db;
 
   if (!binding) {
-    throw new Error('Missing D1 database binding. Bind VOLLEYBALL_STATS_DB (preferred) or DB to your Worker.');
+    throw new Error(
+      'Missing database binding. Bind the StatsDatabase durable object (preferred) or provide a D1-compatible binding such as VOLLEYBALL_STATS_DB.'
+    );
   }
 
   if (typeof binding.prepare !== 'function') {
