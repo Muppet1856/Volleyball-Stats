@@ -264,14 +264,14 @@ jobs:
           done
 
       # ————————————————————————
-      # Load env vars from .cloudflare/vars.json → wrangler.toml
+      # Load env vars from cloudflare/vars.json → wrangler.toml
       # ————————————————————————
-      - name: Inject .cloudflare/vars.json into wrangler.toml
+      - name: Inject cloudflare/vars.json into wrangler.toml
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
 
-          VARS_JSON=".cloudflare/vars.json"
+          VARS_JSON="cloudflare/vars.json"
           TOML="wrangler.toml"
 
           # -----------------------------------------------------------------
