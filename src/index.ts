@@ -7,14 +7,14 @@ import * as playerApi from "./api/player";
 import * as setApi from "./api/set";
 
 export interface Env {
-  "Hello-DO": DurableObjectNamespace;
+  "Match-DO": DurableObjectNamespace;
   debug?: string;
 }
 
 /* -------------------------------------------------
    Durable Object – holds the SQLite DB
    ------------------------------------------------- */
-export class Hello {
+export class MatchState {
   state: DurableObjectState;
   env: Env;
   isDebug: boolean;

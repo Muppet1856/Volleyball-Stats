@@ -40,7 +40,7 @@ jobs:
 
       - name: Verify src/index.js
         run: |
-          [ -f "src/index.js" ] || (echo "Error: src/index.js missing" >&2; exit 1)
+          [ -f "src/index.ts" ] || (echo "Error: src/index.ts missing" >&2; exit 1)
 
       # ————————————————————————
       # Install Tools
