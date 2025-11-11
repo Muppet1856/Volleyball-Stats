@@ -1,6 +1,3 @@
--- Normalize match set data into a dedicated table.
-BEGIN TRANSACTION;
-
 -- Recreate matches table without the deprecated JSON sets column.
 CREATE TABLE IF NOT EXISTS matches_new (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,39 +15,6 @@ CREATE TABLE IF NOT EXISTS matches_new (
   is_swapped INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-
-INSERT INTO matches_new (
-  id,
-  date,
-  location,
-  types,
-  opponent,
-  jersey_color_home,
-  jersey_color_opp,
-  result_home,
-  result_opp,
-  first_server,
-  players,
-  finalized_sets,
-  is_swapped,
-  created_at
-)
-SELECT
-  id,
-  date,
-  location,
-  types,
-  opponent,
-  jersey_color_home,
-  jersey_color_opp,
-  result_home,
-  result_opp,
-  first_server,
-  players,
-  finalized_sets,
-  is_swapped,
-  created_at
-FROM matches;
 
 DROP TABLE matches;
 ALTER TABLE matches_new RENAME TO matches;
@@ -72,4 +36,3 @@ CREATE TABLE IF NOT EXISTS match_sets (
   UNIQUE (match_id, set_number)
 );
 
-COMMIT;
