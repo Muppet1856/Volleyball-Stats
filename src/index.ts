@@ -1,4 +1,4 @@
-// src/index.ts (updated with responses.ts import and usage for non-API routes)
+// src/index.ts
 import { initMatchTable, initPlayerTable, initSetTable } from "./utils/init";
 import { jsonResponse, errorResponse } from "./utils/responses";  // Add this import
 
@@ -37,7 +37,8 @@ export class Hello {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const sql = this.state.storage.sql;
+    const storage = this.state.storage;
+    const sql = storage.sql;
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -51,65 +52,65 @@ export class Hello {
       switch (resource) {
         case "match":
           if (request.method === "POST" && action === "create") {
-            return matchApi.createMatch(sql, request);
+            return matchApi.createMatch(storage, request);
           } else if (request.method === "POST" && action === "set-location") {
             const body = await request.json();
-            return matchApi.setLocation(sql, body.matchId, body.location);
+            return matchApi.setLocation(storage, body.matchId, body.location);
           } else if (request.method === "POST" && action === "set-date-time") {
             const body = await request.json();
-            return matchApi.setDateTime(sql, body.matchId, body.date);
+            return matchApi.setDateTime(storage, body.matchId, body.date);
           } else if (request.method === "POST" && action === "set-opp-name") {
             const body = await request.json();
-            return matchApi.setOppName(sql, body.matchId, body.opponent);
+            return matchApi.setOppName(storage, body.matchId, body.opponent);
           } else if (request.method === "POST" && action === "set-type") {
             const body = await request.json();
-            return matchApi.setType(sql, body.matchId, body.types);
+            return matchApi.setType(storage, body.matchId, body.types);
           } else if (request.method === "POST" && action === "set-result") {
             const body = await request.json();
-            return matchApi.setResult(sql, body.matchId, body.resultHome, body.resultOpp);
+            return matchApi.setResult(storage, body.matchId, body.resultHome, body.resultOpp);
           } else if (request.method === "POST" && action === "set-players") {
             const body = await request.json();
-            return matchApi.setPlayers(sql, body.matchId, body.players);
+            return matchApi.setPlayers(storage, body.matchId, body.players);
           } else if (request.method === "POST" && action === "set-home-color") {
             const body = await request.json();
-            return matchApi.setHomeColor(sql, body.matchId, body.jerseyColorHome);
+            return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
           } else if (request.method === "POST" && action === "set-opp-color") {
             const body = await request.json();
-            return matchApi.setOppColor(sql, body.matchId, body.jerseyColorOpp);
+            return matchApi.setOppColor(storage, body.matchId, body.jerseyColorOpp);
           } else if (request.method === "POST" && action === "set-first-server") {
             const body = await request.json();
-            return matchApi.setFirstServer(sql, body.matchId, body.firstServer);
+            return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
           } else if (request.method === "GET" && action === "get-sets" && id) {
-            return matchApi.getSets(sql, id);
+            return matchApi.getSets(storage, id);
           } else if (request.method === "GET") {
-            return matchApi.getMatches(sql);
+            return matchApi.getMatches(storage);
           }
           break;
 
         case "player":
           if (request.method === "POST" && action === "create") {
-            return playerApi.createPlayer(sql, request);
+            return playerApi.createPlayer(storage, request);
           } else if (request.method === "POST" && action === "set-lname") {
             const body = await request.json();
-            return playerApi.setPlayerLName(sql, body.playerId, body.lastName);
+            return playerApi.setPlayerLName(storage, body.playerId, body.lastName);
           } else if (request.method === "POST" && action === "set-fname") {
             const body = await request.json();
-            return playerApi.setPlayerFName(sql, body.playerId, body.initial);
+            return playerApi.setPlayerFName(storage, body.playerId, body.initial);
           } else if (request.method === "POST" && action === "set-number") {
             const body = await request.json();
-            return playerApi.setPlayerNumber(sql, body.playerId, body.number);
+            return playerApi.setPlayerNumber(storage, body.playerId, body.number);
           } else if (request.method === "GET" && action === "get" && id) {
-            return playerApi.getPlayer(sql, id);
+            return playerApi.getPlayer(storage, id);
           } else if (request.method === "GET") {
-            return playerApi.getPlayers(sql);
+            return playerApi.getPlayers(storage);
           }
           break;
 
         case "set":
           if (request.method === "POST" && action === "create")
-            return setApi.createSet(sql, request);
+            return setApi.createSet(storage, request);
           if (request.method === "GET")
-            return setApi.getSets(sql);
+            return setApi.getSets(storage);
           break;
       }
 
@@ -143,7 +144,7 @@ export default {
     /* 2. Serve everything from public/ (including / → index.html) */
     let asset: Response | undefined;
     try {
-      asset = await env.ASSETS.fetch(request);
+      asset = await env.ASSETS.fetch(request.clone());  // Clone request to preserve body
     } catch (e) {
       if (env.debug === "true") console.log("Assets fetch failed; skipping: " + (e as Error).message);
     }
