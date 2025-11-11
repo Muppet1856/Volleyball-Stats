@@ -259,10 +259,7 @@ jobs:
           set -euo pipefail
 
           shopt -s nullglob
-          for f in migrations/*.sql; do
-            echo "$f"
-            npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
-          done
+          npx wrangler d1 migrations apply "$DB_NAME" || exit 1
 
       # ————————————————————————
       # Load env vars from cloudflare/vars.json → wrangler.toml
