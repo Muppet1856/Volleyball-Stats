@@ -38,7 +38,7 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: true
 
-      - name: Verify src/index.js
+      - name: Verify src/index.ts
         run: |
           [ -f "src/index.ts" ] || (echo "Error: src/index.ts missing" >&2; exit 1)
 
