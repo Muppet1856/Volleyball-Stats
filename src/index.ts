@@ -151,8 +151,8 @@ export default {
     if (asset && asset.status < 400) return asset; // 2xx/3xx → file served
 
     /* 3. Anything else → Durable Object */
-    const id = env["Hello-DO"].idFromName("default");
-    const stub = env["Hello-DO"].get(id);
+    const id = env["Match-DO"].idFromName("default");
+    const stub = env["Match-DO"].get(id);
     return stub.fetch(request);
   },
 };
