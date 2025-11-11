@@ -249,13 +249,13 @@ jobs:
       # ————————————————————————
       # Apply Migrations
       # ————————————————————————
-      - name: Apply Migrations
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
+      # - name: Apply Migrations
+        # if: steps.cfg.outputs.type != 'skip'
+        # run: |
+          # set -euo pipefail
 
-          shopt -s nullglob
-          npx wrangler d1 migrations apply "$DB_NAME" --remote || exit 1
+          # shopt -s nullglob
+          # npx wrangler d1 migrations apply "$DB_NAME" --remote || exit 1
 
       # ————————————————————————
       # Load env vars from cloudflare/vars.json → wrangler.toml
