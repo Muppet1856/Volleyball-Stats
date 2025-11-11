@@ -260,6 +260,7 @@ jobs:
 
           shopt -s nullglob
           for f in migrations/*.sql; do
+            echo "$f"
             npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
           done
 
