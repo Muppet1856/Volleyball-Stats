@@ -2,7 +2,7 @@
 BEGIN TRANSACTION;
 
 -- Recreate matches table without the deprecated JSON sets column.
-CREATE TABLE matches_new (
+CREATE TABLE IF NOT EXISTS matches_new (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT,
   location TEXT,
@@ -58,7 +58,7 @@ ALTER TABLE matches_new RENAME TO matches;
 CREATE INDEX idx_matches_date ON matches(date);
 
 -- Each record stores the scores and timeout usage for a single set.
-CREATE TABLE match_sets (
+CREATE TABLE IF NOT EXISTS match_sets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   match_id INTEGER NOT NULL,
   set_number INTEGER NOT NULL CHECK (set_number BETWEEN 1 AND 5),
