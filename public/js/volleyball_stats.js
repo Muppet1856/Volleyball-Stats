@@ -87,15 +87,43 @@ function loadFileData(filename) {
 }
 
 const apiClient = (() => {
-  const JSON_HEADERS = { 'Content-Type': 'application/json' };
+  const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' };
+
+  function safeJsonParse(value, fallback) {
+    if (typeof value !== 'string') return fallback;
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function normalizePlayerRecord(row) {
+    if (!row) return null;
+    const meta = typeof row.initial === 'string' ? safeJsonParse(row.initial, null) : null;
+    const initial = meta && typeof meta === 'object' && meta !== null && 'initial' in meta
+      ? String(meta.initial ?? '')
+      : String(row.initial ?? '');
+    const deleted = Boolean(meta && typeof meta === 'object' && meta !== null && meta.deleted);
+    return {
+      id: row.id,
+      number: String(row.number ?? '').trim(),
+      lastName: String(row.last_name ?? row.lastName ?? '').trim(),
+      initial,
+      _deleted: deleted
+    };
+  }
+
+  function serializePlayerInitial(initial, { deleted = false } = {}) {
+    return JSON.stringify({ initial: initial ?? '', deleted: Boolean(deleted) });
+  }
 
   async function request(path, { method = 'GET', body, headers = {} } = {}) {
-    const init = { method, headers: body !== undefined ? { ...JSON_HEADERS, ...headers } : headers };
+    const init = { method };
+    const baseHeaders = body !== undefined ? JSON_HEADERS : { Accept: 'application/json' };
+    init.headers = { ...baseHeaders, ...headers };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
-      if (!init.headers['Content-Type']) {
-        init.headers['Content-Type'] = 'application/json';
-      }
     }
     const response = await fetch(path, init);
     if (!response.ok) {
@@ -106,7 +134,7 @@ const apiClient = (() => {
           errorMessage += `: ${errorText}`;
         }
       } catch (readError) {
-        // Ignore read errors when constructing the message
+        // Ignore read errors
       }
       throw new Error(errorMessage);
     }
@@ -120,16 +148,270 @@ const apiClient = (() => {
     return await response.text();
   }
 
+  function normalizeMatchFlags(flags = {}) {
+    const defaults = { tournament: false, league: false, postSeason: false, nonLeague: false };
+    return Object.keys(defaults).reduce((acc, key) => {
+      const value = flags[key];
+      acc[key] = Boolean(value);
+      return acc;
+    }, {});
+  }
+
+  function normalizeFinalizedSets(data) {
+    const normalized = {};
+    if (data && typeof data === 'object') {
+      Object.entries(data).forEach(([key, value]) => {
+        const setNumber = Number(key);
+        if (!Number.isNaN(setNumber)) {
+          normalized[setNumber] = Boolean(value);
+        }
+      });
+    }
+    return normalized;
+  }
+
+  function normalizeMatchSets(sets) {
+    const normalized = {};
+    if (sets && typeof sets === 'object') {
+      Object.entries(sets).forEach(([key, value]) => {
+        const setNumber = Number(key);
+        if (Number.isNaN(setNumber)) return;
+        const timeouts = value && typeof value === 'object' ? value.timeouts || {} : {};
+        normalized[setNumber] = {
+          home: value?.home ?? null,
+          opp: value?.opp ?? null,
+          timeouts: {
+            home: Array.isArray(timeouts.home) ? timeouts.home.map(Boolean) : [false, false],
+            opp: Array.isArray(timeouts.opp) ? timeouts.opp.map(Boolean) : [false, false]
+          }
+        };
+      });
+    }
+    return normalized;
+  }
+
+  function parseMatchPlayers(value) {
+    const parsed = typeof value === 'string' ? safeJsonParse(value, null) : null;
+    if (Array.isArray(parsed)) {
+      return { roster: parsed.slice(), deleted: false };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const roster = Array.isArray(parsed.roster) ? parsed.roster.slice() : [];
+      return { roster, deleted: Boolean(parsed.deleted) };
+    }
+    return { roster: [], deleted: false };
+  }
+
+  function serializeMatchPlayers(match) {
+    const roster = Array.isArray(match?.players) ? match.players.slice() : [];
+    return { roster, deleted: Boolean(match?.deleted) };
+  }
+
+  function parseMatchMetadata(typesValue, finalizedSetsValue, isSwappedValue) {
+    const parsed = typeof typesValue === 'string' ? safeJsonParse(typesValue, null) : null;
+    let flags = normalizeMatchFlags();
+    let sets = {};
+    let finalizedSets = {};
+    let isSwapped = Boolean(isSwappedValue);
+    let deleted = false;
+
+    if (parsed && typeof parsed === 'object') {
+      const candidateFlags = parsed.flags && typeof parsed.flags === 'object' ? parsed.flags : parsed;
+      flags = normalizeMatchFlags(candidateFlags);
+      if (parsed.sets && typeof parsed.sets === 'object') {
+        sets = parsed.sets;
+      }
+      if (parsed.finalizedSets && typeof parsed.finalizedSets === 'object') {
+        finalizedSets = parsed.finalizedSets;
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, 'isSwapped')) {
+        isSwapped = Boolean(parsed.isSwapped);
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
+        deleted = Boolean(parsed.deleted);
+      }
+    } else if (parsed !== null) {
+      flags = normalizeMatchFlags(parsed);
+    }
+
+    if (!finalizedSets || Object.keys(finalizedSets).length === 0) {
+      const fallbackFinalized = typeof finalizedSetsValue === 'string' ? safeJsonParse(finalizedSetsValue, {}) : {};
+      if (fallbackFinalized && typeof fallbackFinalized === 'object') {
+        finalizedSets = fallbackFinalized;
+      }
+    }
+
+    return {
+      flags,
+      sets: normalizeMatchSets(sets),
+      finalizedSets: normalizeFinalizedSets(finalizedSets),
+      isSwapped,
+      deleted
+    };
+  }
+
+  function serializeMatchMetadata(match) {
+    const flags = normalizeMatchFlags(match?.types || {});
+    const sets = match && typeof match.sets === 'object' ? JSON.parse(JSON.stringify(match.sets)) : {};
+    const finalizedSets = match && typeof match.finalizedSets === 'object' ? { ...match.finalizedSets } : {};
+    return {
+      flags,
+      sets,
+      finalizedSets,
+      isSwapped: Boolean(match?.isSwapped),
+      deleted: Boolean(match?.deleted)
+    };
+  }
+
+  function normalizeResultValue(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  function prepareMatchForStorage(match) {
+    const metadata = serializeMatchMetadata(match);
+    const playersPayload = serializeMatchPlayers(match);
+    const body = {
+      date: match?.date || null,
+      location: match?.location || null,
+      types: JSON.stringify(metadata),
+      opponent: match?.opponent || null,
+      jersey_color_home: match?.jerseyColorHome || null,
+      jersey_color_opp: match?.jerseyColorOpp || null,
+      result_home: normalizeResultValue(match?.resultHome),
+      result_opp: normalizeResultValue(match?.resultOpp),
+      first_server: match?.firstServer || null,
+      players: JSON.stringify(playersPayload),
+      finalized_sets: JSON.stringify(metadata.finalizedSets || {}),
+      is_swapped: metadata.isSwapped ? 1 : 0
+    };
+    return { body, metadata, playersPayload };
+  }
+
+  function parseMatchRow(row) {
+    const id = Number(row.id);
+    const metadata = parseMatchMetadata(row.types, row.finalized_sets, row.is_swapped);
+    const playersPayload = parseMatchPlayers(row.players);
+    const deleted = Boolean(playersPayload.deleted || metadata.deleted);
+    return {
+      id: Number.isNaN(id) ? row.id : id,
+      date: row.date ?? '',
+      location: row.location ?? '',
+      types: metadata.flags,
+      opponent: row.opponent ?? '',
+      jerseyColorHome: row.jersey_color_home ?? '',
+      jerseyColorOpp: row.jersey_color_opp ?? '',
+      resultHome: row.result_home != null ? Number(row.result_home) : null,
+      resultOpp: row.result_opp != null ? Number(row.result_opp) : null,
+      firstServer: row.first_server ?? '',
+      players: playersPayload.roster,
+      sets: metadata.sets,
+      finalizedSets: metadata.finalizedSets,
+      isSwapped: Boolean(metadata.isSwapped),
+      _deleted: deleted
+    };
+  }
+
+  function stripInternalMatch(match) {
+    if (!match) return null;
+    const { _deleted, ...rest } = match;
+    return rest;
+  }
+
+  async function getRawMatches() {
+    const data = await request('/api/match');
+    return Array.isArray(data) ? data : [];
+  }
+
+  async function getNormalizedMatches() {
+    const rows = await getRawMatches();
+    return rows.map(parseMatchRow);
+  }
+
+  async function updateMatchInternal(id, match) {
+    const { body } = prepareMatchForStorage(match);
+    await request('/api/match/set-date-time', { method: 'POST', body: { matchId: id, date: body.date } });
+    await request('/api/match/set-location', { method: 'POST', body: { matchId: id, location: body.location } });
+    await request('/api/match/set-type', { method: 'POST', body: { matchId: id, types: body.types } });
+    await request('/api/match/set-opp-name', { method: 'POST', body: { matchId: id, opponent: body.opponent } });
+    await request('/api/match/set-result', { method: 'POST', body: { matchId: id, resultHome: body.result_home, resultOpp: body.result_opp } });
+    await request('/api/match/set-players', { method: 'POST', body: { matchId: id, players: body.players } });
+    await request('/api/match/set-home-color', { method: 'POST', body: { matchId: id, jerseyColorHome: body.jersey_color_home } });
+    await request('/api/match/set-opp-color', { method: 'POST', body: { matchId: id, jerseyColorOpp: body.jersey_color_opp } });
+    await request('/api/match/set-first-server', { method: 'POST', body: { matchId: id, firstServer: body.first_server } });
+    return { id };
+  }
+
+  function findMatchById(matches, id) {
+    const numericId = Number(id);
+    return matches.find(match => {
+      const matchId = Number(match.id);
+      if (!Number.isNaN(numericId) && !Number.isNaN(matchId)) {
+        return matchId === numericId;
+      }
+      return match.id === id;
+    });
+  }
+
   return {
-    getPlayers: () => request('/api/players'),
-    createPlayer: (player) => request('/api/players', { method: 'POST', body: player }),
-    updatePlayer: (id, player) => request(`/api/players/${id}`, { method: 'PUT', body: player }),
-    deletePlayer: (id) => request(`/api/players/${id}`, { method: 'DELETE' }),
-    listMatches: () => request('/api/matches'),
-    getMatch: (id) => request(`/api/matches/${id}`),
-    createMatch: (match) => request('/api/matches', { method: 'POST', body: match }),
-    updateMatch: (id, match) => request(`/api/matches/${id}`, { method: 'PUT', body: match }),
-    deleteMatch: (id) => request(`/api/matches/${id}`, { method: 'DELETE' })
+    async getPlayers() {
+      const rows = await request('/api/player');
+      const normalized = Array.isArray(rows) ? rows.map(normalizePlayerRecord).filter(Boolean) : [];
+      return normalized.filter(player => !player._deleted).map(({ _deleted, ...rest }) => rest);
+    },
+
+    async createPlayer(player) {
+      const payload = {
+        number: String(player.number ?? '').trim(),
+        last_name: String(player.lastName ?? '').trim(),
+        initial: serializePlayerInitial(player.initial ?? '', { deleted: false })
+      };
+      return await request('/api/player/create', { method: 'POST', body: payload });
+    },
+
+    async updatePlayer(id, player) {
+      await request('/api/player/set-number', { method: 'POST', body: { playerId: id, number: String(player.number ?? '').trim() } });
+      await request('/api/player/set-lname', { method: 'POST', body: { playerId: id, lastName: String(player.lastName ?? '').trim() } });
+      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(player.initial ?? '', { deleted: false }) } });
+      return { id };
+    },
+
+    async deletePlayer(id) {
+      const row = await request(`/api/player/get/${id}`);
+      const normalized = normalizePlayerRecord(row) || { initial: '' };
+      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(normalized.initial, { deleted: true }) } });
+      return { id };
+    },
+
+    async listMatches() {
+      const matches = await getNormalizedMatches();
+      return matches.filter(match => !match._deleted).map(stripInternalMatch);
+    },
+
+    async getMatch(id, { includeDeleted = false } = {}) {
+      const matches = await getNormalizedMatches();
+      const match = findMatchById(matches, id);
+      if (!match) return null;
+      if (match._deleted && !includeDeleted) return null;
+      return stripInternalMatch(match);
+    },
+
+    async createMatch(match) {
+      const { body } = prepareMatchForStorage(match);
+      return await request('/api/match/create', { method: 'POST', body });
+    },
+
+    async updateMatch(id, match) {
+      return await updateMatchInternal(id, match);
+    },
+
+    async deleteMatch(id) {
+      const matches = await getNormalizedMatches();
+      const match = findMatchById(matches, id);
+      if (!match) return null;
+      return await updateMatchInternal(match.id, { ...stripInternalMatch(match), deleted: true });
+    }
   };
 })();
 
@@ -2062,7 +2344,8 @@ let playerSortMode = 'number';
           }
         },
         finalizedSets: { ...finalizedSets },
-        isSwapped: isSwapped
+        isSwapped: isSwapped,
+        deleted: false
       };
       const matchId = currentMatchId;
       loadedMatchPlayers = [...match.players];
