@@ -128,7 +128,7 @@ jobs:
 
           cat > wrangler.toml <<EOF
           name = "${FINAL_NAME}"
-          main = "src/index.js"
+          main = "src/index.ts"
           compatibility_date = "${COMPAT_DATE}"
           EOF
 
@@ -234,15 +234,15 @@ jobs:
             DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
           fi
 
-          if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
-            cat >> wrangler.toml <<EOF
+          # if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
+            # cat >> wrangler.toml <<EOF
 
-          [[d1_databases]]
-          binding = "$BINDING_NAME"
-          database_name = "$DB_NAME"
-          database_id = "$DB_ID"
-          EOF
-          fi
+          # [[d1_databases]]
+          # binding = "$BINDING_NAME"
+          # database_name = "$DB_NAME"
+          # database_id = "$DB_ID"
+          # EOF
+          # fi
 
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
 
