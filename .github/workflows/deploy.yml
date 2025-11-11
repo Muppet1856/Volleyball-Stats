@@ -1,4 +1,4 @@
-name: Deploy & Update Preview Badge
+name: Deploy & Update Preview Comment
 
 on:
   push:
@@ -255,7 +255,7 @@ jobs:
           set -euo pipefail
 
           shopt -s nullglob
-          npx wrangler d1 migrations apply "$DB_NAME" || exit 1
+          npx wrangler d1 migrations apply "$DB_NAME" --remote || exit 1
 
       # ————————————————————————
       # Load env vars from cloudflare/vars.json → wrangler.toml
