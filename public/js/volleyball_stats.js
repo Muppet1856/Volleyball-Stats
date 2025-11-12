@@ -713,6 +713,25 @@ function normalizeRosterArray(roster) {
       button.setAttribute('title', description);
     }
 
+    function updateModalPlayerSortSelect() {
+      const select = document.getElementById('modalPlayerSortSelect');
+      if (!select) return;
+      if (select.value !== playerSortMode) {
+        select.value = playerSortMode;
+      }
+    }
+
+    function setPlayerSortMode(mode) {
+      const normalized = mode === 'name' ? 'name' : 'number';
+      if (playerSortMode === normalized) {
+        updatePlayerSortToggle();
+        updateModalPlayerSortSelect();
+        return;
+      }
+      playerSortMode = normalized;
+      setPlayerRecords(playerRecords);
+    }
+
     function setPlayerRecords(records) {
       const safeRecords = Array.isArray(records) ? records : [];
       const sortedRecords = sortPlayerRecords(safeRecords);
@@ -764,11 +783,11 @@ function normalizeRosterArray(roster) {
       updatePlayerList();
       updateModalPlayerList();
       updatePlayerSortToggle();
+      updateModalPlayerSortSelect();
     }
 
     function togglePlayerSortMode() {
-      playerSortMode = playerSortMode === 'number' ? 'name' : 'number';
-      setPlayerRecords(playerRecords);
+      setPlayerSortMode(playerSortMode === 'number' ? 'name' : 'number');
     }
 
 
@@ -3252,6 +3271,13 @@ function normalizeRosterArray(roster) {
           togglePlayerSortMode();
         });
         updatePlayerSortToggle();
+      }
+      const modalSortSelect = document.getElementById('modalPlayerSortSelect');
+      if (modalSortSelect) {
+        modalSortSelect.addEventListener('change', (event) => {
+          setPlayerSortMode(event.target.value);
+        });
+        modalSortSelect.value = playerSortMode;
       }
       const autoSaveTargets = document.querySelector('.container');
       if (autoSaveTargets) {

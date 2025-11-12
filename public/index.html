@@ -315,7 +315,7 @@
     </div>
 
     <div id="playerModal" class="modal fade" tabindex="-1" aria-labelledby="playerModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="playerModalLabel">Manage Roster</h5>
@@ -337,6 +337,16 @@
                 <button type="button" class="btn btn-primary" id="savePlayerBtn" onclick="submitPlayer()">Add Player</button>
                 <button type="button" class="btn btn-outline-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEdit()">Cancel</button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+            <div class="modal-player-controls d-flex justify-content-between align-items-center mt-3 mb-2 flex-wrap gap-2">
+              <h6 class="mb-0">Current Roster</h6>
+              <div class="d-flex align-items-center gap-2">
+                <label for="modalPlayerSortSelect" class="form-label mb-0">Sort by</label>
+                <select id="modalPlayerSortSelect" class="form-select form-select-sm" aria-label="Sort players in roster">
+                  <option value="number">Number</option>
+                  <option value="name">Name</option>
+                </select>
               </div>
             </div>
             <div id="modalPlayerList" class="modal-player-list"></div>
