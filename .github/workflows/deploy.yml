@@ -132,6 +132,18 @@ jobs:
           compatibility_date = "${COMPAT_DATE}"
           EOF
 
+          {
+            echo "" >> wrangler.toml
+            echo "[durable_objects]" >> wrangler.toml
+            echo "bindings = [" >> wrangler.toml
+            echo "  { name = \"${{ env.BINDING_NAME }}\", class_name = \"MatchState\" }" >> wrangler.toml
+            echo "]" >> wrangler.toml
+            echo "" >> wrangler.toml
+            echo "[[migrations]]" >> wrangler.toml
+            echo "tag = \"v1\"" >> wrangler.toml
+            echo "new_sqlite_classes = [ \"MatchState\" ]" >> wrangler.toml
+          }
+
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
           FOUND=()
