@@ -120,7 +120,13 @@ jobs:
           set -euo pipefail
 
           if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
+            # When previews intentionally share the production database, point them at the
+            # production Worker script name so Cloudflare reuses the same Durable Object.
+            if [ "${{ env.USE_PRODUCTION_DB_ON_PREVIEW }}" = "true" ]; then
+              FINAL_NAME="${{ env.WORKER_NAME }}"
+            else
+              FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
+            fi
           else
             FINAL_NAME="${{ env.WORKER_NAME }}"
           fi
