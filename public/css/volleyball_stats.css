@@ -201,13 +201,13 @@ body.score-modal-open {
 }
 .finalized-btn { background-color: #28a745 !important; color: white !important; }
 .set-score-finalized {
-  background-color: var(--bs-secondary-bg) !important;
-  color: var(--bs-secondary-color) !important;
   cursor: not-allowed;
   opacity: 1 !important;
+  filter: saturate(60%) brightness(0.97);
 }
 .set-score-finalized::placeholder {
-  color: var(--bs-secondary-color) !important;
+  color: inherit;
+  opacity: 0.75;
 }
 .finalize-button {
   position: relative;
