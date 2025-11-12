@@ -225,28 +225,20 @@ jobs:
           echo "Resolved host: $HOST"
 
       # ————————————————————————
-      # D1: Create / Bind
+      # Durable Object migrations
       # ————————————————————————
-      - name: Create/Get D1 + Bind
+      - name: Run Durable Object migrations
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
 
-          DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
-          DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
-            echo "$WORKER_NAME"
-          else
-            echo "${DEPLOY_ENV}-${WORKER_NAME}"
-          fi)
-
-          DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
-
-          if [ -z "$DB_ID" ]; then
-            npx wrangler d1 create "$DB_NAME"
-            DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
+          if [ -z "${FINAL_WORKER_NAME:-}" ]; then
+            echo "Error: FINAL_WORKER_NAME is not set" >&2
+            exit 1
           fi
 
-          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          echo "Applying Durable Object migrations for ${FINAL_WORKER_NAME}"
+          npx wrangler deploy --config wrangler.toml --migrations-only
 
       # ————————————————————————
       # Load env vars from cloudflare/vars.json → wrangler.toml
