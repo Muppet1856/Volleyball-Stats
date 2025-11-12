@@ -1,6 +1,38 @@
 // src/api/set.ts
 import { jsonSuccess, textResponse, errorResponse, jsonResponse } from "../utils/responses";  // Add this import
 
+function normalizeScore(value: any): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeTimeout(value: any): number {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+  if (typeof value === "string") {
+    if (value.trim() === "") return 0;
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      return value ? 1 : 0;
+    }
+    return parsed ? 1 : 0;
+  }
+  if (typeof value === "number") {
+    return value ? 1 : 0;
+  }
+  return 0;
+}
+
 export async function createSet(storage: any, request: Request): Promise<Response> {
   const sql = storage.sql;
   const body = await request.json();  // Expect JSON: { match_id: number, set_number: 1-5, ... }
@@ -8,12 +40,27 @@ export async function createSet(storage: any, request: Request): Promise<Respons
     return errorResponse("No body provided", 400);
   }
 
+  const matchId = Number(body.match_id);
+  const setNumber = Number(body.set_number);
+  if (!Number.isInteger(matchId) || !Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) {
+    return errorResponse("Invalid match or set identifier", 400);
+  }
+
   try {
     const newId = storage.transactionSync(() => {
       sql.exec(`
         INSERT INTO sets (match_id, set_number, home_score, opp_score, home_timeout_1, home_timeout_2, opp_timeout_1, opp_timeout_2)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, body.match_id, body.set_number, body.home_score || 0, body.opp_score || 0, body.home_timeout_1 || 0, body.home_timeout_2 || 0, body.opp_timeout_1 || 0, body.opp_timeout_2 || 0);
+      `,
+        matchId,
+        setNumber,
+        normalizeScore(body.home_score),
+        normalizeScore(body.opp_score),
+        normalizeTimeout(body.home_timeout_1),
+        normalizeTimeout(body.home_timeout_2),
+        normalizeTimeout(body.opp_timeout_1),
+        normalizeTimeout(body.opp_timeout_2)
+      );
       return sql.exec(`SELECT last_insert_rowid() AS id`).toArray()[0].id;
     });
     return jsonSuccess({ id: newId }, 201);
@@ -22,11 +69,11 @@ export async function createSet(storage: any, request: Request): Promise<Respons
   }
 }
 
-export async function setHomeScore(storage: any, setId: number, homeScore: number): Promise<Response> {
+export async function setHomeScore(storage: any, setId: number, homeScore: number | null): Promise<Response> {
   const sql = storage.sql;
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET home_score = ? WHERE id = ?`, homeScore, setId);
+      sql.exec(`UPDATE sets SET home_score = ? WHERE id = ?`, normalizeScore(homeScore), setId);
     });
     return textResponse("Home score updated successfully", 200);
   } catch (error) {
@@ -34,11 +81,11 @@ export async function setHomeScore(storage: any, setId: number, homeScore: numbe
   }
 }
 
-export async function setOppScore(storage: any, setId: number, oppScore: number): Promise<Response> {
+export async function setOppScore(storage: any, setId: number, oppScore: number | null): Promise<Response> {
   const sql = storage.sql;
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET opp_score = ? WHERE id = ?`, oppScore, setId);
+      sql.exec(`UPDATE sets SET opp_score = ? WHERE id = ?`, normalizeScore(oppScore), setId);
     });
     return textResponse("Opponent score updated successfully", 200);
   } catch (error) {
@@ -51,7 +98,7 @@ export async function setHomeTimeout(storage: any, setId: number, timeoutNumber:
   const field = timeoutNumber === 1 ? 'home_timeout_1' : 'home_timeout_2';
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET ${field} = ? WHERE id = ?`, value, setId);
+      sql.exec(`UPDATE sets SET ${field} = ? WHERE id = ?`, normalizeTimeout(value), setId);
     });
     return textResponse("Home timeout updated successfully", 200);
   } catch (error) {
@@ -64,7 +111,7 @@ export async function setOppTimeout(storage: any, setId: number, timeoutNumber: 
   const field = timeoutNumber === 1 ? 'opp_timeout_1' : 'opp_timeout_2';
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET ${field} = ? WHERE id = ?`, value, setId);
+      sql.exec(`UPDATE sets SET ${field} = ? WHERE id = ?`, normalizeTimeout(value), setId);
     });
     return textResponse("Opponent timeout updated successfully", 200);
   } catch (error) {
@@ -96,7 +143,7 @@ export async function getSets(storage: any, matchId?: number): Promise<Response>
   const sql = storage.sql;
   let query = `SELECT * FROM sets`;
   let params: any[] = [];
-  if (matchId) {
+  if (matchId !== undefined && matchId !== null && !Number.isNaN(matchId)) {
     query += ` WHERE match_id = ?`;
     params.push(matchId);
   }
