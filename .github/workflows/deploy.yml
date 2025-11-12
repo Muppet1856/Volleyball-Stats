@@ -38,6 +38,9 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: true
 
+      # ————————————————————————
+      # Verify that the entry point is available
+      # ————————————————————————
       - name: Verify src/index.ts
         run: |
           [ -f "src/index.ts" ] || (echo "Error: src/index.ts missing" >&2; exit 1)
@@ -231,22 +234,6 @@ jobs:
           echo "Resolved host: $HOST"
 
       # ————————————————————————
-      # Durable Object migrations
-      # ————————————————————————
-      - name: Run Durable Object migrations
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
-
-          if [ -z "${FINAL_WORKER_NAME:-}" ]; then
-            echo "Error: FINAL_WORKER_NAME is not set" >&2
-            exit 1
-          fi
-
-          echo "Applying Durable Object migrations for ${FINAL_WORKER_NAME}"
-          npx wrangler deploy --config wrangler.toml --migrations-only
-
-      # ————————————————————————
       # Load env vars from cloudflare/vars.json → wrangler.toml
       # ————————————————————————
       - name: Inject cloudflare/vars.json into wrangler.toml
@@ -318,4 +305,3 @@ jobs:
               repo: context.repo.repo,
               body: `Preview: ${{ env.PREVIEW_URL }}`
             });
-
