@@ -11,9 +11,9 @@ export async function createMatch(storage: any, request: Request): Promise<Respo
   try {
     const newId = storage.transactionSync(() => {
       sql.exec(`
-        INSERT INTO matches (date, location, types, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players, finalized_sets, is_swapped)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, body.date || null, body.location || null, body.types || null, body.opponent || null, body.jersey_color_home || null, body.jersey_color_opp || null, body.result_home || 0, body.result_opp || 0, body.first_server || null, body.players || null, body.finalized_sets || null, body.is_swapped || 0);
+        INSERT INTO matches (date, location, types, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players, finalized_sets)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, body.date || null, body.location || null, body.types || null, body.opponent || null, body.jersey_color_home || null, body.jersey_color_opp || null, body.result_home || 0, body.result_opp || 0, body.first_server || null, body.players || null, body.finalized_sets || null);
       return sql.exec(`SELECT last_insert_rowid() AS id`).toArray()[0].id;
     });
     return jsonSuccess({ id: newId }, 201);
@@ -142,4 +142,16 @@ export async function getMatches(storage: any): Promise<Response> {
   const cursor = sql.exec(`SELECT * FROM matches`);
   const rows = cursor.toArray();
   return jsonResponse(rows);
+}
+
+export async function deleteMatch(storage: any, matchId: number): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+      sql.exec(`DELETE FROM matches WHERE id = ?`, matchId);
+    });
+    return textResponse("Match deleted successfully", 200);
+  } catch (error) {
+    return errorResponse("Error deleting match: " + (error as Error).message, 500);
+  }
 }

@@ -104,3 +104,15 @@ export async function getSets(storage: any, matchId?: number): Promise<Response>
   const rows = cursor.toArray();
   return jsonResponse(rows);
 }
+
+export async function deleteSet(storage: any, setId: number): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+      sql.exec(`DELETE FROM sets WHERE id = ?`, setId);
+    });
+    return textResponse("Set deleted successfully", 200);
+  } catch (error) {
+    return errorResponse("Error deleting set: " + (error as Error).message, 500);
+  }
+}

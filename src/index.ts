@@ -9,6 +9,7 @@ import * as setApi from "./api/set";
 export interface Env {
   "Match-DO": DurableObjectNamespace;
   debug?: string;
+  HOME_TEAM?: string;  // Updated to match wrangler.toml
 }
 
 /* -------------------------------------------------
@@ -84,6 +85,8 @@ export class MatchState {
             return matchApi.getSets(storage, id);
           } else if (request.method === "GET") {
             return matchApi.getMatches(storage);
+          } else if (request.method === "DELETE" && action === "delete" && id) {
+            return matchApi.deleteMatch(storage, id);
           }
           break;
 
@@ -103,14 +106,36 @@ export class MatchState {
             return playerApi.getPlayer(storage, id);
           } else if (request.method === "GET") {
             return playerApi.getPlayers(storage);
+          } else if (request.method === "DELETE" && action === "delete" && id) {
+            return playerApi.deletePlayer(storage, id);
           }
           break;
 
         case "set":
-          if (request.method === "POST" && action === "create")
+          if (request.method === "POST" && action === "create") {
             return setApi.createSet(storage, request);
-          if (request.method === "GET")
-            return setApi.getSets(storage);
+          } else if (request.method === "POST" && action === "set-home-score") {
+            const body = await request.json();
+            return setApi.setHomeScore(storage, body.setId, body.homeScore);
+          } else if (request.method === "POST" && action === "set-opp-score") {
+            const body = await request.json();
+            return setApi.setOppScore(storage, body.setId, body.oppScore);
+          } else if (request.method === "POST" && action === "set-home-timeout") {
+            const body = await request.json();
+            return setApi.setHomeTimeout(storage, body.setId, body.timeoutNumber, body.value);
+          } else if (request.method === "POST" && action === "set-opp-timeout") {
+            const body = await request.json();
+            return setApi.setOppTimeout(storage, body.setId, body.timeoutNumber, body.value);
+          } else if (request.method === "POST" && action === "set-is-final") {
+            const body = await request.json();
+            return setApi.setIsFinal(storage, body.matchId, body.finalizedSets);
+          } else if (request.method === "GET" && action === "get" && id) {
+            return setApi.getSet(storage, id);
+          } else if (request.method === "GET") {
+            return setApi.getSets(storage, id);  // Pass id as matchId if provided
+          } else if (request.method === "DELETE" && action === "delete" && id) {
+            return setApi.deleteSet(storage, id);
+          }
           break;
       }
 
@@ -132,7 +157,7 @@ export class MatchState {
    Top-level fetch – static files + DO routing
    ------------------------------------------------- */
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -150,9 +175,23 @@ export default {
     }
     if (asset && asset.status < 400) return asset; // 2xx/3xx → file served
 
-    /* 3. Anything else → Durable Object */
-    const id = env["Match-DO"].idFromName("default");
-    const stub = env["Match-DO"].get(id);
-    return stub.fetch(request);
+    /* 3. Handle /api/config directly (no DB needed) */
+    if (path === "/api/config") {
+      if (request.method !== "GET") {
+        return errorResponse("Method not allowed", 405);
+      }
+      const homeTeam = env.HOME_TEAM || "Home Team";
+      return jsonResponse({ homeTeam });
+    }
+
+    /* 4. Route other API requests to the Durable Object (singleton instance) */
+    if (path.startsWith("/api/")) {
+      const doId = env["Match-DO"].idFromName("global");  // Fixed name for singleton DO
+      const doStub = env["Match-DO"].get(doId);
+      return doStub.fetch(request);
+    }
+
+    /* 5. Fallback for unhandled paths */
+    return new Response("Not Found", { status: 404 });
   },
 };

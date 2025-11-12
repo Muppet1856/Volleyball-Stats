@@ -8,18 +8,17 @@ export function initMatchTable(sql: any): string {
     sql.exec(`
       CREATE TABLE matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        location TEXT,
-        types TEXT,
-        opponent TEXT,
-        jersey_color_home TEXT,
-        jersey_color_opp TEXT,
-        result_home INTEGER,
-        result_opp INTEGER,
-        first_server TEXT,
-        players TEXT,
-        finalized_sets TEXT,
-        is_swapped INTEGER DEFAULT 0,
+        date TEXT,  --  The date of the match
+        location TEXT,  --  The location of the match
+        types TEXT,  --  A JSON of the radio selectors - Tournament, League, Post-Season, Non-League
+        opponent TEXT,  --  The name of the opposing team
+        jersey_color_home TEXT,  --  An enumeration of the colors - White, Grey, Black, Yellow, Orange, Red, Green, Blue, Purple, Pink
+        jersey_color_opp TEXT,  --  An enumeration of the colors - White, Grey, Black, Yellow, Orange, Red, Green, Blue, Purple, Pink
+        result_home INTEGER,  --  This is the number of sets where the home team had the higher score and was finalized
+        result_opp INTEGER,  --  This is the number of sets where the opposing team had the higher score and was finalized
+        first_server TEXT,  --  This is the name of the team who served first
+        players TEXT,  --  This is a JSON of the players appearing in the match.  player_id, temp_number.  Temp number is a placeholder, but the logic will be added in a future update.
+        finalized_sets TEXT,  --  this is a JSON of which sets are finalized. 
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       );
     `);
@@ -37,7 +36,7 @@ export function initPlayerTable(sql: any): string {
     sql.exec(`
       CREATE TABLE players (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        number TEXT NOT NULL,
+        number INTEGER NOT NULL,
         last_name TEXT NOT NULL,
         initial TEXT DEFAULT '',
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))

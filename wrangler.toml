@@ -2,20 +2,16 @@ name = "volleyball-stats"
 main = "src/index.ts"
 compatibility_date = "2025-11-11"
 
-assets = { directory = "public" }
-vars = { HOME_TEAM = "Home" }
+[assets]
+directory = "public"
 
-# npx wrangler d1 migrations apply local-volleyball-stats --local --persist-to=.wrangler/state
-#[[d1_databases]]
-#binding = "VOLLEYBALL_STATS_DB"
-#database_name = "local-volleyball-stats"
-#database_id = "00000000-0000-0000-0000-000000000000"
-#migrations_dir = "migrations"
-#preview_database_id = "local-volleyball-stats"
+[vars]
+debug = "true"
+HOME_TEAM = "Stoney Creek"
 
 [durable_objects]
 bindings = [
-  { name = "MATCH-DO", class_name = "MatchState" }
+  { name = "Match-DO", class_name = "MatchState" }
 ]
 
 [[migrations]]

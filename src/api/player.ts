@@ -71,3 +71,15 @@ export async function getPlayers(storage: any): Promise<Response> {
   const rows = cursor.toArray();
   return jsonResponse(rows);
 }
+
+export async function deletePlayer(storage: any, playerId: number): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+      sql.exec(`DELETE FROM players WHERE id = ?`, playerId);
+    });
+    return textResponse("Player deleted successfully", 200);
+  } catch (error) {
+    return errorResponse("Error deleting player: " + (error as Error).message, 500);
+  }
+}

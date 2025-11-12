@@ -234,28 +234,7 @@ jobs:
             DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
           fi
 
-          # if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
-            # cat >> wrangler.toml <<EOF
-
-          # [[d1_databases]]
-          # binding = "$BINDING_NAME"
-          # database_name = "$DB_NAME"
-          # database_id = "$DB_ID"
-          # EOF
-          # fi
-
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
-
-      # ————————————————————————
-      # Apply Migrations
-      # ————————————————————————
-      # - name: Apply Migrations
-        # if: steps.cfg.outputs.type != 'skip'
-        # run: |
-          # set -euo pipefail
-
-          # shopt -s nullglob
-          # npx wrangler d1 migrations apply "$DB_NAME" --remote || exit 1
 
       # ————————————————————————
       # Load env vars from cloudflare/vars.json → wrangler.toml
