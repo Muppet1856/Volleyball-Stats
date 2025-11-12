@@ -191,19 +191,26 @@ const apiClient = (() => {
   }
 
   function parseMatchPlayers(value) {
-    const parsed = typeof value === 'string' ? safeJsonParse(value, null) : null;
-    if (Array.isArray(parsed)) {
-      return { roster: parsed.slice(), deleted: false };
+    const parsedValue = typeof value === 'string' ? safeJsonParse(value, null) : value;
+    if (Array.isArray(parsedValue)) {
+      return { roster: [], deleted: false, legacyRoster: parsedValue.slice() };
     }
-    if (parsed && typeof parsed === 'object') {
-      const roster = Array.isArray(parsed.roster) ? parsed.roster.slice() : [];
-      return { roster, deleted: Boolean(parsed.deleted) };
+    if (parsedValue && typeof parsedValue === 'object') {
+      const roster = normalizeRosterArray(parsedValue.roster);
+      const legacyRoster = Array.isArray(parsedValue.legacyRoster)
+        ? parsedValue.legacyRoster.slice()
+        : null;
+      return {
+        roster,
+        deleted: Boolean(parsedValue.deleted),
+        legacyRoster
+      };
     }
     return { roster: [], deleted: false };
   }
 
   function serializeMatchPlayers(match) {
-    const roster = Array.isArray(match?.players) ? match.players.slice() : [];
+    const roster = normalizeRosterArray(match?.players);
     return { roster, deleted: Boolean(match?.deleted) };
   }
 
@@ -310,6 +317,7 @@ const apiClient = (() => {
       resultOpp: row.result_opp != null ? Number(row.result_opp) : null,
       firstServer: row.first_server ?? '',
       players: playersPayload.roster,
+      legacyPlayers: playersPayload.legacyRoster || null,
       sets: normalizeMatchSets(metadata.sets),
       finalizedSets: metadata.finalizedSets,
       _deleted: deleted
@@ -479,6 +487,51 @@ function normalizePlayerId(value) {
   }
   return String(value);
 }
+
+function normalizeRosterEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const playerId = normalizePlayerId(
+    entry.playerId ?? entry.id ?? entry.player_id ?? entry.player ?? null
+  );
+  if (playerId === null) {
+    return null;
+  }
+  const rawTemp = entry.tempNumber ?? entry.temp_number ?? entry.temp ?? null;
+  const tempString = rawTemp === null || rawTemp === undefined ? '' : String(rawTemp).trim();
+  const normalized = { playerId };
+  if (tempString) {
+    normalized.tempNumber = tempString;
+  }
+  return normalized;
+}
+
+function normalizeRosterArray(roster) {
+  if (!Array.isArray(roster)) {
+    return [];
+  }
+  const seen = new Set();
+  const normalizedRoster = [];
+  roster.forEach(entry => {
+    const normalized = normalizeRosterEntry(entry);
+    if (!normalized) {
+      return;
+    }
+    if (seen.has(normalized.playerId)) {
+      const existingIndex = normalizedRoster.findIndex(
+        candidate => candidate.playerId === normalized.playerId
+      );
+      if (existingIndex !== -1 && normalized.tempNumber) {
+        normalizedRoster[existingIndex] = normalized;
+      }
+      return;
+    }
+    seen.add(normalized.playerId);
+    normalizedRoster.push(normalized);
+  });
+  return normalizedRoster;
+}
     let finalizedSets = {};
     let isSwapped = false;
     let editingPlayerId = null;
@@ -549,11 +602,36 @@ function normalizePlayerId(value) {
         }
       });
     }
-    function formatPlayerRecord(player) {
+    function formatLegacyPlayerRecord(player) {
       const number = String(player.number ?? '').trim();
       const lastName = String(player.lastName ?? '').trim();
       const initial = String(player.initial ?? '').trim();
       return [number, lastName, initial].filter(Boolean).join(' ');
+    }
+
+    function getPlayerDisplayData(player) {
+      if (!player) {
+        return { id: null, number: '', tempNumber: '', lastName: '', initial: '' };
+      }
+      const id = normalizePlayerId(player.id);
+      const number = String(player.number ?? '').trim();
+      const lastName = String(player.lastName ?? '').trim();
+      const initial = String(player.initial ?? '').trim();
+      let tempNumber = '';
+      if (id !== null && temporaryPlayerNumbers.has(id)) {
+        const rawTemp = temporaryPlayerNumbers.get(id);
+        if (rawTemp !== null && rawTemp !== undefined) {
+          tempNumber = String(rawTemp).trim();
+        }
+      }
+      return { id, number, tempNumber, lastName, initial };
+    }
+
+    function formatPlayerRecord(player) {
+      const { number, tempNumber, lastName, initial } = getPlayerDisplayData(player);
+      const displayNumber = tempNumber || number;
+      const nameText = [lastName, initial].filter(Boolean).join(' ');
+      return [displayNumber, nameText].filter(Boolean).join(' ');
     }
 
 
@@ -609,7 +687,7 @@ function normalizePlayerId(value) {
       const safeRecords = Array.isArray(records) ? records : [];
       const sortedRecords = sortPlayerRecords(safeRecords);
       playerRecords = sortedRecords;
-      players = sortedRecords.map(formatPlayerRecord);
+      players = sortedRecords.map(getPlayerDisplayData);
       const validIds = new Set(sortedRecords.map(record => normalizePlayerId(record.id)).filter(id => id !== null));
       Array.from(temporaryPlayerNumbers.keys()).forEach(playerId => {
         if (!validIds.has(playerId)) {
@@ -1694,17 +1772,27 @@ function normalizePlayerId(value) {
     function updatePlayerList() {
       const list = document.getElementById('playerList');
       list.innerHTML = '';
+      const rosterSelection = Array.isArray(loadedMatchPlayers) ? loadedMatchPlayers : [];
       players.forEach((player, index) => {
         const div = document.createElement('div');
         div.className = 'player-item form-check';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.value = player;
         checkbox.className = 'form-check-input';
         const checkboxId = `player-select-${index}`;
         checkbox.id = checkboxId;
-        if (loadedMatchPlayers.includes(player)) {
-          checkbox.checked = true;
+        const normalizedId = player.id;
+        if (normalizedId !== null) {
+          checkbox.value = normalizedId;
+          checkbox.dataset.playerId = normalizedId;
+          if (
+            rosterSelection.some(entry => normalizePlayerId(entry?.playerId) === normalizedId)
+          ) {
+            checkbox.checked = true;
+          }
+        } else {
+          checkbox.value = '';
+          checkbox.disabled = true;
         }
         div.appendChild(checkbox);
         const label = document.createElement('label');
@@ -2348,14 +2436,23 @@ function normalizePlayerId(value) {
 
     function createPlayerDisplay(player) {
       const fragment = document.createDocumentFragment();
-      const playerParts = player.trim().split(/\s+/);
-      const numberPart = playerParts.shift() || '';
-      const nameText = playerParts.join(' ').trim();
+      if (!player || typeof player !== 'object') {
+        const fallback = document.createElement('span');
+        fallback.className = 'player-name';
+        fallback.textContent = typeof player === 'string' ? player : '';
+        fragment.appendChild(fallback);
+        return fragment;
+      }
 
-      if (numberPart) {
+      const displayNumber = String(player.tempNumber || player.number || '').trim();
+      const lastName = String(player.lastName || '').trim();
+      const initial = String(player.initial || '').trim();
+      const nameText = [lastName, initial].filter(Boolean).join(' ');
+
+      if (displayNumber) {
         const numberCircle = document.createElement('span');
         numberCircle.className = 'player-number-circle';
-        numberCircle.textContent = numberPart;
+        numberCircle.textContent = displayNumber;
         const jerseyColor = document.getElementById('jerseyColorHome').value;
         const { backgroundColor, textColor } = getJerseyColorStyles(jerseyColor);
         numberCircle.style.backgroundColor = backgroundColor;
@@ -2385,9 +2482,8 @@ function normalizePlayerId(value) {
 
         const displayContainer = document.createElement('div');
         displayContainer.className = 'd-flex align-items-center';
-        const playerDisplay = createPlayerDisplay(
-          formatPlayerRecord(playerData)
-        );
+        const displayData = getPlayerDisplayData(playerData);
+        const playerDisplay = createPlayerDisplay(displayData);
         displayContainer.appendChild(playerDisplay);
         const recordId = normalizePlayerId(playerData.id);
         if (recordId !== null && temporaryPlayerNumbers.has(recordId)) {
@@ -2652,6 +2748,27 @@ function normalizePlayerId(value) {
         const value = parseInt(element.value, 10);
         return Number.isNaN(value) ? null : value;
       };
+      const rosterSelections = [];
+      const seenRosterIds = new Set();
+      document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
+        if (!cb.checked) return;
+        const playerId = normalizePlayerId(cb.dataset.playerId ?? cb.value);
+        if (playerId === null || seenRosterIds.has(playerId)) {
+          return;
+        }
+        seenRosterIds.add(playerId);
+        const rosterEntry = { playerId };
+        const tempValue = temporaryPlayerNumbers.get(playerId);
+        if (tempValue !== null && tempValue !== undefined) {
+          const tempString = String(tempValue).trim();
+          if (tempString) {
+            rosterEntry.tempNumber = tempString;
+          }
+        }
+        rosterSelections.push(rosterEntry);
+      });
+      const normalizedRosterSelections = normalizeRosterArray(rosterSelections);
+
       const match = {
         date: document.getElementById('date').value,
         location: document.getElementById('location').value,
@@ -2667,7 +2784,7 @@ function normalizePlayerId(value) {
         resultHome: parseResultValue('resultHome'),
         resultOpp: parseResultValue('resultOpp'),
         firstServer: document.getElementById('firstServer').value,
-        players: Array.from(document.querySelectorAll('#playerList input[type="checkbox"]:checked')).map(cb => cb.value),
+        players: normalizedRosterSelections,
         sets: {
           1: {
             home: normalizeScoreInputValue(document.getElementById('set1Home').value),
@@ -2701,7 +2818,7 @@ function normalizePlayerId(value) {
       const { body } = apiClient.prepareMatchPayload(match);
       const setStates = collectSetFormState();
       const matchId = currentMatchId;
-      loadedMatchPlayers = [...match.players];
+      loadedMatchPlayers = normalizedRosterSelections.map(entry => ({ ...entry }));
       try {
         const response = matchId !== null
           ? await apiClient.updateMatch(matchId, match)
@@ -2754,7 +2871,76 @@ function normalizePlayerId(value) {
     }
 
 
-    
+    function applyTemporaryNumbersFromRoster(roster) {
+      if (!Array.isArray(roster)) {
+        return;
+      }
+      roster.forEach(entry => {
+        const normalized = normalizeRosterEntry(entry);
+        if (!normalized) {
+          return;
+        }
+        const { playerId, tempNumber } = normalized;
+        if (tempNumber) {
+          temporaryPlayerNumbers.set(playerId, tempNumber);
+        } else {
+          temporaryPlayerNumbers.delete(playerId);
+        }
+      });
+    }
+
+    function convertLegacyRosterEntries(legacyRoster) {
+      if (!Array.isArray(legacyRoster) || legacyRoster.length === 0) {
+        return [];
+      }
+      const lookup = new Map();
+      playerRecords.forEach(record => {
+        const recordId = normalizePlayerId(record.id);
+        if (recordId === null) {
+          return;
+        }
+        const key = formatLegacyPlayerRecord(record).toLocaleLowerCase();
+        if (!key || lookup.has(key)) {
+          return;
+        }
+        lookup.set(key, recordId);
+      });
+      const converted = [];
+      const seen = new Set();
+      legacyRoster.forEach(entry => {
+        if (typeof entry !== 'string') {
+          return;
+        }
+        const normalizedKey = entry.trim().toLocaleLowerCase();
+        if (!normalizedKey) {
+          return;
+        }
+        const playerId = lookup.get(normalizedKey);
+        if (!playerId || seen.has(playerId)) {
+          return;
+        }
+        seen.add(playerId);
+        converted.push({ playerId });
+      });
+      return converted;
+    }
+
+    function extractRosterFromMatch(match) {
+      if (!match) {
+        return [];
+      }
+      const structuredRoster = normalizeRosterArray(match.players);
+      if (structuredRoster.length > 0) {
+        return structuredRoster;
+      }
+      if (Array.isArray(match.legacyPlayers) && match.legacyPlayers.length > 0) {
+        return normalizeRosterArray(convertLegacyRosterEntries(match.legacyPlayers));
+      }
+      return [];
+    }
+
+
+
     async function loadMatchFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       const matchId = urlParams.get('matchId');
@@ -2792,7 +2978,10 @@ function normalizePlayerId(value) {
           const match = await apiClient.getMatch(matchId);
           if (match) {
             currentMatchId = match.id;
-            loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
+            const roster = extractRosterFromMatch(match);
+            loadedMatchPlayers = roster.map(entry => ({ ...entry }));
+            match.players = loadedMatchPlayers.map(entry => ({ ...entry }));
+            applyTemporaryNumbersFromRoster(loadedMatchPlayers);
             document.getElementById('date').value = match.date || '';
             document.getElementById('location').value = match.location || '';
             document.getElementById('tournament').checked = Boolean(match.types?.tournament);
@@ -2810,7 +2999,6 @@ function normalizePlayerId(value) {
             const storedFirstServer = match.firstServer || '';
             updateOpponentName();
             setFirstServerSelection(storedFirstServer);
-            updatePlayerList();
             const setRows = match.id ? await apiClient.getMatchSets(match.id) : [];
             const setsFromRows = primeMatchSetRecords(setRows);
             const combinedSets = Object.keys(setsFromRows).length > 0 ? setsFromRows : match.sets;
@@ -2845,7 +3033,6 @@ function normalizePlayerId(value) {
             loadedMatchPlayers = [];
             finalizedSets = {};
             resetFinalizeButtons();
-            updatePlayerList();
           }
         } catch (error) {
           console.error('Failed to load match', error);
@@ -2854,15 +3041,14 @@ function normalizePlayerId(value) {
           loadedMatchPlayers = [];
           finalizedSets = {};
           resetFinalizeButtons();
-          updatePlayerList();
         }
       } else {
         currentMatchId = matchId ? parseInt(matchId, 10) : null;
         loadedMatchPlayers = [];
         finalizedSets = {};
         resetFinalizeButtons();
-        updatePlayerList();
       }
+      setPlayerRecords(playerRecords);
       hasPendingChanges = false;
       suppressAutoSave = false;
     }
