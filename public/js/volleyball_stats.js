@@ -655,20 +655,34 @@ function normalizeRosterArray(roster) {
     }
 
 
+    function getSortablePlayerNumber(player) {
+      const { number, tempNumber } = getPlayerDisplayData(player);
+      const rawValue = (tempNumber || number || '').trim();
+      const numericValue = parseInt(rawValue, 10);
+      return {
+        rawValue,
+        numericValue,
+        hasNumericValue: !Number.isNaN(numericValue)
+      };
+    }
+
     function comparePlayersByNumber(a, b) {
-      const numberA = parseInt(a.number, 10);
-      const numberB = parseInt(b.number, 10);
-      if (!Number.isNaN(numberA) && !Number.isNaN(numberB) && numberA !== numberB) {
-        return numberA - numberB;
+      const numberA = getSortablePlayerNumber(a);
+      const numberB = getSortablePlayerNumber(b);
+      if (numberA.hasNumericValue && numberB.hasNumericValue && numberA.numericValue !== numberB.numericValue) {
+        return numberA.numericValue - numberB.numericValue;
       }
-      if (!Number.isNaN(numberA) && Number.isNaN(numberB)) {
+      if (numberA.hasNumericValue && !numberB.hasNumericValue) {
         return -1;
       }
-      if (Number.isNaN(numberA) && !Number.isNaN(numberB)) {
+      if (!numberA.hasNumericValue && numberB.hasNumericValue) {
         return 1;
       }
       const nameA = formatPlayerRecord(a);
       const nameB = formatPlayerRecord(b);
+      if (numberA.rawValue && numberB.rawValue && numberA.rawValue !== numberB.rawValue) {
+        return numberA.rawValue.localeCompare(numberB.rawValue, undefined, { sensitivity: 'base' });
+      }
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
     }
 
