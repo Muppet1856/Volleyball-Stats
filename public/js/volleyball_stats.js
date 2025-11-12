@@ -922,6 +922,34 @@ function normalizeRosterArray(roster) {
       return clampScoreValue(value).toString().padStart(2, '0');
     }
 
+    function getSetScoreInputs(setNumber) {
+      return {
+        homeInput: document.getElementById(`set${setNumber}Home`),
+        oppInput: document.getElementById(`set${setNumber}Opp`)
+      };
+    }
+
+    function syncSetInputsToStoredScores(setNumber, record) {
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      const homeValue = record ? record.homeScore : null;
+      const oppValue = record ? record.oppScore : null;
+      if (homeInput) {
+        homeInput.value = formatScoreInputValue(homeValue);
+      }
+      if (oppInput) {
+        oppInput.value = formatScoreInputValue(oppValue);
+      }
+      if (scoreGameState.setNumber === setNumber) {
+        const normalizedHome = homeInput ? parseScoreValue(homeInput.value) : null;
+        const normalizedOpp = oppInput ? parseScoreValue(oppInput.value) : null;
+        scoreGameState.home = normalizedHome;
+        scoreGameState.opp = normalizedOpp;
+        updateScoreModalDisplay();
+      }
+      updateFinalizeButtonState(setNumber);
+      calculateResult();
+    }
+
     function normalizeScoreInputValue(rawValue) {
       const parsed = parseScoreValue(rawValue);
       return parsed === null ? '' : clampScoreValue(parsed).toString();
@@ -1494,6 +1522,13 @@ function normalizeRosterArray(roster) {
     }
 
     function adjustScoreModal(team, delta) {
+      const { setNumber } = scoreGameState;
+      if (!setNumber) return;
+      if (finalizedSets[setNumber]) {
+        const existing = getMatchSetRecord(setNumber);
+        syncSetInputsToStoredScores(setNumber, existing);
+        return;
+      }
       const key = team === 'opp' ? 'opp' : 'home';
       const currentValue = scoreGameState[key];
       const baseValue = currentValue === null || currentValue === undefined ? 0 : currentValue;
@@ -2766,13 +2801,23 @@ function normalizeRosterArray(roster) {
         }
 
         try {
-          if (!scoresEqual(existing.homeScore, desired.homeScore)) {
-            await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
-            existing.homeScore = desired.homeScore;
-          }
-          if (!scoresEqual(existing.oppScore, desired.oppScore)) {
-            await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
-            existing.oppScore = desired.oppScore;
+          const setIsFinalized = Boolean(finalizedSets[setNumber]);
+          if (!setIsFinalized) {
+            if (!scoresEqual(existing.homeScore, desired.homeScore)) {
+              await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
+              existing.homeScore = desired.homeScore;
+            }
+            if (!scoresEqual(existing.oppScore, desired.oppScore)) {
+              await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+              existing.oppScore = desired.oppScore;
+            }
+          } else {
+            const scoresChanged =
+              !scoresEqual(existing.homeScore, desired.homeScore) ||
+              !scoresEqual(existing.oppScore, desired.oppScore);
+            if (scoresChanged) {
+              syncSetInputsToStoredScores(setNumber, existing);
+            }
           }
           for (let index = 0; index < desired.timeouts.home.length; index += 1) {
             const value = desired.timeouts.home[index];
