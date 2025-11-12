@@ -601,7 +601,7 @@ function normalizeRosterArray(roster) {
       }
     };
     let matchTimeouts = createEmptyMatchTimeouts();
-    const finalizeButtonPopoverTimers = new WeakMap();
+    const finalizePopoverTimers = new WeakMap();
     const finalizedStatePopoverTimers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
     const FINALIZE_TIE_POPOVER_MESSAGE = 'Set scores are tied. Adjust one team\'s score before marking the set final.';
@@ -619,6 +619,9 @@ function normalizeRosterArray(roster) {
         customClass: 'finalize-final-popover'
       }
     };
+    const SCORE_FINALIZED_BACKGROUND_BLEND = 0.5;
+    const SCORE_FINALIZED_TEXT_BLEND = 0.35;
+    const SCORE_FINALIZED_GRAY_COLOR = { r: 173, g: 181, b: 189, a: 1 };
 
     function getScoreGameModalDialog() {
       const modalElement = document.getElementById('scoreGameModal');
@@ -980,33 +983,33 @@ function normalizeRosterArray(roster) {
       return normalizeScoreInputValue(String(value));
     }
 
-    function clearFinalizePopoverTimer(button) {
-      const timerId = finalizeButtonPopoverTimers.get(button);
+    function clearFinalizePopoverTimer(element) {
+      const timerId = finalizePopoverTimers.get(element);
       if (timerId) {
         clearTimeout(timerId);
-        finalizeButtonPopoverTimers.delete(button);
+        finalizePopoverTimers.delete(element);
       }
     }
 
-    function clearFinalizedStatePopoverTimer(button) {
-      const timerId = finalizedStatePopoverTimers.get(button);
+    function clearFinalizedStatePopoverTimer(element) {
+      const timerId = finalizedStatePopoverTimers.get(element);
       if (timerId) {
         clearTimeout(timerId);
-        finalizedStatePopoverTimers.delete(button);
+        finalizedStatePopoverTimers.delete(element);
       }
     }
 
-    function ensureFinalizePopover(button, type) {
-      if (!button) return null;
+    function ensureFinalizePopover(element, type) {
+      if (!element) return null;
       const desiredType = type && FINALIZE_POPOVER_CONFIG[type] ? type : 'tie';
-      const existingType = button.dataset.finalizePopoverType;
-      let popover = bootstrap.Popover.getInstance(button);
+      const existingType = element.dataset.finalizePopoverType;
+      let popover = bootstrap.Popover.getInstance(element);
       if (!popover || existingType !== desiredType) {
         if (popover) {
           popover.dispose();
         }
         const config = FINALIZE_POPOVER_CONFIG[desiredType];
-        popover = new bootstrap.Popover(button, {
+        popover = new bootstrap.Popover(element, {
           container: 'body',
           trigger: 'manual focus hover',
           placement: 'top',
@@ -1014,7 +1017,7 @@ function normalizeRosterArray(roster) {
           content: config.content,
           customClass: config.customClass
         });
-        button.dataset.finalizePopoverType = desiredType;
+        element.dataset.finalizePopoverType = desiredType;
       } else {
         const config = FINALIZE_POPOVER_CONFIG[desiredType];
         if (typeof popover.setContent === 'function') {
@@ -1023,43 +1026,132 @@ function normalizeRosterArray(roster) {
             '.popover-body': config.content
           });
         } else {
-          button.setAttribute('data-bs-original-title', config.title);
-          button.setAttribute('data-bs-content', config.content);
+          element.setAttribute('data-bs-original-title', config.title);
+          element.setAttribute('data-bs-content', config.content);
         }
       }
       return popover;
     }
 
-    function showFinalizedStatePopover(button) {
-      if (!button) return;
-      clearFinalizePopoverTimer(button);
-      const popover = ensureFinalizePopover(button, 'finalized');
+    function showFinalizedStatePopover(element, { focus = false } = {}) {
+      if (!element) return;
+      clearFinalizePopoverTimer(element);
+      const popover = ensureFinalizePopover(element, 'finalized');
       if (!popover) return;
       popover.show();
-      try {
-        button.focus({ preventScroll: true });
-      } catch (error) {
-        button.focus();
+      if (focus) {
+        try {
+          element.focus({ preventScroll: true });
+        } catch (error) {
+          element.focus();
+        }
       }
-      clearFinalizedStatePopoverTimer(button);
+      clearFinalizedStatePopoverTimer(element);
       const timerId = setTimeout(() => {
         popover.hide();
-        finalizedStatePopoverTimers.delete(button);
+        finalizedStatePopoverTimers.delete(element);
       }, 2600);
-      finalizedStatePopoverTimers.set(button, timerId);
+      finalizedStatePopoverTimers.set(element, timerId);
     }
 
-    function destroyFinalizedStatePopover(button) {
-      if (!button) return;
-      clearFinalizedStatePopoverTimer(button);
-      if (button.dataset.finalizePopoverType === 'finalized') {
-        const popover = bootstrap.Popover.getInstance(button);
+    function destroyFinalizedStatePopover(element) {
+      if (!element) return;
+      clearFinalizedStatePopoverTimer(element);
+      if (element.dataset.finalizePopoverType === 'finalized') {
+        const popover = bootstrap.Popover.getInstance(element);
         if (popover) {
           popover.hide();
           popover.dispose();
         }
-        delete button.dataset.finalizePopoverType;
+        delete element.dataset.finalizePopoverType;
       }
+    }
+
+    function hideFinalizeTiePopover(element) {
+      if (!element) return;
+      clearFinalizePopoverTimer(element);
+      if (element.dataset.finalizePopoverType === 'tie') {
+        const popover = bootstrap.Popover.getInstance(element);
+        if (popover) {
+          popover.hide();
+          popover.dispose();
+        }
+        delete element.dataset.finalizePopoverType;
+      }
+    }
+
+    function getFinalizePopoverTargets(setNumber) {
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
+      return [scoreButton, homeInput, oppInput].filter(Boolean);
+    }
+
+    function showFinalizeTiePopover(element, { focus = false } = {}) {
+      if (!element) return;
+      const popover = ensureFinalizePopover(element, 'tie');
+      if (!popover) return;
+      popover.show();
+      if (focus) {
+        try {
+          element.focus({ preventScroll: true });
+        } catch (error) {
+          element.focus();
+        }
+      }
+      clearFinalizePopoverTimer(element);
+      const timerId = setTimeout(() => {
+        popover.hide();
+        finalizePopoverTimers.delete(element);
+      }, 2400);
+      finalizePopoverTimers.set(element, timerId);
+    }
+
+    function showFinalizeTiePopovers(setNumber) {
+      const targets = getFinalizePopoverTargets(setNumber);
+      targets.forEach((element, index) => {
+        showFinalizeTiePopover(element, { focus: index === 0 });
+      });
+    }
+
+    function showFinalizedStatePopovers(setNumber, { focusFirst = false } = {}) {
+      const targets = getFinalizePopoverTargets(setNumber);
+      targets.forEach((element, index) => {
+        showFinalizedStatePopover(element, { focus: focusFirst && index === 0 });
+      });
+    }
+
+    function ensureFinalizedPopoverTargets(setNumber) {
+      getFinalizePopoverTargets(setNumber).forEach((element) => ensureFinalizePopover(element, 'finalized'));
+    }
+
+    function destroyFinalizedPopoverTargets(setNumber) {
+      getFinalizePopoverTargets(setNumber).forEach((element) => destroyFinalizedStatePopover(element));
+    }
+
+    function colorObjectToCss(color) {
+      if (!color) return '';
+      const r = Math.round(Math.max(0, Math.min(255, color.r ?? 0)));
+      const g = Math.round(Math.max(0, Math.min(255, color.g ?? 0)));
+      const b = Math.round(Math.max(0, Math.min(255, color.b ?? 0)));
+      const alpha = color.a === undefined ? 1 : Math.max(0, Math.min(1, color.a));
+      if (alpha >= 1) {
+        return `rgb(${r}, ${g}, ${b})`;
+      }
+      return `rgba(${r}, ${g}, ${b}, ${Number(alpha.toFixed(3))})`;
+    }
+
+    function mixColorWithGray(colorString, ratio = SCORE_FINALIZED_BACKGROUND_BLEND) {
+      if (!colorString) return null;
+      const base = parseCssColor(colorString);
+      if (!base) return null;
+      const blendRatio = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : SCORE_FINALIZED_BACKGROUND_BLEND;
+      const gray = SCORE_FINALIZED_GRAY_COLOR;
+      return {
+        r: base.r * (1 - blendRatio) + gray.r * blendRatio,
+        g: base.g * (1 - blendRatio) + gray.g * blendRatio,
+        b: base.b * (1 - blendRatio) + gray.b * blendRatio,
+        a: base.a
+      };
     }
 
     function setSetScoreEditingDisabled(setNumber, disabled) {
@@ -1067,6 +1159,27 @@ function normalizeRosterArray(roster) {
       [homeInput, oppInput].forEach((input) => {
         if (!input) return;
         if (disabled) {
+          const computed = window.getComputedStyle(input);
+          const originalBackground = computed.backgroundColor;
+          const originalColor = computed.color;
+          if (originalBackground) {
+            input.dataset.scoreOriginalBackground = originalBackground;
+          } else {
+            delete input.dataset.scoreOriginalBackground;
+          }
+          if (originalColor) {
+            input.dataset.scoreOriginalColor = originalColor;
+          } else {
+            delete input.dataset.scoreOriginalColor;
+          }
+          const mutedBackground = mixColorWithGray(originalBackground, SCORE_FINALIZED_BACKGROUND_BLEND);
+          const mutedText = mixColorWithGray(originalColor, SCORE_FINALIZED_TEXT_BLEND);
+          if (mutedBackground) {
+            input.style.backgroundColor = colorObjectToCss(mutedBackground);
+          }
+          if (mutedText) {
+            input.style.color = colorObjectToCss(mutedText);
+          }
           input.setAttribute('disabled', 'disabled');
           input.disabled = true;
           input.classList.add('set-score-finalized');
@@ -1074,6 +1187,18 @@ function normalizeRosterArray(roster) {
           input.removeAttribute('disabled');
           input.disabled = false;
           input.classList.remove('set-score-finalized');
+          if (input.dataset.scoreOriginalBackground) {
+            input.style.backgroundColor = input.dataset.scoreOriginalBackground;
+          } else {
+            input.style.removeProperty('background-color');
+          }
+          if (input.dataset.scoreOriginalColor) {
+            input.style.color = input.dataset.scoreOriginalColor;
+          } else {
+            input.style.removeProperty('color');
+          }
+          delete input.dataset.scoreOriginalBackground;
+          delete input.dataset.scoreOriginalColor;
         }
       });
       const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
@@ -1092,24 +1217,6 @@ function normalizeRosterArray(roster) {
       }
     }
 
-    function showFinalizeTiePopover(button) {
-      if (!button) return;
-      const popover = ensureFinalizePopover(button, 'tie');
-      if (!popover) return;
-      popover.show();
-      try {
-        button.focus({ preventScroll: true });
-      } catch (error) {
-        button.focus();
-      }
-      clearFinalizePopoverTimer(button);
-      const timerId = setTimeout(() => {
-        popover.hide();
-        finalizeButtonPopoverTimers.delete(button);
-      }, 2400);
-      finalizeButtonPopoverTimers.set(button, timerId);
-    }
-
     function updateFinalizeButtonState(setNumber) {
       const button = document.getElementById(`finalizeButton${setNumber}`);
       const homeInput = document.getElementById(`set${setNumber}Home`);
@@ -1117,6 +1224,8 @@ function normalizeRosterArray(roster) {
       if (!button || !homeInput || !oppInput) {
         return { isTie: false, finalStateChanged: false, isFinal: false };
       }
+      const popoverTargets = getFinalizePopoverTargets(setNumber);
+      hideFinalizeTiePopover(button);
       const homeRaw = homeInput.value.trim();
       const oppRaw = oppInput.value.trim();
       const bothScoresEntered = homeRaw !== '' && oppRaw !== '';
@@ -1128,13 +1237,7 @@ function normalizeRosterArray(roster) {
         button.setAttribute('aria-disabled', 'true');
       } else {
         button.removeAttribute('aria-disabled');
-      }
-      if (!isTie) {
-        const popover = bootstrap.Popover.getInstance(button);
-        if (popover) {
-          popover.hide();
-        }
-        clearFinalizePopoverTimer(button);
+        popoverTargets.forEach((element) => hideFinalizeTiePopover(element));
       }
       let finalStateChanged = false;
       if (isTie && finalizedSets[setNumber]) {
@@ -1151,13 +1254,14 @@ function normalizeRosterArray(roster) {
       setSetScoreEditingDisabled(setNumber, isFinal);
       if (isFinal) {
         if (button.dataset.finalizeInitialized === 'true' && finalStateChanged) {
-          showFinalizedStatePopover(button);
+          showFinalizedStatePopovers(setNumber, { focusFirst: true });
         } else {
-          ensureFinalizePopover(button, 'finalized');
+          ensureFinalizedPopoverTargets(setNumber);
         }
       } else {
-        destroyFinalizedStatePopover(button);
+        destroyFinalizedPopoverTargets(setNumber);
       }
+      destroyFinalizedStatePopover(button);
       button.dataset.finalized = isFinal ? 'true' : 'false';
       if (button.dataset.finalizeInitialized !== 'true') {
         button.dataset.finalizeInitialized = 'true';
@@ -2794,7 +2898,7 @@ function normalizeRosterArray(roster) {
       const oppScore = parseScoreValue(oppRaw);
       if (bothScoresEntered && homeScore === oppScore) {
         updateFinalizeButtonState(setNumber);
-        showFinalizeTiePopover(button);
+        showFinalizeTiePopovers(setNumber);
         return;
       }
       if (finalizedSets[setNumber]) {
