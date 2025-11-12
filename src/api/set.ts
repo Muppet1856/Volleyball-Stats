@@ -33,6 +33,111 @@ function normalizeTimeout(value: any): number {
   return 0;
 }
 
+const SET_NOT_FOUND_ERROR = "SET_NOT_FOUND";
+const SET_FINALIZED_ERROR = "SET_FINALIZED";
+
+function parseFinalizedSetsColumn(value: any): Record<number, boolean> {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return {};
+    }
+    try {
+      return parseFinalizedSetsColumn(JSON.parse(trimmed));
+    } catch (error) {
+      return {};
+    }
+  }
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const result: Record<number, boolean> = {};
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      let setNumber: number;
+      if (entry && typeof entry === "object") {
+        if ("setNumber" in entry) {
+          setNumber = Number((entry as any).setNumber);
+        } else if ("set_number" in entry) {
+          setNumber = Number((entry as any).set_number);
+        } else {
+          setNumber = index + 1;
+        }
+      } else {
+        setNumber = index + 1;
+      }
+      if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) {
+        return;
+      }
+      let isFinal: boolean;
+      if (entry && typeof entry === "object" && "finalized" in entry) {
+        isFinal = Boolean((entry as any).finalized);
+      } else if (entry && typeof entry === "object" && "final" in entry) {
+        isFinal = Boolean((entry as any).final);
+      } else {
+        isFinal = Boolean(entry);
+      }
+      result[setNumber] = isFinal;
+    });
+    return result;
+  }
+  Object.entries(value).forEach(([key, val]) => {
+    const setNumber = Number(key);
+    if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) {
+      return;
+    }
+    result[setNumber] = Boolean(val);
+  });
+  return result;
+}
+
+function updateScoreWithFinalizedGuard(
+  storage: any,
+  setId: number,
+  column: "home_score" | "opp_score",
+  scoreValue: number | null,
+  successMessage: string,
+  errorPrefix: string
+): Response {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+      const setCursor = sql.exec(`SELECT match_id, set_number FROM sets WHERE id = ?`, setId);
+      const setRow = setCursor.toArray()[0];
+      if (!setRow) {
+        throw new Error(SET_NOT_FOUND_ERROR);
+      }
+      const matchId = Number(setRow.match_id);
+      const setNumber = Number(setRow.set_number);
+      if (!Number.isInteger(matchId) || !Number.isInteger(setNumber)) {
+        throw new Error(SET_NOT_FOUND_ERROR);
+      }
+      const matchCursor = sql.exec(`SELECT finalized_sets FROM matches WHERE id = ?`, matchId);
+      const matchRow = matchCursor.toArray()[0];
+      if (!matchRow) {
+        throw new Error(SET_NOT_FOUND_ERROR);
+      }
+      const finalizedSets = parseFinalizedSetsColumn(matchRow.finalized_sets);
+      if (finalizedSets[setNumber]) {
+        throw new Error(SET_FINALIZED_ERROR);
+      }
+      sql.exec(`UPDATE sets SET ${column} = ? WHERE id = ?`, normalizeScore(scoreValue), setId);
+    });
+    return textResponse(successMessage, 200);
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === SET_NOT_FOUND_ERROR) {
+        return errorResponse("Set not found", 404);
+      }
+      if (error.message === SET_FINALIZED_ERROR) {
+        return errorResponse("Set is finalized; scores cannot be updated", 409);
+      }
+      return errorResponse(`${errorPrefix}: ${error.message}`, 500);
+    }
+    return errorResponse(`${errorPrefix}: Unknown error`, 500);
+  }
+}
+
 export async function createSet(storage: any, request: Request): Promise<Response> {
   const sql = storage.sql;
   const body = await request.json();  // Expect JSON: { match_id: number, set_number: 1-5, ... }
@@ -70,27 +175,25 @@ export async function createSet(storage: any, request: Request): Promise<Respons
 }
 
 export async function setHomeScore(storage: any, setId: number, homeScore: number | null): Promise<Response> {
-  const sql = storage.sql;
-  try {
-    storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET home_score = ? WHERE id = ?`, normalizeScore(homeScore), setId);
-    });
-    return textResponse("Home score updated successfully", 200);
-  } catch (error) {
-    return errorResponse("Error updating home score: " + (error as Error).message, 500);
-  }
+  return updateScoreWithFinalizedGuard(
+    storage,
+    setId,
+    "home_score",
+    homeScore,
+    "Home score updated successfully",
+    "Error updating home score"
+  );
 }
 
 export async function setOppScore(storage: any, setId: number, oppScore: number | null): Promise<Response> {
-  const sql = storage.sql;
-  try {
-    storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET opp_score = ? WHERE id = ?`, normalizeScore(oppScore), setId);
-    });
-    return textResponse("Opponent score updated successfully", 200);
-  } catch (error) {
-    return errorResponse("Error updating opponent score: " + (error as Error).message, 500);
-  }
+  return updateScoreWithFinalizedGuard(
+    storage,
+    setId,
+    "opp_score",
+    oppScore,
+    "Opponent score updated successfully",
+    "Error updating opponent score"
+  );
 }
 
 export async function setHomeTimeout(storage: any, setId: number, timeoutNumber: 1 | 2, value: 0 | 1): Promise<Response> {
