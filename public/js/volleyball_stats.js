@@ -1113,13 +1113,6 @@ function normalizeRosterArray(roster) {
       });
     }
 
-    function showFinalizedStatePopovers(setNumber, { focusFirst = false } = {}) {
-      const targets = getFinalizePopoverTargets(setNumber);
-      targets.forEach((element, index) => {
-        showFinalizedStatePopover(element, { focus: focusFirst && index === 0 });
-      });
-    }
-
     function ensureFinalizedPopoverTargets(setNumber) {
       getFinalizePopoverTargets(setNumber).forEach((element) => ensureFinalizePopover(element, 'finalized'));
     }
@@ -1206,14 +1199,14 @@ function normalizeRosterArray(roster) {
         if (disabled) {
           scoreButton.classList.add('disabled');
           scoreButton.setAttribute('aria-disabled', 'true');
-          scoreButton.setAttribute('disabled', 'disabled');
-          scoreButton.disabled = true;
+          scoreButton.dataset.scoreGameDisabled = 'true';
         } else {
           scoreButton.classList.remove('disabled');
           scoreButton.removeAttribute('aria-disabled');
-          scoreButton.removeAttribute('disabled');
-          scoreButton.disabled = false;
+          delete scoreButton.dataset.scoreGameDisabled;
         }
+        scoreButton.removeAttribute('disabled');
+        scoreButton.disabled = false;
       }
     }
 
@@ -1253,11 +1246,7 @@ function normalizeRosterArray(roster) {
       button.classList.toggle('finalized-btn', isFinal);
       setSetScoreEditingDisabled(setNumber, isFinal);
       if (isFinal) {
-        if (button.dataset.finalizeInitialized === 'true' && finalStateChanged) {
-          showFinalizedStatePopovers(setNumber, { focusFirst: true });
-        } else {
-          ensureFinalizedPopoverTargets(setNumber);
-        }
+        ensureFinalizedPopoverTargets(setNumber);
       } else {
         destroyFinalizedPopoverTargets(setNumber);
       }
@@ -1765,17 +1754,18 @@ function normalizeRosterArray(roster) {
       applyScoreModalToInputs();
     }
 
-    function openScoreGameModal(setNumber) {
+    function openScoreGameModal(setNumber, { triggerElement = null } = {}) {
       if (finalizedSets[setNumber]) {
         const finalizeButton = document.getElementById(`finalizeButton${setNumber}`);
-        if (finalizeButton) {
-          showFinalizedStatePopover(finalizeButton);
+        const popoverTarget = triggerElement || document.querySelector(`.score-game-btn[data-set="${setNumber}"]`) || finalizeButton;
+        if (popoverTarget) {
+          showFinalizedStatePopover(popoverTarget);
         }
-        return;
+        return false;
       }
       const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!homeInput || !oppInput) return;
+      if (!homeInput || !oppInput) return false;
       if (scoreGameState.setNumber !== null) {
         persistCurrentSetTimeouts();
         if (scoreGameState.setNumber !== setNumber) {
@@ -1800,7 +1790,9 @@ function normalizeRosterArray(roster) {
       if (scoreGameModalInstance) {
         updateScoreGameModalLayout();
         scoreGameModalInstance.show();
+        return true;
       }
+      return false;
     }
 
     
@@ -3660,10 +3652,21 @@ function normalizeRosterArray(roster) {
         resetAllTimeouts({ resetStored: true });
       }
       document.querySelectorAll('.score-game-btn').forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (event) => {
           const setNumber = parseInt(button.getAttribute('data-set'), 10);
-          if (!Number.isNaN(setNumber)) {
-            openScoreGameModal(setNumber);
+          if (Number.isNaN(setNumber)) {
+            return;
+          }
+          if (button.dataset.scoreGameDisabled === 'true' || finalizedSets[setNumber]) {
+            event.preventDefault();
+            event.stopPropagation();
+            showFinalizedStatePopover(button);
+            return;
+          }
+          const didOpen = openScoreGameModal(setNumber, { triggerElement: button });
+          if (!didOpen) {
+            event.preventDefault();
+            event.stopPropagation();
           }
         });
       });
