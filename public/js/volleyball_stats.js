@@ -602,8 +602,23 @@ function normalizeRosterArray(roster) {
     };
     let matchTimeouts = createEmptyMatchTimeouts();
     const finalizeButtonPopoverTimers = new WeakMap();
+    const finalizedStatePopoverTimers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
     const FINALIZE_TIE_POPOVER_MESSAGE = 'Set scores are tied. Adjust one team\'s score before marking the set final.';
+    const FINALIZED_SET_POPOVER_TITLE = 'Score finalized';
+    const FINALIZED_SET_POPOVER_MESSAGE = 'This set\'s score is finalized. Toggle the final status to make changes.';
+    const FINALIZE_POPOVER_CONFIG = {
+      tie: {
+        title: FINALIZE_TIE_POPOVER_TITLE,
+        content: FINALIZE_TIE_POPOVER_MESSAGE,
+        customClass: 'finalize-error-popover'
+      },
+      finalized: {
+        title: FINALIZED_SET_POPOVER_TITLE,
+        content: FINALIZED_SET_POPOVER_MESSAGE,
+        customClass: 'finalize-final-popover'
+      }
+    };
 
     function getScoreGameModalDialog() {
       const modalElement = document.getElementById('scoreGameModal');
@@ -973,27 +988,114 @@ function normalizeRosterArray(roster) {
       }
     }
 
-    function showFinalizeTiePopover(button) {
-      if (!button) return;
+    function clearFinalizedStatePopoverTimer(button) {
+      const timerId = finalizedStatePopoverTimers.get(button);
+      if (timerId) {
+        clearTimeout(timerId);
+        finalizedStatePopoverTimers.delete(button);
+      }
+    }
+
+    function ensureFinalizePopover(button, type) {
+      if (!button) return null;
+      const desiredType = type && FINALIZE_POPOVER_CONFIG[type] ? type : 'tie';
+      const existingType = button.dataset.finalizePopoverType;
       let popover = bootstrap.Popover.getInstance(button);
-      if (!popover) {
+      if (!popover || existingType !== desiredType) {
+        if (popover) {
+          popover.dispose();
+        }
+        const config = FINALIZE_POPOVER_CONFIG[desiredType];
         popover = new bootstrap.Popover(button, {
           container: 'body',
-          trigger: 'manual',
+          trigger: 'manual focus hover',
           placement: 'top',
-          title: FINALIZE_TIE_POPOVER_TITLE,
-          content: FINALIZE_TIE_POPOVER_MESSAGE,
-          customClass: 'finalize-error-popover'
+          title: config.title,
+          content: config.content,
+          customClass: config.customClass
         });
-      } else if (typeof popover.setContent === 'function') {
-        popover.setContent({
-          '.popover-header': FINALIZE_TIE_POPOVER_TITLE,
-          '.popover-body': FINALIZE_TIE_POPOVER_MESSAGE
-        });
+        button.dataset.finalizePopoverType = desiredType;
       } else {
-        button.setAttribute('data-bs-original-title', FINALIZE_TIE_POPOVER_TITLE);
-        button.setAttribute('data-bs-content', FINALIZE_TIE_POPOVER_MESSAGE);
+        const config = FINALIZE_POPOVER_CONFIG[desiredType];
+        if (typeof popover.setContent === 'function') {
+          popover.setContent({
+            '.popover-header': config.title,
+            '.popover-body': config.content
+          });
+        } else {
+          button.setAttribute('data-bs-original-title', config.title);
+          button.setAttribute('data-bs-content', config.content);
+        }
       }
+      return popover;
+    }
+
+    function showFinalizedStatePopover(button) {
+      if (!button) return;
+      clearFinalizePopoverTimer(button);
+      const popover = ensureFinalizePopover(button, 'finalized');
+      if (!popover) return;
+      popover.show();
+      try {
+        button.focus({ preventScroll: true });
+      } catch (error) {
+        button.focus();
+      }
+      clearFinalizedStatePopoverTimer(button);
+      const timerId = setTimeout(() => {
+        popover.hide();
+        finalizedStatePopoverTimers.delete(button);
+      }, 2600);
+      finalizedStatePopoverTimers.set(button, timerId);
+    }
+
+    function destroyFinalizedStatePopover(button) {
+      if (!button) return;
+      clearFinalizedStatePopoverTimer(button);
+      if (button.dataset.finalizePopoverType === 'finalized') {
+        const popover = bootstrap.Popover.getInstance(button);
+        if (popover) {
+          popover.hide();
+          popover.dispose();
+        }
+        delete button.dataset.finalizePopoverType;
+      }
+    }
+
+    function setSetScoreEditingDisabled(setNumber, disabled) {
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      [homeInput, oppInput].forEach((input) => {
+        if (!input) return;
+        if (disabled) {
+          input.setAttribute('disabled', 'disabled');
+          input.disabled = true;
+          input.classList.add('set-score-finalized');
+        } else {
+          input.removeAttribute('disabled');
+          input.disabled = false;
+          input.classList.remove('set-score-finalized');
+        }
+      });
+      const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
+      if (scoreButton) {
+        if (disabled) {
+          scoreButton.classList.add('disabled');
+          scoreButton.setAttribute('aria-disabled', 'true');
+          scoreButton.setAttribute('disabled', 'disabled');
+          scoreButton.disabled = true;
+        } else {
+          scoreButton.classList.remove('disabled');
+          scoreButton.removeAttribute('aria-disabled');
+          scoreButton.removeAttribute('disabled');
+          scoreButton.disabled = false;
+        }
+      }
+    }
+
+    function showFinalizeTiePopover(button) {
+      if (!button) return;
+      const popover = ensureFinalizePopover(button, 'tie');
+      if (!popover) return;
       popover.show();
       try {
         button.focus({ preventScroll: true });
@@ -1013,7 +1115,7 @@ function normalizeRosterArray(roster) {
       const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
       if (!button || !homeInput || !oppInput) {
-        return { isTie: false, finalStateChanged: false };
+        return { isTie: false, finalStateChanged: false, isFinal: false };
       }
       const homeRaw = homeInput.value.trim();
       const oppRaw = oppInput.value.trim();
@@ -1040,7 +1142,27 @@ function normalizeRosterArray(roster) {
         button.classList.remove('finalized-btn');
         finalStateChanged = true;
       }
-      return { isTie, finalStateChanged };
+      const previousFinal = button.dataset.finalized === 'true';
+      const isFinal = Boolean(finalizedSets[setNumber]);
+      if (previousFinal !== isFinal) {
+        finalStateChanged = true;
+      }
+      button.classList.toggle('finalized-btn', isFinal);
+      setSetScoreEditingDisabled(setNumber, isFinal);
+      if (isFinal) {
+        if (button.dataset.finalizeInitialized === 'true' && finalStateChanged) {
+          showFinalizedStatePopover(button);
+        } else {
+          ensureFinalizePopover(button, 'finalized');
+        }
+      } else {
+        destroyFinalizedStatePopover(button);
+      }
+      button.dataset.finalized = isFinal ? 'true' : 'false';
+      if (button.dataset.finalizeInitialized !== 'true') {
+        button.dataset.finalizeInitialized = 'true';
+      }
+      return { isTie, finalStateChanged, isFinal };
     }
 
     function updateAllFinalizeButtonStates() {
@@ -1540,6 +1662,13 @@ function normalizeRosterArray(roster) {
     }
 
     function openScoreGameModal(setNumber) {
+      if (finalizedSets[setNumber]) {
+        const finalizeButton = document.getElementById(`finalizeButton${setNumber}`);
+        if (finalizeButton) {
+          showFinalizedStatePopover(finalizeButton);
+        }
+        return;
+      }
       const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
       if (!homeInput || !oppInput) return;
@@ -2670,10 +2799,8 @@ function normalizeRosterArray(roster) {
       }
       if (finalizedSets[setNumber]) {
         delete finalizedSets[setNumber];
-        button.classList.remove('finalized-btn');
       } else {
         finalizedSets[setNumber] = true;
-        button.classList.add('finalized-btn');
       }
       updateFinalizeButtonState(setNumber);
       calculateResult();
