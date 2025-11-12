@@ -126,21 +126,67 @@ const apiClient = (() => {
 
   function normalizeMatchSets(sets) {
     const normalized = {};
-    if (sets && typeof sets === 'object') {
+    if (!sets) {
+      return normalized;
+    }
+
+    const assignSet = (setNumber, data) => {
+      if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) return;
+      const timeouts = data && typeof data === 'object' ? data.timeouts || {} : {};
+      const homeTimeouts = Array.isArray(timeouts.home)
+        ? timeouts.home.map(Boolean)
+        : [Boolean(timeouts.home?.[0]), Boolean(timeouts.home?.[1])];
+      const oppTimeouts = Array.isArray(timeouts.opp)
+        ? timeouts.opp.map(Boolean)
+        : [Boolean(timeouts.opp?.[0]), Boolean(timeouts.opp?.[1])];
+      normalized[setNumber] = {
+        home: normalizeStoredScoreValue(data?.home ?? null),
+        opp: normalizeStoredScoreValue(data?.opp ?? null),
+        timeouts: {
+          home: [homeTimeouts[0] || false, homeTimeouts[1] || false],
+          opp: [oppTimeouts[0] || false, oppTimeouts[1] || false]
+        }
+      };
+    };
+
+    if (Array.isArray(sets)) {
+      sets.forEach((value) => {
+        if (!value || typeof value !== 'object') return;
+        const setNumber = Number(
+          value.setNumber ?? value.set_number ?? value.number ?? value.id ?? value.match_set_id
+        );
+        if (!Number.isInteger(setNumber)) return;
+        const homeScore = value.home ?? value.home_score ?? value.homeScore;
+        const oppScore = value.opp ?? value.opp_score ?? value.oppScore;
+        const homeTimeouts = {
+          home: [value.home_timeout_1, value.home_timeout_2],
+          opp: [value.opp_timeout_1, value.opp_timeout_2]
+        };
+        assignSet(setNumber, {
+          home: homeScore,
+          opp: oppScore,
+          timeouts: {
+            home: homeTimeouts.home.map((entry) => Boolean(Number(entry))),
+            opp: homeTimeouts.opp.map((entry) => Boolean(Number(entry)))
+          }
+        });
+      });
+      return normalized;
+    }
+
+    if (typeof sets === 'object') {
       Object.entries(sets).forEach(([key, value]) => {
         const setNumber = Number(key);
         if (Number.isNaN(setNumber)) return;
         const timeouts = value && typeof value === 'object' ? value.timeouts || {} : {};
-        normalized[setNumber] = {
+        assignSet(setNumber, {
           home: value?.home ?? null,
           opp: value?.opp ?? null,
-          timeouts: {
-            home: Array.isArray(timeouts.home) ? timeouts.home.map(Boolean) : [false, false],
-            opp: Array.isArray(timeouts.opp) ? timeouts.opp.map(Boolean) : [false, false]
-          }
-        };
+          timeouts
+        });
       });
     }
+
     return normalized;
   }
 
@@ -193,7 +239,7 @@ const apiClient = (() => {
 
     return {
       flags,
-      sets: normalizeMatchSets(sets),
+      sets,
       finalizedSets: normalizeFinalizedSets(finalizedSets),
       deleted
     };
@@ -201,11 +247,9 @@ const apiClient = (() => {
 
   function serializeMatchMetadata(match) {
     const flags = normalizeMatchFlags(match?.types || {});
-    const sets = match && typeof match.sets === 'object' ? JSON.parse(JSON.stringify(match.sets)) : {};
     const finalizedSets = match && typeof match.finalizedSets === 'object' ? { ...match.finalizedSets } : {};
     return {
       flags,
-      sets,
       finalizedSets,
       deleted: Boolean(match?.deleted)
     };
@@ -253,7 +297,7 @@ const apiClient = (() => {
       resultOpp: row.result_opp != null ? Number(row.result_opp) : null,
       firstServer: row.first_server ?? '',
       players: playersPayload.roster,
-      sets: metadata.sets,
+      sets: normalizeMatchSets(metadata.sets),
       finalizedSets: metadata.finalizedSets,
       _deleted: deleted
     };
@@ -338,7 +382,21 @@ const apiClient = (() => {
       const match = findMatchById(matches, id);
       if (!match) return null;
       if (match._deleted && !includeDeleted) return null;
-      return stripInternalMatch(match);
+      const stripped = stripInternalMatch(match) || {};
+      const numericId = Number(match.id);
+      if (!Number.isNaN(numericId)) {
+        stripped.id = numericId;
+        try {
+          const setRows = await this.getMatchSets(numericId);
+          const normalizedSets = normalizeMatchSets(setRows);
+          if (normalizedSets && Object.keys(normalizedSets).length > 0) {
+            stripped.sets = normalizedSets;
+          }
+        } catch (error) {
+          console.error(`Failed to load sets for match ${numericId}`, error);
+        }
+      }
+      return stripped;
     },
 
     async createMatch(match) {
@@ -348,6 +406,43 @@ const apiClient = (() => {
 
     async updateMatch(id, match) {
       return await updateMatchInternal(id, match);
+    },
+
+    prepareMatchPayload(match) {
+      return prepareMatchForStorage(match);
+    },
+
+    async getMatchSets(matchId) {
+      if (matchId === undefined || matchId === null) return [];
+      const response = await request(`/api/set?matchId=${matchId}`);
+      return Array.isArray(response) ? response : [];
+    },
+
+    async createSet(payload) {
+      return await request('/api/set/create', { method: 'POST', body: payload });
+    },
+
+    async updateSetScore(setId, team, score) {
+      if (team === 'home') {
+        return await request('/api/set/set-home-score', { method: 'POST', body: { setId, homeScore: score } });
+      }
+      return await request('/api/set/set-opp-score', { method: 'POST', body: { setId, oppScore: score } });
+    },
+
+    async updateSetTimeout(setId, team, timeoutNumber, value) {
+      const payload = { setId, timeoutNumber, value };
+      if (team === 'home') {
+        return await request('/api/set/set-home-timeout', { method: 'POST', body: payload });
+      }
+      return await request('/api/set/set-opp-timeout', { method: 'POST', body: payload });
+    },
+
+    async deleteSet(setId) {
+      return await request(`/api/set/delete/${setId}`, { method: 'DELETE' });
+    },
+
+    async updateFinalizedSets(matchId, finalizedSets) {
+      return await request('/api/set/set-is-final', { method: 'POST', body: { matchId, finalizedSets } });
     },
 
     async deleteMatch(id) {
@@ -381,6 +476,7 @@ let playerSortMode = 'number';
     const TIMEOUT_COUNT = 2;
     const TIMEOUT_DURATION_SECONDS = 60;
     const SET_NUMBERS = [1, 2, 3, 4, 5];
+    const matchSetRecords = new Map();
     const scoreGameState = {
       setNumber: null,
       home: null,
@@ -756,6 +852,91 @@ let playerSortMode = 'number';
         state[setNumber] = createEmptySetTimeouts();
       });
       return state;
+    }
+
+    function resetMatchSetRecords() {
+      matchSetRecords.clear();
+    }
+
+    function normalizeSetRowForState(row) {
+      if (!row || typeof row !== 'object') return null;
+      const setNumber = Number(row.set_number ?? row.setNumber ?? row.number ?? row.id);
+      if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) return null;
+      const parseScore = (value) => {
+        if (value === null || value === undefined || value === '') {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const parseTimeout = (value) => Boolean(Number(value));
+      return {
+        id: row.id,
+        setNumber,
+        homeScore: parseScore(row.home_score ?? row.homeScore ?? row.home),
+        oppScore: parseScore(row.opp_score ?? row.oppScore ?? row.opp),
+        timeouts: {
+          home: [parseTimeout(row.home_timeout_1), parseTimeout(row.home_timeout_2)],
+          opp: [parseTimeout(row.opp_timeout_1), parseTimeout(row.opp_timeout_2)]
+        }
+      };
+    }
+
+    function primeMatchSetRecords(rows) {
+      resetMatchSetRecords();
+      const normalized = {};
+      if (!Array.isArray(rows)) {
+        return normalized;
+      }
+      const sortedRows = rows.slice().sort((a, b) => {
+        const aNumber = Number(a.set_number ?? a.setNumber ?? a.number ?? a.id ?? 0);
+        const bNumber = Number(b.set_number ?? b.setNumber ?? b.number ?? b.id ?? 0);
+        return aNumber - bNumber;
+      });
+      sortedRows.forEach((row) => {
+        const record = normalizeSetRowForState(row);
+        if (!record) return;
+        matchSetRecords.set(record.setNumber, {
+          id: record.id,
+          setNumber: record.setNumber,
+          homeScore: record.homeScore,
+          oppScore: record.oppScore,
+          timeouts: {
+            home: record.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+            opp: record.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+          }
+        });
+        normalized[record.setNumber] = {
+          home: normalizeStoredScoreValue(record.homeScore),
+          opp: normalizeStoredScoreValue(record.oppScore),
+          timeouts: {
+            home: record.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+            opp: record.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+          }
+        };
+      });
+      return normalized;
+    }
+
+    function getMatchSetRecord(setNumber) {
+      return matchSetRecords.get(setNumber) || null;
+    }
+
+    function setMatchSetRecord(setNumber, record) {
+      matchSetRecords.set(setNumber, {
+        id: record.id,
+        setNumber,
+        homeScore: record.homeScore,
+        oppScore: record.oppScore,
+        timeouts: {
+          home: record.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+          opp: record.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+        }
+      });
+    }
+
+    function deleteMatchSetRecord(setNumber) {
+      matchSetRecords.delete(setNumber);
     }
 
     function cloneTimeoutArray(values) {
@@ -2228,6 +2409,125 @@ let playerSortMode = 'number';
       };
     }
 
+    function collectSetFormState() {
+      const states = {};
+      SET_NUMBERS.forEach((setNumber) => {
+        const homeInput = document.getElementById(`set${setNumber}Home`);
+        const oppInput = document.getElementById(`set${setNumber}Opp`);
+        const homeValue = homeInput ? homeInput.value : '';
+        const oppValue = oppInput ? oppInput.value : '';
+        states[setNumber] = {
+          homeScore: parseScoreValue(homeValue),
+          oppScore: parseScoreValue(oppValue),
+          timeouts: getSerializedSetTimeouts(setNumber)
+        };
+      });
+      return states;
+    }
+
+    function hasSetStateData(state) {
+      if (!state) return false;
+      const hasScores = state.homeScore !== null || state.oppScore !== null;
+      const timeoutValues = [...(state.timeouts?.home || []), ...(state.timeouts?.opp || [])];
+      const hasTimeouts = timeoutValues.some(Boolean);
+      return hasScores || hasTimeouts;
+    }
+
+    function scoresEqual(a, b) {
+      const normalize = (value) => {
+        if (value === null || value === undefined || value === '') {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const left = normalize(a);
+      const right = normalize(b);
+      if (left === null && right === null) return true;
+      return left === right;
+    }
+
+    async function applySetEdits(matchId, desiredStates) {
+      if (!matchId || !desiredStates) return;
+      for (const setNumber of SET_NUMBERS) {
+        const desired = desiredStates[setNumber];
+        const existing = getMatchSetRecord(setNumber);
+        const hasData = hasSetStateData(desired);
+        if (!hasData) {
+          if (existing) {
+            try {
+              await apiClient.deleteSet(existing.id);
+            } catch (error) {
+              console.error(`Failed to delete set ${setNumber}`, error);
+              throw error;
+            }
+            deleteMatchSetRecord(setNumber);
+          }
+          continue;
+        }
+
+        if (!existing) {
+          try {
+            const response = await apiClient.createSet({
+              match_id: matchId,
+              set_number: setNumber,
+              home_score: desired.homeScore,
+              opp_score: desired.oppScore,
+              home_timeout_1: desired.timeouts.home[0] ? 1 : 0,
+              home_timeout_2: desired.timeouts.home[1] ? 1 : 0,
+              opp_timeout_1: desired.timeouts.opp[0] ? 1 : 0,
+              opp_timeout_2: desired.timeouts.opp[1] ? 1 : 0
+            });
+            const newId = response?.id;
+            if (newId !== undefined && newId !== null) {
+              setMatchSetRecord(setNumber, {
+                id: newId,
+                homeScore: desired.homeScore,
+                oppScore: desired.oppScore,
+                timeouts: {
+                  home: desired.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+                  opp: desired.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+                }
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to create set ${setNumber}`, error);
+            throw error;
+          }
+          continue;
+        }
+
+        try {
+          if (!scoresEqual(existing.homeScore, desired.homeScore)) {
+            await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
+            existing.homeScore = desired.homeScore;
+          }
+          if (!scoresEqual(existing.oppScore, desired.oppScore)) {
+            await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+            existing.oppScore = desired.oppScore;
+          }
+          desired.timeouts.home.forEach((value, index) => {
+            const desiredBool = Boolean(value);
+            if (Boolean(existing.timeouts.home[index]) !== desiredBool) {
+              await apiClient.updateSetTimeout(existing.id, 'home', index + 1, desiredBool ? 1 : 0);
+              existing.timeouts.home[index] = desiredBool;
+            }
+          });
+          desired.timeouts.opp.forEach((value, index) => {
+            const desiredBool = Boolean(value);
+            if (Boolean(existing.timeouts.opp[index]) !== desiredBool) {
+              await apiClient.updateSetTimeout(existing.id, 'opp', index + 1, desiredBool ? 1 : 0);
+              existing.timeouts.opp[index] = desiredBool;
+            }
+          });
+          setMatchSetRecord(setNumber, existing);
+        } catch (error) {
+          console.error(`Failed to update set ${setNumber}`, error);
+          throw error;
+        }
+      }
+    }
+
 
     async function saveMatch({ showAlert = false } = {}) {
       if (suppressAutoSave) return null;
@@ -2290,6 +2590,8 @@ let playerSortMode = 'number';
         finalizedSets: { ...finalizedSets },
         deleted: false
       };
+      const { body } = apiClient.prepareMatchPayload(match);
+      const setStates = collectSetFormState();
       const matchId = currentMatchId;
       loadedMatchPlayers = [...match.players];
       try {
@@ -2297,10 +2599,14 @@ let playerSortMode = 'number';
           ? await apiClient.updateMatch(matchId, match)
           : await apiClient.createMatch(match);
         const savedId = response?.id ?? matchId ?? null;
-        if (savedId !== null && currentMatchId !== savedId) {
-          currentMatchId = savedId;
-          const newUrl = `${window.location.pathname}?matchId=${savedId}`;
-          window.history.replaceState(null, '', newUrl);
+        if (savedId !== null) {
+          if (currentMatchId !== savedId) {
+            currentMatchId = savedId;
+            const newUrl = `${window.location.pathname}?matchId=${savedId}`;
+            window.history.replaceState(null, '', newUrl);
+          }
+          await applySetEdits(savedId, setStates);
+          await apiClient.updateFinalizedSets(savedId, body.finalized_sets);
         }
         hasPendingChanges = false;
         if (showAlert) {
@@ -2372,6 +2678,7 @@ let playerSortMode = 'number';
         }
       };
       resetAllTimeouts({ resetStored: true });
+      resetMatchSetRecords();
       if (matchId) {
         try {
           const match = await apiClient.getMatch(matchId);
@@ -2396,18 +2703,21 @@ let playerSortMode = 'number';
             updateOpponentName();
             setFirstServerSelection(storedFirstServer);
             updatePlayerList();
+            const setRows = match.id ? await apiClient.getMatchSets(match.id) : [];
+            const setsFromRows = primeMatchSetRecords(setRows);
+            const combinedSets = Object.keys(setsFromRows).length > 0 ? setsFromRows : match.sets;
             for (let i = 1; i <= 5; i++) {
               const homeInput = document.getElementById(`set${i}Home`);
               const oppInput = document.getElementById(`set${i}Opp`);
               if (homeInput) {
-                homeInput.value = normalizeStoredScoreValue(match.sets?.[i]?.home);
+                homeInput.value = normalizeStoredScoreValue(combinedSets?.[i]?.home);
               }
               if (oppInput) {
-                oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
+                oppInput.value = normalizeStoredScoreValue(combinedSets?.[i]?.opp);
               }
             }
             SET_NUMBERS.forEach((setNumber) => {
-              const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
+              const setData = combinedSets?.[setNumber] ?? combinedSets?.[String(setNumber)];
               setMatchTimeoutState(setNumber, setData?.timeouts);
             });
             finalizedSets = { ...(match.finalizedSets || {}) };
@@ -2560,6 +2870,7 @@ let playerSortMode = 'number';
       });
 
       resetAllTimeouts({ resetStored: true });
+      resetMatchSetRecords();
       scoreGameState.home = null;
       scoreGameState.opp = null;
       updateScoreModalDisplay();

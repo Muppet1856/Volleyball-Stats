@@ -1,6 +1,28 @@
 // src/api/match.ts
 import { jsonSuccess, textResponse, errorResponse, jsonResponse } from "../utils/responses";  // Add this import
 
+function normalizeScore(value: any): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function coerceJsonString(value: any, fallback: any = {}): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value ?? fallback);
+  } catch (error) {
+    return JSON.stringify(fallback);
+  }
+}
+
 export async function createMatch(storage: any, request: Request): Promise<Response> {
   const sql = storage.sql;
   const body = await request.json();  // Expect JSON: { date: "...", location: "...", ... }
@@ -13,7 +35,19 @@ export async function createMatch(storage: any, request: Request): Promise<Respo
       sql.exec(`
         INSERT INTO matches (date, location, types, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players, finalized_sets)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, body.date || null, body.location || null, body.types || null, body.opponent || null, body.jersey_color_home || null, body.jersey_color_opp || null, body.result_home || 0, body.result_opp || 0, body.first_server || null, body.players || null, body.finalized_sets || null);
+      `,
+        body.date || null,
+        body.location || null,
+        coerceJsonString(body.types, {}),
+        body.opponent || null,
+        body.jersey_color_home || null,
+        body.jersey_color_opp || null,
+        normalizeScore(body.result_home),
+        normalizeScore(body.result_opp),
+        body.first_server || null,
+        coerceJsonString(body.players, []),
+        coerceJsonString(body.finalized_sets, {})
+      );
       return sql.exec(`SELECT last_insert_rowid() AS id`).toArray()[0].id;
     });
     return jsonSuccess({ id: newId }, 201);
@@ -70,11 +104,11 @@ export async function setType(storage: any, matchId: number, types: string): Pro
   }
 }
 
-export async function setResult(storage: any, matchId: number, resultHome: number, resultOpp: number): Promise<Response> {
+export async function setResult(storage: any, matchId: number, resultHome: number | null, resultOpp: number | null): Promise<Response> {
   const sql = storage.sql;
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE matches SET result_home = ?, result_opp = ? WHERE id = ?`, resultHome, resultOpp, matchId);
+      sql.exec(`UPDATE matches SET result_home = ?, result_opp = ? WHERE id = ?`, normalizeScore(resultHome), normalizeScore(resultOpp), matchId);
     });
     return textResponse("Result updated successfully", 200);
   } catch (error) {
@@ -130,18 +164,11 @@ export async function setFirstServer(storage: any, matchId: number, firstServer:
   }
 }
 
-export async function getSets(storage: any, matchId: number): Promise<Response> {
-  const sql = storage.sql;
-  const cursor = sql.exec(`SELECT * FROM sets WHERE match_id = ?`, matchId);
-  const rows = cursor.toArray();
-  return jsonResponse(rows);
-}
-
 export async function getMatches(storage: any): Promise<Response> {
   const sql = storage.sql;
-  const cursor = sql.exec(`SELECT * FROM matches`);
-  const rows = cursor.toArray();
-  return jsonResponse(rows);
+  const matchesCursor = sql.exec(`SELECT * FROM matches`);
+  const matchRows = matchesCursor.toArray();
+  return jsonResponse(matchRows);
 }
 
 export async function deleteMatch(storage: any, matchId: number): Promise<Response> {

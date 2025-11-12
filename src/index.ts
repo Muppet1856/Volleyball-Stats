@@ -81,8 +81,6 @@ export class MatchState {
           } else if (request.method === "POST" && action === "set-first-server") {
             const body = await request.json();
             return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
-          } else if (request.method === "GET" && action === "get-sets" && id) {
-            return matchApi.getSets(storage, id);
           } else if (request.method === "GET") {
             return matchApi.getMatches(storage);
           } else if (request.method === "DELETE" && action === "delete" && id) {
@@ -132,7 +130,10 @@ export class MatchState {
           } else if (request.method === "GET" && action === "get" && id) {
             return setApi.getSet(storage, id);
           } else if (request.method === "GET") {
-            return setApi.getSets(storage, id);  // Pass id as matchId if provided
+            const matchIdQuery = url.searchParams.get("matchId");
+            const parsedMatchId = matchIdQuery ? parseInt(matchIdQuery, 10) : undefined;
+            const matchIdParam = Number.isNaN(parsedMatchId ?? NaN) ? undefined : parsedMatchId;
+            return setApi.getSets(storage, matchIdParam);
           } else if (request.method === "DELETE" && action === "delete" && id) {
             return setApi.deleteSet(storage, id);
           }
