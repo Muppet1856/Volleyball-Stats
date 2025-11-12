@@ -327,6 +327,11 @@
                 <div class="col"><input type="number" class="form-control" id="number" placeholder="Number" min="0" inputmode="numeric" pattern="[0-9]*"></div>
                 <div class="col"><input type="text" class="form-control" id="lastName" placeholder="Lastname"></div>
                 <div class="col"><input type="text" class="form-control" id="initial" placeholder="Initial (optional)"></div>
+                <div class="col">
+                  <label for="tempNumber" class="form-label visually-hidden">Temporary number (optional)</label>
+                  <input type="number" class="form-control" id="tempNumber" placeholder="Temp # (optional)" min="0" inputmode="numeric" pattern="[0-9]*" aria-describedby="tempNumberHelp">
+                  <div id="tempNumberHelp" class="visually-hidden">Temporary jersey number used for this match only.</div>
+                </div>
               </div>
               <div class="d-flex flex-wrap gap-2">
                 <button type="button" class="btn btn-primary" id="savePlayerBtn" onclick="submitPlayer()">Add Player</button>

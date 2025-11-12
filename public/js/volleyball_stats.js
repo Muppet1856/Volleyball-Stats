@@ -470,6 +470,15 @@ const apiClient = (() => {
 let playerRecords = [];
 let players = [];
 let playerSortMode = 'number';
+const temporaryPlayerNumbers = new Map();
+let pendingTemporaryPlayer = null;
+
+function normalizePlayerId(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return String(value);
+}
     let finalizedSets = {};
     let isSwapped = false;
     let editingPlayerId = null;
@@ -601,6 +610,49 @@ let playerSortMode = 'number';
       const sortedRecords = sortPlayerRecords(safeRecords);
       playerRecords = sortedRecords;
       players = sortedRecords.map(formatPlayerRecord);
+      const validIds = new Set(sortedRecords.map(record => normalizePlayerId(record.id)).filter(id => id !== null));
+      Array.from(temporaryPlayerNumbers.keys()).forEach(playerId => {
+        if (!validIds.has(playerId)) {
+          temporaryPlayerNumbers.delete(playerId);
+        }
+      });
+      if (pendingTemporaryPlayer) {
+        const {
+          number: pendingNumber,
+          lastName: pendingLastName,
+          initial: pendingInitial,
+          value: pendingValue
+        } = pendingTemporaryPlayer;
+        const normalizedNumber = String(pendingNumber ?? '').trim();
+        const normalizedLast = String(pendingLastName ?? '').trim().toLocaleLowerCase();
+        const normalizedInitial = String(pendingInitial ?? '').trim().toLocaleLowerCase();
+        const match = sortedRecords.find(record => {
+          const recordId = normalizePlayerId(record.id);
+          if (recordId === null) {
+            return false;
+          }
+          const recordNumber = String(record.number ?? '').trim();
+          const recordLast = String(record.lastName ?? '').trim().toLocaleLowerCase();
+          const recordInitial = String(record.initial ?? '').trim().toLocaleLowerCase();
+          return (
+            recordNumber === normalizedNumber &&
+            recordLast === normalizedLast &&
+            recordInitial === normalizedInitial &&
+            !temporaryPlayerNumbers.has(recordId)
+          );
+        });
+        if (match) {
+          const matchId = normalizePlayerId(match.id);
+          if (matchId !== null) {
+            if (pendingValue) {
+              temporaryPlayerNumbers.set(matchId, pendingValue);
+            } else {
+              temporaryPlayerNumbers.delete(matchId);
+            }
+          }
+        }
+        pendingTemporaryPlayer = null;
+      }
       updatePlayerList();
       updateModalPlayerList();
       updatePlayerSortToggle();
@@ -1608,8 +1660,31 @@ let playerSortMode = 'number';
       const number = document.getElementById('number').value.trim();
       const lastName = document.getElementById('lastName').value.trim();
       const initial = document.getElementById('initial').value.trim() || '';
+      const tempNumberElement = document.getElementById('tempNumber');
+      const tempNumber = tempNumberElement ? tempNumberElement.value.trim() : '';
       if (number && lastName) {
         const idToSave = editingPlayerId !== null ? editingPlayerId : null;
+        if (idToSave !== null) {
+          const normalizedId = normalizePlayerId(idToSave);
+          if (normalizedId !== null) {
+            if (tempNumber) {
+              temporaryPlayerNumbers.set(normalizedId, tempNumber);
+            } else {
+              temporaryPlayerNumbers.delete(normalizedId);
+            }
+          }
+          pendingTemporaryPlayer = null;
+          updateModalPlayerList();
+        } else if (tempNumber) {
+          pendingTemporaryPlayer = {
+            number,
+            lastName,
+            initial,
+            value: tempNumber
+          };
+        } else {
+          pendingTemporaryPlayer = null;
+        }
         await savePlayer(number, lastName, initial, idToSave);
       }
       resetPlayerForm();
@@ -2314,6 +2389,15 @@ let playerSortMode = 'number';
           formatPlayerRecord(playerData)
         );
         displayContainer.appendChild(playerDisplay);
+        const recordId = normalizePlayerId(playerData.id);
+        if (recordId !== null && temporaryPlayerNumbers.has(recordId)) {
+          const tempBadge = document.createElement('span');
+          const tempValue = temporaryPlayerNumbers.get(recordId);
+          tempBadge.className = 'badge text-bg-secondary ms-2';
+          tempBadge.textContent = `Temp #${tempValue}`;
+          tempBadge.setAttribute('aria-label', `Temporary number ${tempValue}`);
+          displayContainer.appendChild(tempBadge);
+        }
 
         const buttonGroup = document.createElement('div');
         buttonGroup.className = 'btn-group btn-group-sm';
@@ -2346,6 +2430,11 @@ let playerSortMode = 'number';
       document.getElementById('number').value = player.number;
       document.getElementById('lastName').value = player.lastName;
       document.getElementById('initial').value = player.initial || '';
+      const tempInput = document.getElementById('tempNumber');
+      if (tempInput) {
+        const tempValue = temporaryPlayerNumbers.get(normalizePlayerId(player.id));
+        tempInput.value = tempValue !== undefined ? tempValue : '';
+      }
       document.getElementById('savePlayerBtn').textContent = 'Update Player';
       document.getElementById('cancelEditBtn').style.display = 'inline-block';
     }
@@ -2359,6 +2448,10 @@ let playerSortMode = 'number';
       document.getElementById('number').value = '';
       document.getElementById('lastName').value = '';
       document.getElementById('initial').value = '';
+      const tempInput = document.getElementById('tempNumber');
+      if (tempInput) {
+        tempInput.value = '';
+      }
       document.getElementById('savePlayerBtn').textContent = 'Add Player';
       document.getElementById('cancelEditBtn').style.display = 'none';
     }
