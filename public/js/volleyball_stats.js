@@ -2506,20 +2506,22 @@ let playerSortMode = 'number';
             await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
             existing.oppScore = desired.oppScore;
           }
-          desired.timeouts.home.forEach((value, index) => {
+          for (let index = 0; index < desired.timeouts.home.length; index += 1) {
+            const value = desired.timeouts.home[index];
             const desiredBool = Boolean(value);
             if (Boolean(existing.timeouts.home[index]) !== desiredBool) {
               await apiClient.updateSetTimeout(existing.id, 'home', index + 1, desiredBool ? 1 : 0);
               existing.timeouts.home[index] = desiredBool;
             }
-          });
-          desired.timeouts.opp.forEach((value, index) => {
+          }
+          for (let index = 0; index < desired.timeouts.opp.length; index += 1) {
+            const value = desired.timeouts.opp[index];
             const desiredBool = Boolean(value);
             if (Boolean(existing.timeouts.opp[index]) !== desiredBool) {
               await apiClient.updateSetTimeout(existing.id, 'opp', index + 1, desiredBool ? 1 : 0);
               existing.timeouts.opp[index] = desiredBool;
             }
-          });
+          }
           setMatchSetRecord(setNumber, existing);
         } catch (error) {
           console.error(`Failed to update set ${setNumber}`, error);
