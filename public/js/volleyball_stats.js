@@ -269,9 +269,7 @@ const apiClient = (() => {
 
   function serializeMatchMetadata(match) {
     const flags = normalizeMatchFlags(match?.types || {});
-    const metadata = { ...flags };
-    metadata.deleted = Boolean(match?.deleted);
-    return metadata;
+    return { ...flags };
   }
 
   function normalizeResultValue(value) {
@@ -282,6 +280,7 @@ const apiClient = (() => {
 
   function prepareMatchForStorage(match) {
     const metadata = serializeMatchMetadata(match);
+    const deleted = Boolean(match?.deleted);
     const playersPayload = serializeMatchPlayers(match);
     const finalizedSetsPayload = normalizeFinalizedSets(match?.finalizedSets);
     const body = {
@@ -295,7 +294,8 @@ const apiClient = (() => {
       result_opp: normalizeResultValue(match?.resultOpp),
       first_server: match?.firstServer || null,
       players: JSON.stringify(playersPayload),
-      finalized_sets: JSON.stringify(finalizedSetsPayload || {})
+      finalized_sets: JSON.stringify(finalizedSetsPayload || {}),
+      deleted
     };
     return { body, metadata, playersPayload };
   }
@@ -307,7 +307,23 @@ const apiClient = (() => {
     const hasMetadataDeleted = Boolean(metadata.deletedFlagPresent);
     const metadataDeleted = Boolean(metadata.deleted);
     const legacyDeleted = Boolean(playersPayload.deleted);
-    const deleted = hasMetadataDeleted ? metadataDeleted : legacyDeleted;
+    const columnHasDeleted = Object.prototype.hasOwnProperty.call(row, 'deleted');
+    let deleted = null;
+    if (columnHasDeleted) {
+      const value = row.deleted;
+      if (typeof value === 'string') {
+        deleted = value === '1' || value.toLowerCase() === 'true';
+      } else if (typeof value === 'number') {
+        deleted = value !== 0;
+      } else if (typeof value === 'boolean') {
+        deleted = value;
+      } else if (value == null) {
+        deleted = false;
+      }
+    }
+    if (deleted === null) {
+      deleted = hasMetadataDeleted ? metadataDeleted : legacyDeleted;
+    }
     return {
       id: Number.isNaN(id) ? row.id : id,
       date: row.date ?? '',
@@ -323,7 +339,7 @@ const apiClient = (() => {
       legacyPlayers: playersPayload.legacyRoster || null,
       sets: normalizeMatchSets(metadata.sets),
       finalizedSets: metadata.finalizedSets,
-      _deleted: deleted
+      _deleted: Boolean(deleted)
     };
   }
 
@@ -354,6 +370,7 @@ const apiClient = (() => {
     await request('/api/match/set-home-color', { method: 'POST', body: { matchId: id, jerseyColorHome: body.jersey_color_home } });
     await request('/api/match/set-opp-color', { method: 'POST', body: { matchId: id, jerseyColorOpp: body.jersey_color_opp } });
     await request('/api/match/set-first-server', { method: 'POST', body: { matchId: id, firstServer: body.first_server } });
+    await request('/api/match/set-deleted', { method: 'POST', body: { matchId: id, deleted: body.deleted } });
     return { id };
   }
 

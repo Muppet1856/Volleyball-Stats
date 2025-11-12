@@ -81,6 +81,9 @@ export class MatchState {
           } else if (request.method === "POST" && action === "set-first-server") {
             const body = await request.json();
             return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
+          } else if (request.method === "POST" && action === "set-deleted") {
+            const body = await request.json();
+            return matchApi.setDeleted(storage, body.matchId, body.deleted);
           } else if (request.method === "GET") {
             return matchApi.getMatches(storage);
           } else if (request.method === "DELETE" && action === "delete" && id) {
