@@ -271,10 +271,6 @@ const apiClient = (() => {
     const flags = normalizeMatchFlags(match?.types || {});
     const metadata = { ...flags };
     metadata.deleted = Boolean(match?.deleted);
-    const sets = match && typeof match.sets === 'object' ? match.sets : null;
-    if (sets && Object.keys(sets).length > 0) {
-      metadata.sets = sets;
-    }
     return metadata;
   }
 

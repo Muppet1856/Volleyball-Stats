@@ -138,10 +138,46 @@ test('serializeMatchMetadata includes the deleted flag', () => {
   assert.equal(metadata.league, true);
 });
 
+test('serializeMatchMetadata omits set data', () => {
+  const metadata = serializeMatchMetadata({
+    types: { tournament: true },
+    deleted: false,
+    sets: {
+      1: {
+        home: 10,
+        opp: 5,
+        timeouts: {
+          home: [true, false],
+          opp: [false, false]
+        }
+      }
+    }
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(metadata, 'sets'), false);
+});
+
 test('prepareMatchForStorage encodes the deleted flag in metadata JSON', () => {
   const { body } = prepareMatchForStorage({ deleted: true });
   const parsed = JSON.parse(body.types);
   assert.equal(parsed.deleted, true);
+});
+
+test('prepareMatchForStorage does not persist set metadata', () => {
+  const { body } = prepareMatchForStorage({
+    types: { league: true },
+    sets: {
+      1: {
+        home: 25,
+        opp: 20,
+        timeouts: {
+          home: [true, false],
+          opp: [false, false]
+        }
+      }
+    }
+  });
+  const parsed = JSON.parse(body.types);
+  assert.equal(Object.prototype.hasOwnProperty.call(parsed, 'sets'), false);
 });
 
 test('parseMatchRow prefers metadata deleted flag when present', () => {
