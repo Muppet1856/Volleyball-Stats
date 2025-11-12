@@ -60,22 +60,16 @@ const apiClient = (() => {
 
   function normalizePlayerRecord(row) {
     if (!row) return null;
-    const meta = typeof row.initial === 'string' ? safeJsonParse(row.initial, null) : null;
-    const initial = meta && typeof meta === 'object' && meta !== null && 'initial' in meta
-      ? String(meta.initial ?? '')
-      : String(row.initial ?? '');
-    const deleted = Boolean(meta && typeof meta === 'object' && meta !== null && meta.deleted);
     return {
       id: row.id,
       number: String(row.number ?? '').trim(),
       lastName: String(row.last_name ?? row.lastName ?? '').trim(),
-      initial,
-      _deleted: deleted
+      initial: String(row.initial ?? '').trim()
     };
   }
 
-  function serializePlayerInitial(initial, { deleted = false } = {}) {
-    return JSON.stringify({ initial: initial ?? '', deleted: Boolean(deleted) });
+  function serializePlayerInitial(initial) {
+    return String(initial ?? '');
   }
 
   async function request(path, { method = 'GET', body, headers = {} } = {}) {
@@ -318,14 +312,14 @@ const apiClient = (() => {
     async getPlayers() {
       const rows = await request('/api/player');
       const normalized = Array.isArray(rows) ? rows.map(normalizePlayerRecord).filter(Boolean) : [];
-      return normalized.filter(player => !player._deleted).map(({ _deleted, ...rest }) => rest);
+      return normalized;
     },
 
     async createPlayer(player) {
       const payload = {
         number: String(player.number ?? '').trim(),
         last_name: String(player.lastName ?? '').trim(),
-        initial: serializePlayerInitial(player.initial ?? '', { deleted: false })
+        initial: serializePlayerInitial(player.initial ?? '')
       };
       return await request('/api/player/create', { method: 'POST', body: payload });
     },
@@ -333,14 +327,12 @@ const apiClient = (() => {
     async updatePlayer(id, player) {
       await request('/api/player/set-number', { method: 'POST', body: { playerId: id, number: String(player.number ?? '').trim() } });
       await request('/api/player/set-lname', { method: 'POST', body: { playerId: id, lastName: String(player.lastName ?? '').trim() } });
-      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(player.initial ?? '', { deleted: false }) } });
+      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(player.initial ?? '') } });
       return { id };
     },
 
     async deletePlayer(id) {
-      const row = await request(`/api/player/get/${id}`);
-      const normalized = normalizePlayerRecord(row) || { initial: '' };
-      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(normalized.initial, { deleted: true }) } });
+      await request(`/api/player/delete/${id}`, { method: 'DELETE' });
       return { id };
     },
 
