@@ -171,7 +171,9 @@ jobs:
             exit 1
           elif [ ${#FOUND[@]} -eq 1 ]; then
             SELECTED="${FOUND[0]}"
-            echo "assets = { directory = \"$SELECTED\" }" >> wrangler.toml
+            echo "[assets]" >> wrangler.toml
+            echo "directory = \"$SELECTED\"" >> wrangler.toml
+            echo "binding = \"ASSETS\"" >> wrangler.toml
             echo "Using assets directory: $SELECTED"
           else
             echo "No assets directory found (public/dist/build) – skipping assets binding."
