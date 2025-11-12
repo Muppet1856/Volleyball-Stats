@@ -161,12 +161,11 @@ const apiClient = (() => {
     return { roster, deleted: Boolean(match?.deleted) };
   }
 
-  function parseMatchMetadata(typesValue, finalizedSetsValue, isSwappedValue) {
+  function parseMatchMetadata(typesValue, finalizedSetsValue) {
     const parsed = typeof typesValue === 'string' ? safeJsonParse(typesValue, null) : null;
     let flags = normalizeMatchFlags();
     let sets = {};
     let finalizedSets = {};
-    let isSwapped = Boolean(isSwappedValue);
     let deleted = false;
 
     if (parsed && typeof parsed === 'object') {
@@ -177,9 +176,6 @@ const apiClient = (() => {
       }
       if (parsed.finalizedSets && typeof parsed.finalizedSets === 'object') {
         finalizedSets = parsed.finalizedSets;
-      }
-      if (Object.prototype.hasOwnProperty.call(parsed, 'isSwapped')) {
-        isSwapped = Boolean(parsed.isSwapped);
       }
       if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
         deleted = Boolean(parsed.deleted);
@@ -199,7 +195,6 @@ const apiClient = (() => {
       flags,
       sets: normalizeMatchSets(sets),
       finalizedSets: normalizeFinalizedSets(finalizedSets),
-      isSwapped,
       deleted
     };
   }
@@ -212,7 +207,6 @@ const apiClient = (() => {
       flags,
       sets,
       finalizedSets,
-      isSwapped: Boolean(match?.isSwapped),
       deleted: Boolean(match?.deleted)
     };
   }
@@ -237,15 +231,14 @@ const apiClient = (() => {
       result_opp: normalizeResultValue(match?.resultOpp),
       first_server: match?.firstServer || null,
       players: JSON.stringify(playersPayload),
-      finalized_sets: JSON.stringify(metadata.finalizedSets || {}),
-      is_swapped: metadata.isSwapped ? 1 : 0
+      finalized_sets: JSON.stringify(metadata.finalizedSets || {})
     };
     return { body, metadata, playersPayload };
   }
 
   function parseMatchRow(row) {
     const id = Number(row.id);
-    const metadata = parseMatchMetadata(row.types, row.finalized_sets, row.is_swapped);
+    const metadata = parseMatchMetadata(row.types, row.finalized_sets);
     const playersPayload = parseMatchPlayers(row.players);
     const deleted = Boolean(playersPayload.deleted || metadata.deleted);
     return {
@@ -262,7 +255,6 @@ const apiClient = (() => {
       players: playersPayload.roster,
       sets: metadata.sets,
       finalizedSets: metadata.finalizedSets,
-      isSwapped: Boolean(metadata.isSwapped),
       _deleted: deleted
     };
   }
@@ -2296,7 +2288,6 @@ let playerSortMode = 'number';
           }
         },
         finalizedSets: { ...finalizedSets },
-        isSwapped: isSwapped,
         deleted: false
       };
       const matchId = currentMatchId;
@@ -2354,6 +2345,12 @@ let playerSortMode = 'number';
       const urlParams = new URLSearchParams(window.location.search);
       const matchId = urlParams.get('matchId');
       suppressAutoSave = true;
+      isSwapped = false;
+      const existingOpponentInput = document.getElementById('opponent');
+      if (existingOpponentInput) {
+        const currentOpponent = existingOpponentInput.value.trim() || 'Opponent';
+        updateSetHeaders(currentOpponent, isSwapped);
+      }
       if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
         autoSaveTimeout = null;
@@ -2414,7 +2411,6 @@ let playerSortMode = 'number';
               setMatchTimeoutState(setNumber, setData?.timeouts);
             });
             finalizedSets = { ...(match.finalizedSets || {}) };
-            isSwapped = Boolean(match.isSwapped);
             resetFinalizeButtons();
             for (let i = 1; i <= 5; i++) {
               if (finalizedSets[i]) {
@@ -2425,7 +2421,6 @@ let playerSortMode = 'number';
               }
             }
             updateAllFinalizeButtonStates();
-            if (isSwapped) swapScores();
             calculateResult();
           } else {
             currentMatchId = null;
