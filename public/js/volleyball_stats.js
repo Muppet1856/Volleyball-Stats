@@ -208,10 +208,15 @@ const apiClient = (() => {
   }
 
   function parseMatchMetadata(typesValue, finalizedSetsValue) {
-    const parsed = typeof typesValue === 'string' ? safeJsonParse(typesValue, null) : null;
+    let parsed = null;
+    if (typeof typesValue === 'string') {
+      parsed = safeJsonParse(typesValue, null);
+    } else if (typesValue && typeof typesValue === 'object') {
+      parsed = typesValue;
+    }
+
     let flags = normalizeMatchFlags();
     let sets = {};
-    let finalizedSets = {};
     let deleted = false;
 
     if (parsed && typeof parsed === 'object') {
@@ -220,9 +225,6 @@ const apiClient = (() => {
       if (parsed.sets && typeof parsed.sets === 'object') {
         sets = parsed.sets;
       }
-      if (parsed.finalizedSets && typeof parsed.finalizedSets === 'object') {
-        finalizedSets = parsed.finalizedSets;
-      }
       if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
         deleted = Boolean(parsed.deleted);
       }
@@ -230,10 +232,20 @@ const apiClient = (() => {
       flags = normalizeMatchFlags(parsed);
     }
 
-    if (!finalizedSets || Object.keys(finalizedSets).length === 0) {
-      const fallbackFinalized = typeof finalizedSetsValue === 'string' ? safeJsonParse(finalizedSetsValue, {}) : {};
-      if (fallbackFinalized && typeof fallbackFinalized === 'object') {
-        finalizedSets = fallbackFinalized;
+    let finalizedSets = {};
+    if (typeof finalizedSetsValue === 'string') {
+      const parsedColumn = safeJsonParse(finalizedSetsValue, null);
+      if (parsedColumn && typeof parsedColumn === 'object') {
+        finalizedSets = parsedColumn;
+      }
+    } else if (finalizedSetsValue && typeof finalizedSetsValue === 'object') {
+      finalizedSets = finalizedSetsValue;
+    }
+
+    if (Object.keys(finalizedSets).length === 0 && parsed && typeof parsed === 'object') {
+      const legacyFinalized = parsed.finalizedSets;
+      if (legacyFinalized && typeof legacyFinalized === 'object') {
+        finalizedSets = legacyFinalized;
       }
     }
 
@@ -247,12 +259,12 @@ const apiClient = (() => {
 
   function serializeMatchMetadata(match) {
     const flags = normalizeMatchFlags(match?.types || {});
-    const finalizedSets = match && typeof match.finalizedSets === 'object' ? { ...match.finalizedSets } : {};
-    return {
-      flags,
-      finalizedSets,
-      deleted: Boolean(match?.deleted)
-    };
+    const metadata = { ...flags };
+    const sets = match && typeof match.sets === 'object' ? match.sets : null;
+    if (sets && Object.keys(sets).length > 0) {
+      metadata.sets = sets;
+    }
+    return metadata;
   }
 
   function normalizeResultValue(value) {
@@ -264,6 +276,7 @@ const apiClient = (() => {
   function prepareMatchForStorage(match) {
     const metadata = serializeMatchMetadata(match);
     const playersPayload = serializeMatchPlayers(match);
+    const finalizedSetsPayload = normalizeFinalizedSets(match?.finalizedSets);
     const body = {
       date: match?.date || null,
       location: match?.location || null,
@@ -275,7 +288,7 @@ const apiClient = (() => {
       result_opp: normalizeResultValue(match?.resultOpp),
       first_server: match?.firstServer || null,
       players: JSON.stringify(playersPayload),
-      finalized_sets: JSON.stringify(metadata.finalizedSets || {})
+      finalized_sets: JSON.stringify(finalizedSetsPayload || {})
     };
     return { body, metadata, playersPayload };
   }
