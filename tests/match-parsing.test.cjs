@@ -132,9 +132,9 @@ test('serializeMatchPlayers returns only the roster', () => {
   assert.deepStrictEqual(payload, { roster: [{ playerId: '1' }] });
 });
 
-test('serializeMatchMetadata includes the deleted flag', () => {
+test('serializeMatchMetadata excludes the deleted flag', () => {
   const metadata = serializeMatchMetadata({ types: { league: true }, deleted: true });
-  assert.equal(metadata.deleted, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(metadata, 'deleted'), false);
   assert.equal(metadata.league, true);
 });
 
@@ -156,10 +156,11 @@ test('serializeMatchMetadata omits set data', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(metadata, 'sets'), false);
 });
 
-test('prepareMatchForStorage encodes the deleted flag in metadata JSON', () => {
+test('prepareMatchForStorage encodes the deleted flag separately', () => {
   const { body } = prepareMatchForStorage({ deleted: true });
   const parsed = JSON.parse(body.types);
-  assert.equal(parsed.deleted, true);
+  assert.equal(body.deleted, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(parsed, 'deleted'), false);
 });
 
 test('prepareMatchForStorage does not persist set metadata', () => {
@@ -180,9 +181,29 @@ test('prepareMatchForStorage does not persist set metadata', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(parsed, 'sets'), false);
 });
 
-test('parseMatchRow prefers metadata deleted flag when present', () => {
+test('parseMatchRow prefers deleted column when present', () => {
   const row = {
     id: 1,
+    date: '',
+    location: '',
+    types: JSON.stringify({ deleted: false }),
+    opponent: '',
+    jersey_color_home: '',
+    jersey_color_opp: '',
+    result_home: null,
+    result_opp: null,
+    first_server: '',
+    players: JSON.stringify({ roster: [], deleted: false }),
+    finalized_sets: JSON.stringify({}),
+    deleted: 1
+  };
+  const parsed = parseMatchRow(row);
+  assert.equal(parsed._deleted, true);
+});
+
+test('parseMatchRow falls back to metadata deleted flag when column absent', () => {
+  const row = {
+    id: 3,
     date: '',
     location: '',
     types: JSON.stringify({ deleted: true }),

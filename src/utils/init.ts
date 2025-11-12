@@ -18,12 +18,21 @@ export function initMatchTable(sql: any): string {
         result_opp INTEGER,  --  This is the number of sets where the opposing team had the higher score and was finalized
         first_server TEXT,  --  This is the name of the team who served first
         players TEXT,  --  This is a JSON of the players appearing in the match.  player_id, temp_number.  Temp number is a placeholder, but the logic will be added in a future update.
-        finalized_sets TEXT,  --  this is a JSON of which sets are finalized. 
+        finalized_sets TEXT,  --  this is a JSON of which sets are finalized.
+        deleted INTEGER NOT NULL DEFAULT 0,
         created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       );
     `);
   }
-  
+
+  if (exists) {
+    const columns = sql.exec("PRAGMA table_info(matches);").toArray();
+    const hasDeletedColumn = columns.some((column: any) => column?.name === "deleted");
+    if (!hasDeletedColumn) {
+      sql.exec("ALTER TABLE matches ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;");
+    }
+  }
+
   return exists ? "Matches table already exists." : "Matches table created.";
 }
 

@@ -23,6 +23,20 @@ function coerceJsonString(value: any, fallback: any = {}): string {
   }
 }
 
+function normalizeDeletedFlag(value: any): number {
+  if (typeof value === "string") {
+    const lower = value.trim().toLowerCase();
+    if (lower === "true" || lower === "1") {
+      return 1;
+    }
+    return 0;
+  }
+  if (typeof value === "number") {
+    return value !== 0 ? 1 : 0;
+  }
+  return value ? 1 : 0;
+}
+
 export async function createMatch(storage: any, request: Request): Promise<Response> {
   const sql = storage.sql;
   const body = await request.json();  // Expect JSON: { date: "...", location: "...", ... }
@@ -33,8 +47,8 @@ export async function createMatch(storage: any, request: Request): Promise<Respo
   try {
     const newId = storage.transactionSync(() => {
       sql.exec(`
-        INSERT INTO matches (date, location, types, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players, finalized_sets)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO matches (date, location, types, opponent, jersey_color_home, jersey_color_opp, result_home, result_opp, first_server, players, finalized_sets, deleted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         body.date || null,
         body.location || null,
@@ -46,7 +60,8 @@ export async function createMatch(storage: any, request: Request): Promise<Respo
         normalizeScore(body.result_opp),
         body.first_server || null,
         coerceJsonString(body.players, []),
-        coerceJsonString(body.finalized_sets, {})
+        coerceJsonString(body.finalized_sets, {}),
+        normalizeDeletedFlag(body.deleted)
       );
       return sql.exec(`SELECT last_insert_rowid() AS id`).toArray()[0].id;
     });
@@ -125,6 +140,18 @@ export async function setPlayers(storage: any, matchId: number, players: string)
     return textResponse("Players updated successfully", 200);
   } catch (error) {
     return errorResponse("Error updating players: " + (error as Error).message, 500);
+  }
+}
+
+export async function setDeleted(storage: any, matchId: number, deleted: any): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+      sql.exec(`UPDATE matches SET deleted = ? WHERE id = ?`, normalizeDeletedFlag(deleted), matchId);
+    });
+    return textResponse("Deleted flag updated successfully", 200);
+  } catch (error) {
+    return errorResponse("Error updating deleted flag: " + (error as Error).message, 500);
   }
 }
 
