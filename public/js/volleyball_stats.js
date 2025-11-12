@@ -211,7 +211,7 @@ const apiClient = (() => {
 
   function serializeMatchPlayers(match) {
     const roster = normalizeRosterArray(match?.players);
-    return { roster, deleted: Boolean(match?.deleted) };
+    return { roster };
   }
 
   function parseMatchMetadata(typesValue, finalizedSetsValue) {
@@ -225,6 +225,7 @@ const apiClient = (() => {
     let flags = normalizeMatchFlags();
     let sets = {};
     let deleted = false;
+    let deletedFlagPresent = false;
 
     if (parsed && typeof parsed === 'object') {
       const candidateFlags = parsed.flags && typeof parsed.flags === 'object' ? parsed.flags : parsed;
@@ -234,6 +235,7 @@ const apiClient = (() => {
       }
       if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
         deleted = Boolean(parsed.deleted);
+        deletedFlagPresent = true;
       }
     } else if (parsed !== null) {
       flags = normalizeMatchFlags(parsed);
@@ -260,13 +262,15 @@ const apiClient = (() => {
       flags,
       sets,
       finalizedSets: normalizeFinalizedSets(finalizedSets),
-      deleted
+      deleted,
+      deletedFlagPresent
     };
   }
 
   function serializeMatchMetadata(match) {
     const flags = normalizeMatchFlags(match?.types || {});
     const metadata = { ...flags };
+    metadata.deleted = Boolean(match?.deleted);
     const sets = match && typeof match.sets === 'object' ? match.sets : null;
     if (sets && Object.keys(sets).length > 0) {
       metadata.sets = sets;
@@ -304,7 +308,10 @@ const apiClient = (() => {
     const id = Number(row.id);
     const metadata = parseMatchMetadata(row.types, row.finalized_sets);
     const playersPayload = parseMatchPlayers(row.players);
-    const deleted = Boolean(playersPayload.deleted || metadata.deleted);
+    const hasMetadataDeleted = Boolean(metadata.deletedFlagPresent);
+    const metadataDeleted = Boolean(metadata.deleted);
+    const legacyDeleted = Boolean(playersPayload.deleted);
+    const deleted = hasMetadataDeleted ? metadataDeleted : legacyDeleted;
     return {
       id: Number.isNaN(id) ? row.id : id,
       date: row.date ?? '',
@@ -363,6 +370,19 @@ const apiClient = (() => {
       }
       return match.id === id;
     });
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      __test__: {
+        parseMatchPlayers,
+        serializeMatchPlayers,
+        parseMatchMetadata,
+        serializeMatchMetadata,
+        parseMatchRow,
+        prepareMatchForStorage
+      }
+    };
   }
 
   return {
