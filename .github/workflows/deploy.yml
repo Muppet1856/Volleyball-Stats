@@ -176,6 +176,10 @@ jobs:
           if [ -n "$SELECTED" ]; then
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
           fi
+          
+          echo "workers_dev = true" >> wrangler.toml
+          echo "preview_urls = false" >> wrangler.toml
+          
 
       # ————————————————————————
       # Resolve Worker Host
