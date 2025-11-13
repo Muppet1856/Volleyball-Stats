@@ -2,7 +2,8 @@ name: Deploy & Update Preview Comment
 
 on:
   push:
-    branches: [ main ]
+#    branches: [ main ]
+    branches: '**'
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   pull_request:
     types: [ opened, synchronize ]
@@ -72,9 +73,23 @@ jobs:
           BRANCH_NAME=$(echo "$BRANCH_REF" | sed 's|^refs/heads/||' | sed 's|^refs/pull/[0-9]*/merge$||')
           EVENT="${{ github.event_name }}"
 
-          if [ "$EVENT" = "push" ] && [ "$BRANCH_NAME" = "main" ]; then
-            echo "type=prod" >> $GITHUB_OUTPUT
-            echo "env_name=" >> $GITHUB_OUTPUT
+          if [ "$EVENT" = "push" ]; then
+            if [ "$BRANCH_NAME" = "main" ]; then
+              echo "type=prod" >> $GITHUB_OUTPUT
+              echo "env_name=" >> $GITHUB_OUTPUT
+            else
+              ENV=$(sanitize "$BRANCH_NAME")
++             # Check if this branch has an open PR (to avoid duplicate runs with pull_request trigger)
++             API_URL="https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${BRANCH_NAME}&state=open"
++             PR_COUNT=$(curl -s -H "Authorization: token ${{ github.token }}" -H "Accept: application/vnd.github.v3+json" "$API_URL" | jq 'length')
++             if [ "$PR_COUNT" -gt 0 ]; then
++               echo "type=skip" >> $GITHUB_OUTPUT
++               echo "Skipping push deployment for branch $BRANCH_NAME (open PR exists; handled by pull_request trigger)"
++             else
++               echo "type=branch" >> $GITHUB_OUTPUT
++               echo "env_name=$ENV" >> $GITHUB_OUTPUT
++             fi
+            fi
 
           elif [ "$EVENT" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
@@ -256,12 +271,7 @@ jobs:
           fi
 
           # -----------------------------------------------------------------
-          # 3. Remove any previous injection (keeps the file tidy on re-runs)
-          # -----------------------------------------------------------------
-          sed -i '/^# --- BEGIN INJECTED VARS ---$/,/^# --- END INJECTED VARS ---$/d' "$TOML" 2>/dev/null || true
-
-          # -----------------------------------------------------------------
-          # 4. Append the new block
+          # 3. Append the new block
           # -----------------------------------------------------------------
           {
             echo "[vars]"
@@ -273,8 +283,6 @@ jobs:
           COUNT=$(jq 'keys | length' "$VARS_JSON")
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
           
-          echo "$(cat wrangler.toml)"
-
       # ————————————————————————
       # Deploy Worker
       # ————————————————————————
