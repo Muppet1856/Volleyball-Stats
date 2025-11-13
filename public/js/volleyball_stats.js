@@ -3128,22 +3128,33 @@ function normalizeRosterArray(roster) {
 
         try {
           const setIsFinalized = Boolean(finalizedSets[setNumber]);
-          if (!setIsFinalized) {
-            if (!scoresEqual(existing.homeScore, desired.homeScore)) {
+          const homeScoreChanged = !scoresEqual(existing.homeScore, desired.homeScore);
+          const oppScoreChanged = !scoresEqual(existing.oppScore, desired.oppScore);
+
+          if (homeScoreChanged) {
+            if (!setIsFinalized) {
               await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
-              existing.homeScore = desired.homeScore;
+            } else {
+              try {
+                await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
+              } catch (scoreError) {
+                console.warn(`Unable to update finalized set ${setNumber} home score`, scoreError);
+              }
             }
-            if (!scoresEqual(existing.oppScore, desired.oppScore)) {
+            existing.homeScore = desired.homeScore;
+          }
+
+          if (oppScoreChanged) {
+            if (!setIsFinalized) {
               await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
-              existing.oppScore = desired.oppScore;
+            } else {
+              try {
+                await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+              } catch (scoreError) {
+                console.warn(`Unable to update finalized set ${setNumber} opp score`, scoreError);
+              }
             }
-          } else {
-            const scoresChanged =
-              !scoresEqual(existing.homeScore, desired.homeScore) ||
-              !scoresEqual(existing.oppScore, desired.oppScore);
-            if (scoresChanged) {
-              syncSetInputsToStoredScores(setNumber, existing);
-            }
+            existing.oppScore = desired.oppScore;
           }
           for (let index = 0; index < desired.timeouts.home.length; index += 1) {
             const value = desired.timeouts.home[index];
