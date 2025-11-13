@@ -1,3 +1,4 @@
+<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
@@ -84,8 +85,8 @@
                 <input type="text" class="form-control" id="opponent" oninput="updateOpponentName(); updateFirstServeOptions(); updateSetHeaders()">
               </div>
               <div class="col-12 col-md-6 col-xl-4">
-                <label for="jerseyColorSC" class="form-label" id="jerseyColorSCLabel" data-home-team-template="Jersey Color ({homeTeam})">Jersey Color (Home Team)</label>
-                <select class="form-select jersey-select" id="jerseyColorSC">
+                <label for="jerseyColorHome" class="form-label" id="jerseyColorHomeLabel" data-home-team-template="Jersey Color ({homeTeam})">Jersey Color (Home Team)</label>
+                <select class="form-select jersey-select" id="jerseyColorHome">
                   <option class="jersey-option" value="white" data-color="#ffffff">White</option>
                   <option class="jersey-option" value="grey" data-color="#808080">Grey</option>
                   <option class="jersey-option" value="black" data-color="#000000">Black</option>
@@ -121,8 +122,8 @@
                   <legend class="form-label fs-6 mb-2">Result of Game</legend>
                   <div class="result-summary">
                     <div class="result-team">
-                      <label for="resultSC" class="form-label mb-0" id="resultSCLabel" data-home-team-template="{homeTeam}">Home Team</label>
-                      <select class="form-select w-auto text-center" id="resultSC">
+                      <label for="resultHome" class="form-label mb-0" id="resultHomeLabel" data-home-team-template="{homeTeam}">Home Team</label>
+                      <select class="form-select w-auto text-center" id="resultHome">
                         <option value="0">0</option>
                         <option value="1">1</option>
                         <option value="2">2</option>
@@ -179,8 +180,8 @@
       <table class="table table-bordered set-table">
         <tr>
           <th class="set-index-header">Set</th>
-          <th class="left-score header-cell" id="scHeader">
-            <button type="button" class="team-name-button" data-team-header="sc" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Home Team">Home Team</button>
+          <th class="left-score header-cell" id="homeHeader">
+            <button type="button" class="team-name-button" data-team-header="home" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Home Team">Home Team</button>
           </th>
           <th class="right-score header-cell" id="oppHeader">
             <button type="button" class="team-name-button" data-team-header="opp" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Opponent">Opponent</button>
@@ -192,7 +193,7 @@
             <i class="bi bi-1-circle-fill" aria-hidden="true"></i>
             <span class="visually-hidden">Set 1</span>
           </th>
-          <td><input type="number" class="form-control left-score" id="set1SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control left-score" id="set1Home" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td><input type="number" class="form-control right-score" id="set1Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
@@ -205,7 +206,7 @@
             <i class="bi bi-2-circle" aria-hidden="true"></i>
             <span class="visually-hidden">Set 2</span>
           </th>
-          <td><input type="number" class="form-control left-score" id="set2SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control left-score" id="set2Home" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td><input type="number" class="form-control right-score" id="set2Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
@@ -218,7 +219,7 @@
             <i class="bi bi-3-circle-fill" aria-hidden="true"></i>
             <span class="visually-hidden">Set 3</span>
           </th>
-          <td><input type="number" class="form-control left-score" id="set3SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control left-score" id="set3Home" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td><input type="number" class="form-control right-score" id="set3Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
@@ -231,7 +232,7 @@
             <i class="bi bi-4-circle" aria-hidden="true"></i>
             <span class="visually-hidden">Set 4</span>
           </th>
-          <td><input type="number" class="form-control left-score" id="set4SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control left-score" id="set4Home" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td><input type="number" class="form-control right-score" id="set4Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
@@ -244,7 +245,7 @@
             <i class="bi bi-5-circle-fill" aria-hidden="true"></i>
             <span class="visually-hidden">Set 5</span>
           </th>
-          <td><input type="number" class="form-control left-score" id="set5SC" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
+          <td><input type="number" class="form-control left-score" id="set5Home" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td><input type="number" class="form-control right-score" id="set5Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
@@ -267,9 +268,9 @@
               <button type="button" class="btn btn-light modal-swap-btn swap-btn" id="scoreModalSwapBtn" aria-label="Swap team sides"></button>
               <div class="team-panel team-blue">
                 <span class="score-team-label" id="scoreGameLeftLabel">Home Team</span>
-                <div class="score-zone increment" role="button" tabindex="0" data-team="sc" data-action="increment" aria-label="Increase Home Team score"></div>
-                <div class="score-zone decrement" role="button" tabindex="0" data-team="sc" data-action="decrement" aria-label="Decrease Home Team score"></div>
-                <div class="score-value" id="scoreGameScDisplay">00</div>
+                <div class="score-zone increment" role="button" tabindex="0" data-team="home" data-action="increment" aria-label="Increase Home Team score"></div>
+                <div class="score-zone decrement" role="button" tabindex="0" data-team="home" data-action="decrement" aria-label="Decrease Home Team score"></div>
+                <div class="score-value" id="scoreGameHomeDisplay">00</div>
               </div>
               <div class="team-panel team-red">
                 <span class="score-team-label" id="scoreGameRightLabel">Opponent</span>
@@ -280,12 +281,12 @@
             </div>
             <div class="timeout-row" role="group" aria-label="Timeout controls">
               <div class="timeout-bar">
-                <div class="timeout-container" data-team="sc" aria-label="Home Team timeouts">
+                <div class="timeout-container" data-team="home" aria-label="Home Team timeouts">
                   <div class="timeout-boxes">
-                    <button type="button" class="timeout-box btn" data-team="sc" data-timeout-index="0" aria-pressed="false" aria-label="Home Team first timeout available">
+                    <button type="button" class="timeout-box btn" data-team="home" data-timeout-index="0" aria-pressed="false" aria-label="Home Team first timeout available">
                       <span class="timeout-box-text">TO</span>
                     </button>
-                    <button type="button" class="timeout-box btn" data-team="sc" data-timeout-index="1" aria-pressed="false" aria-label="Home Team second timeout available">
+                    <button type="button" class="timeout-box btn" data-team="home" data-timeout-index="1" aria-pressed="false" aria-label="Home Team second timeout available">
                       <span class="timeout-box-text">TO</span>
                     </button>
                   </div>
@@ -314,7 +315,7 @@
     </div>
 
     <div id="playerModal" class="modal fade" tabindex="-1" aria-labelledby="playerModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="playerModalLabel">Manage Roster</h5>
@@ -326,11 +327,27 @@
                 <div class="col"><input type="number" class="form-control" id="number" placeholder="Number" min="0" inputmode="numeric" pattern="[0-9]*"></div>
                 <div class="col"><input type="text" class="form-control" id="lastName" placeholder="Lastname"></div>
                 <div class="col"><input type="text" class="form-control" id="initial" placeholder="Initial (optional)"></div>
+                <div class="col">
+                  <label for="tempNumber" class="form-label visually-hidden">Temporary number (optional)</label>
+                  <input type="number" class="form-control" id="tempNumber" placeholder="Temp # (optional)" min="0" inputmode="numeric" pattern="[0-9]*" aria-describedby="tempNumberHelp">
+                  <div id="tempNumberHelp" class="visually-hidden">Temporary jersey number used for this match only.</div>
+                </div>
               </div>
+              <div id="playerFormError" class="alert alert-danger d-none mt-2 mb-0" role="alert"></div>
               <div class="d-flex flex-wrap gap-2">
                 <button type="button" class="btn btn-primary" id="savePlayerBtn" onclick="submitPlayer()">Add Player</button>
                 <button type="button" class="btn btn-outline-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEdit()">Cancel</button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+            <div class="modal-player-controls d-flex justify-content-between align-items-center mt-3 mb-2 flex-wrap gap-2">
+              <h6 class="mb-0">Current Roster</h6>
+              <div class="d-flex align-items-center gap-2">
+                <label for="modalPlayerSortSelect" class="form-label mb-0">Sort by</label>
+                <select id="modalPlayerSortSelect" class="form-select form-select-sm" aria-label="Sort players in roster">
+                  <option value="number">Number</option>
+                  <option value="name">Name</option>
+                </select>
               </div>
             </div>
             <div id="modalPlayerList" class="modal-player-list"></div>

@@ -42,7 +42,7 @@ Everything described below can be completed entirely from the Cloudflare and Git
 
 1. In the Pages project **Settings → Functions**, open the D1 database you created in the previous step.
 2. Switch to the **Tables** tab and click **Import**.
-3. Upload `migrations/0001_init.sql` to seed the schema. The SQL file creates the tables used by the API endpoints.【F:migrations/0001_init.sql†L1-L27】
+3. Upload `migrations/0001_init.sql` to seed the schema. The SQL file creates the tables used by the API endpoints, including the `match_sets` table that stores per-set scores and timeout usage with a cascading relationship to `matches`.【F:migrations/0001_init.sql†L1-L33】
 4. After the import finishes, confirm the tables exist by browsing the schema view.
 
 ## Optional: Use Wrangler locally

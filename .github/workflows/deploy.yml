@@ -1,17 +1,14 @@
-name: Deploy & Update Preview Badge
+name: Deploy & Update Preview Comment
 
 on:
   push:
-    branches: [ main ]
+#    branches: [ main ]
+    branches: '**'
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   pull_request:
     types: [ opened, synchronize ]
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   workflow_dispatch:
-    inputs:
-      badge_label:
-        description: 'Override badge label (defaults to branch/PR name or "production")'
-        required: false
 
 concurrency:
   group: deploy-${{ github.event_name }}-${{ github.ref }}
@@ -42,9 +39,12 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: true
 
-      - name: Verify src/index.js
+      # ————————————————————————
+      # Verify that the entry point is available
+      # ————————————————————————
+      - name: Verify src/index.ts
         run: |
-          [ -f "src/index.js" ] || (echo "Error: src/index.js missing" >&2; exit 1)
+          [ -f "src/index.ts" ] || (echo "Error: src/index.ts missing" >&2; exit 1)
 
       # ————————————————————————
       # Install Tools
@@ -55,9 +55,9 @@ jobs:
           sudo apt update -qq && sudo apt install -y jq -qq
 
       # ————————————————————————
-      # Determine Deploy Type & Badge Label
+      # Determine Deploy Type
       # ————————————————————————
-      - name: Determine Deploy Type & Badge Label
+      - name: Determine Deploy Type
         id: cfg
         run: |
           sanitize() {
@@ -72,30 +72,39 @@ jobs:
           BRANCH_REF="${{ github.ref }}"
           BRANCH_NAME=$(echo "$BRANCH_REF" | sed 's|^refs/heads/||' | sed 's|^refs/pull/[0-9]*/merge$||')
           EVENT="${{ github.event_name }}"
-          BADGE_OVERRIDE="${{ inputs.badge_label }}"
 
-          if [ "$EVENT" = "push" ] && [ "$BRANCH_NAME" = "main" ]; then
-            echo "type=prod" >> $GITHUB_OUTPUT
-            echo "env_name=" >> $GITHUB_OUTPUT
-            echo "badge_label=production" >> $GITHUB_OUTPUT
+          if [ "$EVENT" = "push" ]; then
+            if [ "$BRANCH_NAME" = "main" ]; then
+              echo "type=prod" >> $GITHUB_OUTPUT
+              echo "env_name=" >> $GITHUB_OUTPUT
+            else
+              ENV=$(sanitize "$BRANCH_NAME")
+              # Check if this branch has an open PR (to avoid duplicate runs with pull_request trigger)
+              API_URL="https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${BRANCH_NAME}&state=open"
+              PR_COUNT=$(curl -s -H "Authorization: token ${{ github.token }}" -H "Accept: application/vnd.github.v3+json" "$API_URL" | jq 'length')
+              if [ "$PR_COUNT" -gt 0 ]; then
+                echo "type=skip" >> $GITHUB_OUTPUT
+                echo "Skipping push deployment for branch $BRANCH_NAME (open PR exists; handled by pull_request trigger)"
+              else
+                echo "type=branch" >> $GITHUB_OUTPUT
+                echo "env_name=$ENV" >> $GITHUB_OUTPUT
+              fi
+            fi
 
           elif [ "$EVENT" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
             ENV=$(sanitize "pr-${PR_NUM}")
             echo "type=pr" >> $GITHUB_OUTPUT
             echo "env_name=$ENV" >> $GITHUB_OUTPUT
-            echo "badge_label=${BADGE_OVERRIDE:-$ENV}" >> $GITHUB_OUTPUT
 
           elif [ "$EVENT" = "workflow_dispatch" ]; then
             if [ "$BRANCH_NAME" = "main" ]; then
               echo "type=prod" >> $GITHUB_OUTPUT
               echo "env_name=" >> $GITHUB_OUTPUT
-              echo "badge_label=production" >> $GITHUB_OUTPUT
             else
               ENV=$(sanitize "$BRANCH_NAME")
               echo "type=manual" >> $GITHUB_OUTPUT
               echo "env_name=$ENV" >> $GITHUB_OUTPUT
-              echo "badge_label=${BADGE_OVERRIDE:-$ENV}" >> $GITHUB_OUTPUT
             fi
 
           else
@@ -116,7 +125,7 @@ jobs:
           }
 
       # ————————————————————————
-      # Setup wrangler.toml + Smart Assets Detection (fixed Bash gotcha)
+      # Setup wrangler.toml + Smart Assets Detection
       # ————————————————————————
       - name: Setup wrangler.toml with smart assets
         if: steps.cfg.outputs.type != 'skip'
@@ -124,17 +133,33 @@ jobs:
           set -euo pipefail
 
           if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
+            # When previews intentionally share the production database, point them at the
+            # production Worker script name so Cloudflare reuses the same Durable Object.
+            if [ "${{ env.USE_PRODUCTION_DB_ON_PREVIEW }}" = "true" ]; then
+              FINAL_NAME="${{ env.WORKER_NAME }}"
+            else
+              FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
+            fi
           else
             FINAL_NAME="${{ env.WORKER_NAME }}"
           fi
           COMPAT_DATE=$(date +%Y-%m-%d)
 
-          cat > wrangler.toml <<EOF
-          name = "${FINAL_NAME}"
-          main = "src/index.js"
-          compatibility_date = "${COMPAT_DATE}"
-          EOF
+          echo "name = \"${FINAL_NAME}\"" > wrangler.toml
+          echo "main = \"src/index.ts\"" >> wrangler.toml
+          echo "compatibility_date = \"${COMPAT_DATE}\"" >> wrangler.toml
+
+          {
+            echo "" >> wrangler.toml
+            echo "[durable_objects]" >> wrangler.toml
+            echo "bindings = [" >> wrangler.toml
+            echo "  { name = \"${FINAL_NAME}\", class_name = \"MatchState\" }" >> wrangler.toml
+            echo "]" >> wrangler.toml
+            echo "" >> wrangler.toml
+            echo "[[migrations]]" >> wrangler.toml
+            echo "tag = \"v1\"" >> wrangler.toml
+            echo "new_sqlite_classes = [ \"MatchState\" ]" >> wrangler.toml
+          }
 
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
@@ -154,7 +179,9 @@ jobs:
             exit 1
           elif [ ${#FOUND[@]} -eq 1 ]; then
             SELECTED="${FOUND[0]}"
-            echo "assets = { directory = \"$SELECTED\" }" >> wrangler.toml
+            echo "[assets]" >> wrangler.toml
+            echo "directory = \"$SELECTED\"" >> wrangler.toml
+            echo "binding = \"ASSETS\"" >> wrangler.toml
             echo "Using assets directory: $SELECTED"
           else
             echo "No assets directory found (public/dist/build) – skipping assets binding."
@@ -163,7 +190,7 @@ jobs:
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
           if [ -n "$SELECTED" ]; then
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
-          fi
+          fi          
 
       # ————————————————————————
       # Resolve Worker Host
@@ -217,61 +244,14 @@ jobs:
           echo "Resolved host: $HOST"
 
       # ————————————————————————
-      # D1: Create / Bind
+      # Load env vars from cloudflare/vars.json → wrangler.toml
       # ————————————————————————
-      - name: Create/Get D1 + Bind
+      - name: Inject cloudflare/vars.json into wrangler.toml
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
 
-          DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
-          DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
-            echo "$WORKER_NAME"
-          else
-            echo "${DEPLOY_ENV}-${WORKER_NAME}"
-          fi)
-
-          DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid // empty')
-
-          if [ -z "$DB_ID" ]; then
-            npx wrangler d1 create "$DB_NAME"
-            DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .uuid')
-          fi
-
-          if ! grep -q "database_id = \"$DB_ID\"" wrangler.toml; then
-            cat >> wrangler.toml <<EOF
-
-          [[d1_databases]]
-          binding = "$BINDING_NAME"
-          database_name = "$DB_NAME"
-          database_id = "$DB_ID"
-          EOF
-          fi
-
-          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
-
-      # ————————————————————————
-      # Apply Migrations
-      # ————————————————————————
-      - name: Apply Migrations
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
-
-          shopt -s nullglob
-          for f in migrations/*.sql; do
-            npx wrangler d1 execute "$DB_NAME" --file="$f" --remote || exit 1
-          done
-
-      # ————————————————————————
-      # Load env vars from .cloudflare/vars.json → wrangler.toml
-      # ————————————————————————
-      - name: Inject .cloudflare/vars.json into wrangler.toml
-        if: steps.cfg.outputs.type != 'skip'
-        run: |
-          set -euo pipefail
-
-          VARS_JSON=".cloudflare/vars.json"
+          VARS_JSON="cloudflare/vars.json"
           TOML="wrangler.toml"
 
           # -----------------------------------------------------------------
@@ -291,25 +271,18 @@ jobs:
           fi
 
           # -----------------------------------------------------------------
-          # 3. Remove any previous injection (keeps the file tidy on re-runs)
-          # -----------------------------------------------------------------
-          sed -i '/^# --- BEGIN INJECTED VARS ---$/,/^# --- END INJECTED VARS ---$/d' "$TOML" 2>/dev/null || true
-
-          # -----------------------------------------------------------------
-          # 4. Append the new block
+          # 3. Append the new block
           # -----------------------------------------------------------------
           {
-            echo "# --- BEGIN INJECTED VARS ---"
             echo "[vars]"
             # Quote every value and escape inner quotes
             jq -r 'to_entries[] |
                    "\(.key) = \"\(.value | gsub("\""; "\\\""))\""' "$VARS_JSON"
-            echo "# --- END INJECTED VARS ---"
           } >> "$TOML"
 
           COUNT=$(jq 'keys | length' "$VARS_JSON")
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
-
+          
       # ————————————————————————
       # Deploy Worker
       # ————————————————————————
@@ -335,4 +308,3 @@ jobs:
               repo: context.repo.repo,
               body: `Preview: ${{ env.PREVIEW_URL }}`
             });
-

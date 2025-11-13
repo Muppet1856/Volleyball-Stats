@@ -1,3 +1,4 @@
+// public/js/volleyball_stats.js
 var gk_isXlsx = false;
 var gk_xlsxFileLookup = {};
 var gk_fileData = {};
@@ -45,57 +46,38 @@ function updateHomeTeamUI() {
   }
 }
 
-function filledCell(cell) {
-  return cell !== '' && cell != null;
-}
+const apiClient = (() => {
+  const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' };
 
-function loadFileData(filename) {
-  if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+  function safeJsonParse(value, fallback) {
+    if (typeof value !== 'string') return fallback;
     try {
-      var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-      var firstSheetName = workbook.SheetNames[0];
-      var worksheet = workbook.Sheets[firstSheetName];
-
-      // Convert sheet to JSON to filter blank rows
-      var jsonData = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        blankrows: false,
-        defval: ''
-      });
-      // Filter out blank rows (rows where all cells are empty, null, or undefined)
-      var filteredData = jsonData.filter(row => row.some(filledCell));
-
-      // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-      var headerRowIndex = filteredData.findIndex((row, index) =>
-        row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-      );
-      // Fallback
-      if (headerRowIndex === -1 || headerRowIndex > 25) {
-        headerRowIndex = 0;
-      }
-
-      // Convert filtered JSON back to CSV
-      var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
-      csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-      return csv;
-    } catch (e) {
-      console.error(e);
-      return "";
+      return JSON.parse(value);
+    } catch (error) {
+      return fallback;
     }
   }
-  return gk_fileData[filename] || "";
-}
 
-const apiClient = (() => {
-  const JSON_HEADERS = { 'Content-Type': 'application/json' };
+  function normalizePlayerRecord(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      number: String(row.number ?? '').trim(),
+      lastName: String(row.last_name ?? row.lastName ?? '').trim(),
+      initial: String(row.initial ?? '').trim()
+    };
+  }
+
+  function serializePlayerInitial(initial) {
+    return String(initial ?? '');
+  }
 
   async function request(path, { method = 'GET', body, headers = {} } = {}) {
-    const init = { method, headers: body !== undefined ? { ...JSON_HEADERS, ...headers } : headers };
+    const init = { method };
+    const baseHeaders = body !== undefined ? JSON_HEADERS : { Accept: 'application/json' };
+    init.headers = { ...baseHeaders, ...headers };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
-      if (!init.headers['Content-Type']) {
-        init.headers['Content-Type'] = 'application/json';
-      }
     }
     const response = await fetch(path, init);
     if (!response.ok) {
@@ -106,7 +88,7 @@ const apiClient = (() => {
           errorMessage += `: ${errorText}`;
         }
       } catch (readError) {
-        // Ignore read errors when constructing the message
+        // Ignore read errors
       }
       throw new Error(errorMessage);
     }
@@ -120,22 +102,470 @@ const apiClient = (() => {
     return await response.text();
   }
 
+  function normalizeMatchFlags(flags = {}) {
+    const defaults = { tournament: false, league: false, postSeason: false, nonLeague: false };
+    return Object.keys(defaults).reduce((acc, key) => {
+      const value = flags[key];
+      acc[key] = Boolean(value);
+      return acc;
+    }, {});
+  }
+
+  function normalizeFinalizedSets(data) {
+    const normalized = {};
+    if (data && typeof data === 'object') {
+      Object.entries(data).forEach(([key, value]) => {
+        const setNumber = Number(key);
+        if (!Number.isNaN(setNumber)) {
+          normalized[setNumber] = Boolean(value);
+        }
+      });
+    }
+    return normalized;
+  }
+
+  function normalizeMatchSets(sets) {
+    const normalized = {};
+    if (!sets) {
+      return normalized;
+    }
+
+    const assignSet = (setNumber, data) => {
+      if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) return;
+      const timeouts = data && typeof data === 'object' ? data.timeouts || {} : {};
+      const homeTimeouts = Array.isArray(timeouts.home)
+        ? timeouts.home.map(Boolean)
+        : [Boolean(timeouts.home?.[0]), Boolean(timeouts.home?.[1])];
+      const oppTimeouts = Array.isArray(timeouts.opp)
+        ? timeouts.opp.map(Boolean)
+        : [Boolean(timeouts.opp?.[0]), Boolean(timeouts.opp?.[1])];
+      normalized[setNumber] = {
+        home: normalizeStoredScoreValue(data?.home ?? null),
+        opp: normalizeStoredScoreValue(data?.opp ?? null),
+        timeouts: {
+          home: [homeTimeouts[0] || false, homeTimeouts[1] || false],
+          opp: [oppTimeouts[0] || false, oppTimeouts[1] || false]
+        }
+      };
+    };
+
+    if (Array.isArray(sets)) {
+      sets.forEach((value) => {
+        if (!value || typeof value !== 'object') return;
+        const setNumber = Number(
+          value.setNumber ?? value.set_number ?? value.number ?? value.id ?? value.match_set_id
+        );
+        if (!Number.isInteger(setNumber)) return;
+        const homeScore = value.home ?? value.home_score ?? value.homeScore;
+        const oppScore = value.opp ?? value.opp_score ?? value.oppScore;
+        const homeTimeouts = {
+          home: [value.home_timeout_1, value.home_timeout_2],
+          opp: [value.opp_timeout_1, value.opp_timeout_2]
+        };
+        assignSet(setNumber, {
+          home: homeScore,
+          opp: oppScore,
+          timeouts: {
+            home: homeTimeouts.home.map((entry) => Boolean(Number(entry))),
+            opp: homeTimeouts.opp.map((entry) => Boolean(Number(entry)))
+          }
+        });
+      });
+      return normalized;
+    }
+
+    if (typeof sets === 'object') {
+      Object.entries(sets).forEach(([key, value]) => {
+        const setNumber = Number(key);
+        if (Number.isNaN(setNumber)) return;
+        const timeouts = value && typeof value === 'object' ? value.timeouts || {} : {};
+        assignSet(setNumber, {
+          home: value?.home ?? null,
+          opp: value?.opp ?? null,
+          timeouts
+        });
+      });
+    }
+
+    return normalized;
+  }
+
+  function parseMatchPlayers(value) {
+    const parsedValue = typeof value === 'string' ? safeJsonParse(value, null) : value;
+    if (Array.isArray(parsedValue)) {
+      return { roster: [], deleted: false, legacyRoster: parsedValue.slice() };
+    }
+    if (parsedValue && typeof parsedValue === 'object') {
+      const roster = normalizeRosterArray(parsedValue.roster);
+      const legacyRoster = Array.isArray(parsedValue.legacyRoster)
+        ? parsedValue.legacyRoster.slice()
+        : null;
+      return {
+        roster,
+        deleted: Boolean(parsedValue.deleted),
+        legacyRoster
+      };
+    }
+    return { roster: [], deleted: false };
+  }
+
+  function serializeMatchPlayers(match) {
+    const roster = normalizeRosterArray(match?.players);
+    return { roster };
+  }
+
+  function parseMatchMetadata(typesValue, finalizedSetsValue) {
+    let parsed = null;
+    if (typeof typesValue === 'string') {
+      parsed = safeJsonParse(typesValue, null);
+    } else if (typesValue && typeof typesValue === 'object') {
+      parsed = typesValue;
+    }
+
+    let flags = normalizeMatchFlags();
+    let sets = {};
+    let deleted = false;
+    let deletedFlagPresent = false;
+
+    if (parsed && typeof parsed === 'object') {
+      const candidateFlags = parsed.flags && typeof parsed.flags === 'object' ? parsed.flags : parsed;
+      flags = normalizeMatchFlags(candidateFlags);
+      if (parsed.sets && typeof parsed.sets === 'object') {
+        sets = parsed.sets;
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
+        deleted = Boolean(parsed.deleted);
+        deletedFlagPresent = true;
+      }
+    } else if (parsed !== null) {
+      flags = normalizeMatchFlags(parsed);
+    }
+
+    let finalizedSets = {};
+    if (typeof finalizedSetsValue === 'string') {
+      const parsedColumn = safeJsonParse(finalizedSetsValue, null);
+      if (parsedColumn && typeof parsedColumn === 'object') {
+        finalizedSets = parsedColumn;
+      }
+    } else if (finalizedSetsValue && typeof finalizedSetsValue === 'object') {
+      finalizedSets = finalizedSetsValue;
+    }
+
+    if (Object.keys(finalizedSets).length === 0 && parsed && typeof parsed === 'object') {
+      const legacyFinalized = parsed.finalizedSets;
+      if (legacyFinalized && typeof legacyFinalized === 'object') {
+        finalizedSets = legacyFinalized;
+      }
+    }
+
+    return {
+      flags,
+      sets,
+      finalizedSets: normalizeFinalizedSets(finalizedSets),
+      deleted,
+      deletedFlagPresent
+    };
+  }
+
+  function serializeMatchMetadata(match) {
+    const flags = normalizeMatchFlags(match?.types || {});
+    return { ...flags };
+  }
+
+  function normalizeResultValue(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  function prepareMatchForStorage(match) {
+    const metadata = serializeMatchMetadata(match);
+    const deleted = Boolean(match?.deleted);
+    const playersPayload = serializeMatchPlayers(match);
+    const finalizedSetsPayload = normalizeFinalizedSets(match?.finalizedSets);
+    const body = {
+      date: match?.date || null,
+      location: match?.location || null,
+      types: JSON.stringify(metadata),
+      opponent: match?.opponent || null,
+      jersey_color_home: match?.jerseyColorHome || null,
+      jersey_color_opp: match?.jerseyColorOpp || null,
+      result_home: normalizeResultValue(match?.resultHome),
+      result_opp: normalizeResultValue(match?.resultOpp),
+      first_server: match?.firstServer || null,
+      players: JSON.stringify(playersPayload),
+      finalized_sets: JSON.stringify(finalizedSetsPayload || {}),
+      deleted
+    };
+    return { body, metadata, playersPayload };
+  }
+
+  function parseMatchRow(row) {
+    const id = Number(row.id);
+    const metadata = parseMatchMetadata(row.types, row.finalized_sets);
+    const playersPayload = parseMatchPlayers(row.players);
+    const hasMetadataDeleted = Boolean(metadata.deletedFlagPresent);
+    const metadataDeleted = Boolean(metadata.deleted);
+    const legacyDeleted = Boolean(playersPayload.deleted);
+    const columnHasDeleted = Object.prototype.hasOwnProperty.call(row, 'deleted');
+    let deleted = null;
+    if (columnHasDeleted) {
+      const value = row.deleted;
+      if (typeof value === 'string') {
+        deleted = value === '1' || value.toLowerCase() === 'true';
+      } else if (typeof value === 'number') {
+        deleted = value !== 0;
+      } else if (typeof value === 'boolean') {
+        deleted = value;
+      } else if (value == null) {
+        deleted = false;
+      }
+    }
+    if (deleted === null) {
+      deleted = hasMetadataDeleted ? metadataDeleted : legacyDeleted;
+    }
+    return {
+      id: Number.isNaN(id) ? row.id : id,
+      date: row.date ?? '',
+      location: row.location ?? '',
+      types: metadata.flags,
+      opponent: row.opponent ?? '',
+      jerseyColorHome: row.jersey_color_home ?? '',
+      jerseyColorOpp: row.jersey_color_opp ?? '',
+      resultHome: row.result_home != null ? Number(row.result_home) : null,
+      resultOpp: row.result_opp != null ? Number(row.result_opp) : null,
+      firstServer: row.first_server ?? '',
+      players: playersPayload.roster,
+      legacyPlayers: playersPayload.legacyRoster || null,
+      sets: normalizeMatchSets(metadata.sets),
+      finalizedSets: metadata.finalizedSets,
+      _deleted: Boolean(deleted)
+    };
+  }
+
+  function stripInternalMatch(match) {
+    if (!match) return null;
+    const { _deleted, ...rest } = match;
+    return rest;
+  }
+
+  async function getRawMatches() {
+    const data = await request('/api/match');
+    return Array.isArray(data) ? data : [];
+  }
+
+  async function getNormalizedMatches() {
+    const rows = await getRawMatches();
+    return rows.map(parseMatchRow);
+  }
+
+  async function updateMatchInternal(id, match) {
+    const { body } = prepareMatchForStorage(match);
+    await request('/api/match/set-date-time', { method: 'POST', body: { matchId: id, date: body.date } });
+    await request('/api/match/set-location', { method: 'POST', body: { matchId: id, location: body.location } });
+    await request('/api/match/set-type', { method: 'POST', body: { matchId: id, types: body.types } });
+    await request('/api/match/set-opp-name', { method: 'POST', body: { matchId: id, opponent: body.opponent } });
+    await request('/api/match/set-result', { method: 'POST', body: { matchId: id, resultHome: body.result_home, resultOpp: body.result_opp } });
+    await request('/api/match/set-players', { method: 'POST', body: { matchId: id, players: body.players } });
+    await request('/api/match/set-home-color', { method: 'POST', body: { matchId: id, jerseyColorHome: body.jersey_color_home } });
+    await request('/api/match/set-opp-color', { method: 'POST', body: { matchId: id, jerseyColorOpp: body.jersey_color_opp } });
+    await request('/api/match/set-first-server', { method: 'POST', body: { matchId: id, firstServer: body.first_server } });
+    await request('/api/match/set-deleted', { method: 'POST', body: { matchId: id, deleted: body.deleted } });
+    return { id };
+  }
+
+  function findMatchById(matches, id) {
+    const numericId = Number(id);
+    return matches.find(match => {
+      const matchId = Number(match.id);
+      if (!Number.isNaN(numericId) && !Number.isNaN(matchId)) {
+        return matchId === numericId;
+      }
+      return match.id === id;
+    });
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      __test__: {
+        parseMatchPlayers,
+        serializeMatchPlayers,
+        parseMatchMetadata,
+        serializeMatchMetadata,
+        parseMatchRow,
+        prepareMatchForStorage
+      }
+    };
+  }
+
   return {
-    getPlayers: () => request('/api/players'),
-    createPlayer: (player) => request('/api/players', { method: 'POST', body: player }),
-    updatePlayer: (id, player) => request(`/api/players/${id}`, { method: 'PUT', body: player }),
-    deletePlayer: (id) => request(`/api/players/${id}`, { method: 'DELETE' }),
-    listMatches: () => request('/api/matches'),
-    getMatch: (id) => request(`/api/matches/${id}`),
-    createMatch: (match) => request('/api/matches', { method: 'POST', body: match }),
-    updateMatch: (id, match) => request(`/api/matches/${id}`, { method: 'PUT', body: match }),
-    deleteMatch: (id) => request(`/api/matches/${id}`, { method: 'DELETE' })
+    async getPlayers() {
+      const rows = await request('/api/player');
+      const normalized = Array.isArray(rows) ? rows.map(normalizePlayerRecord).filter(Boolean) : [];
+      return normalized;
+    },
+
+    async createPlayer(player) {
+      const payload = {
+        number: String(player.number ?? '').trim(),
+        last_name: String(player.lastName ?? '').trim(),
+        initial: serializePlayerInitial(player.initial ?? '')
+      };
+      return await request('/api/player/create', { method: 'POST', body: payload });
+    },
+
+    async updatePlayer(id, player) {
+      await request('/api/player/set-number', { method: 'POST', body: { playerId: id, number: String(player.number ?? '').trim() } });
+      await request('/api/player/set-lname', { method: 'POST', body: { playerId: id, lastName: String(player.lastName ?? '').trim() } });
+      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(player.initial ?? '') } });
+      return { id };
+    },
+
+    async deletePlayer(id) {
+      await request(`/api/player/delete/${id}`, { method: 'DELETE' });
+      return { id };
+    },
+
+    async listMatches() {
+      const matches = await getNormalizedMatches();
+      return matches.filter(match => !match._deleted).map(stripInternalMatch);
+    },
+
+    async getMatch(id, { includeDeleted = false } = {}) {
+      const matches = await getNormalizedMatches();
+      const match = findMatchById(matches, id);
+      if (!match) return null;
+      if (match._deleted && !includeDeleted) return null;
+      const stripped = stripInternalMatch(match) || {};
+      const numericId = Number(match.id);
+      if (!Number.isNaN(numericId)) {
+        stripped.id = numericId;
+        try {
+          const setRows = await this.getMatchSets(numericId);
+          const normalizedSets = normalizeMatchSets(setRows);
+          if (normalizedSets && Object.keys(normalizedSets).length > 0) {
+            stripped.sets = normalizedSets;
+          }
+        } catch (error) {
+          console.error(`Failed to load sets for match ${numericId}`, error);
+        }
+      }
+      return stripped;
+    },
+
+    async createMatch(match) {
+      const { body } = prepareMatchForStorage(match);
+      return await request('/api/match/create', { method: 'POST', body });
+    },
+
+    async updateMatch(id, match) {
+      return await updateMatchInternal(id, match);
+    },
+
+    prepareMatchPayload(match) {
+      return prepareMatchForStorage(match);
+    },
+
+    async getMatchSets(matchId) {
+      if (matchId === undefined || matchId === null) return [];
+      const response = await request(`/api/set?matchId=${matchId}`);
+      return Array.isArray(response) ? response : [];
+    },
+
+    async createSet(payload) {
+      return await request('/api/set/create', { method: 'POST', body: payload });
+    },
+
+    async updateSetScore(setId, team, score) {
+      if (team === 'home') {
+        return await request('/api/set/set-home-score', { method: 'POST', body: { setId, homeScore: score } });
+      }
+      return await request('/api/set/set-opp-score', { method: 'POST', body: { setId, oppScore: score } });
+    },
+
+    async updateSetTimeout(setId, team, timeoutNumber, value) {
+      const payload = { setId, timeoutNumber, value };
+      if (team === 'home') {
+        return await request('/api/set/set-home-timeout', { method: 'POST', body: payload });
+      }
+      return await request('/api/set/set-opp-timeout', { method: 'POST', body: payload });
+    },
+
+    async deleteSet(setId) {
+      return await request(`/api/set/delete/${setId}`, { method: 'DELETE' });
+    },
+
+    async updateFinalizedSets(matchId, finalizedSets) {
+      return await request('/api/set/set-is-final', { method: 'POST', body: { matchId, finalizedSets } });
+    },
+
+    async deleteMatch(id) {
+      const matches = await getNormalizedMatches();
+      const match = findMatchById(matches, id);
+      if (!match) return null;
+      return await updateMatchInternal(match.id, { ...stripInternalMatch(match), deleted: true });
+    }
   };
 })();
 
 let playerRecords = [];
 let players = [];
 let playerSortMode = 'number';
+const temporaryPlayerNumbers = new Map();
+let pendingTemporaryPlayer = null;
+let playerFormErrorElement = null;
+
+function normalizePlayerId(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return String(value);
+}
+
+function normalizeRosterEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const playerId = normalizePlayerId(
+    entry.playerId ?? entry.id ?? entry.player_id ?? entry.player ?? null
+  );
+  if (playerId === null) {
+    return null;
+  }
+  const rawTemp = entry.tempNumber ?? entry.temp_number ?? entry.temp ?? null;
+  const tempString = rawTemp === null || rawTemp === undefined ? '' : String(rawTemp).trim();
+  const normalized = { playerId };
+  if (tempString) {
+    normalized.tempNumber = tempString;
+  }
+  return normalized;
+}
+
+function normalizeRosterArray(roster) {
+  if (!Array.isArray(roster)) {
+    return [];
+  }
+  const seen = new Set();
+  const normalizedRoster = [];
+  roster.forEach(entry => {
+    const normalized = normalizeRosterEntry(entry);
+    if (!normalized) {
+      return;
+    }
+    if (seen.has(normalized.playerId)) {
+      const existingIndex = normalizedRoster.findIndex(
+        candidate => candidate.playerId === normalized.playerId
+      );
+      if (existingIndex !== -1 && normalized.tempNumber) {
+        normalizedRoster[existingIndex] = normalized;
+      }
+      return;
+    }
+    seen.add(normalized.playerId);
+    normalizedRoster.push(normalized);
+  });
+  return normalizedRoster;
+}
     let finalizedSets = {};
     let isSwapped = false;
     let editingPlayerId = null;
@@ -155,25 +585,52 @@ let playerSortMode = 'number';
     const TIMEOUT_COUNT = 2;
     const TIMEOUT_DURATION_SECONDS = 60;
     const SET_NUMBERS = [1, 2, 3, 4, 5];
+    const matchSetRecords = new Map();
     const scoreGameState = {
       setNumber: null,
-      sc: null,
+      home: null,
       opp: null,
       timeouts: {
-        sc: Array(TIMEOUT_COUNT).fill(false),
+        home: Array(TIMEOUT_COUNT).fill(false),
         opp: Array(TIMEOUT_COUNT).fill(false)
       },
-      activeTimeout: { sc: null, opp: null },
-      timeoutTimers: { sc: null, opp: null },
+      activeTimeout: { home: null, opp: null },
+      timeoutTimers: { home: null, opp: null },
       timeoutRemainingSeconds: {
-        sc: TIMEOUT_DURATION_SECONDS,
+        home: TIMEOUT_DURATION_SECONDS,
         opp: TIMEOUT_DURATION_SECONDS
       }
     };
     let matchTimeouts = createEmptyMatchTimeouts();
-    const finalizeButtonPopoverTimers = new WeakMap();
+    const finalizePopoverTimers = new WeakMap();
+    const finalizedStatePopoverTimers = new WeakMap();
+    const finalizedPopoverWrappers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
     const FINALIZE_TIE_POPOVER_MESSAGE = 'Set scores are tied. Adjust one team\'s score before marking the set final.';
+    const FINALIZE_MISSING_POPOVER_TITLE = 'Scores missing';
+    const FINALIZE_MISSING_POPOVER_MESSAGE = 'Enter both scores before finalizing the set.';
+    const FINALIZED_SET_POPOVER_TITLE = 'Score finalized';
+    const FINALIZED_SET_POPOVER_MESSAGE = 'This set\'s score is finalized. Toggle the final status to make changes.';
+    const FINALIZE_POPOVER_CONFIG = {
+      tie: {
+        title: FINALIZE_TIE_POPOVER_TITLE,
+        content: FINALIZE_TIE_POPOVER_MESSAGE,
+        customClass: 'finalize-error-popover'
+      },
+      missing: {
+        title: FINALIZE_MISSING_POPOVER_TITLE,
+        content: FINALIZE_MISSING_POPOVER_MESSAGE,
+        customClass: 'finalize-error-popover'
+      },
+      finalized: {
+        title: FINALIZED_SET_POPOVER_TITLE,
+        content: FINALIZED_SET_POPOVER_MESSAGE,
+        customClass: 'finalize-final-popover'
+      }
+    };
+    const SCORE_FINALIZED_BACKGROUND_BLEND = 0.5;
+    const SCORE_FINALIZED_TEXT_BLEND = 0.35;
+    const SCORE_FINALIZED_GRAY_COLOR = { r: 173, g: 181, b: 189, a: 1 };
 
     function getScoreGameModalDialog() {
       const modalElement = document.getElementById('scoreGameModal');
@@ -205,28 +662,67 @@ let playerSortMode = 'number';
         }
       });
     }
-    function formatPlayerRecord(player) {
+    function formatLegacyPlayerRecord(player) {
       const number = String(player.number ?? '').trim();
       const lastName = String(player.lastName ?? '').trim();
       const initial = String(player.initial ?? '').trim();
       return [number, lastName, initial].filter(Boolean).join(' ');
     }
 
+    function getPlayerDisplayData(player) {
+      if (!player) {
+        return { id: null, number: '', tempNumber: '', lastName: '', initial: '' };
+      }
+      const id = normalizePlayerId(player.id);
+      const number = String(player.number ?? '').trim();
+      const lastName = String(player.lastName ?? '').trim();
+      const initial = String(player.initial ?? '').trim();
+      let tempNumber = '';
+      if (id !== null && temporaryPlayerNumbers.has(id)) {
+        const rawTemp = temporaryPlayerNumbers.get(id);
+        if (rawTemp !== null && rawTemp !== undefined) {
+          tempNumber = String(rawTemp).trim();
+        }
+      }
+      return { id, number, tempNumber, lastName, initial };
+    }
+
+    function formatPlayerRecord(player) {
+      const { number, tempNumber, lastName, initial } = getPlayerDisplayData(player);
+      const displayNumber = tempNumber || number;
+      const nameText = [lastName, initial].filter(Boolean).join(' ');
+      return [displayNumber, nameText].filter(Boolean).join(' ');
+    }
+
+
+    function getSortablePlayerNumber(player) {
+      const { number, tempNumber } = getPlayerDisplayData(player);
+      const rawValue = (tempNumber || number || '').trim();
+      const numericValue = parseInt(rawValue, 10);
+      return {
+        rawValue,
+        numericValue,
+        hasNumericValue: !Number.isNaN(numericValue)
+      };
+    }
 
     function comparePlayersByNumber(a, b) {
-      const numberA = parseInt(a.number, 10);
-      const numberB = parseInt(b.number, 10);
-      if (!Number.isNaN(numberA) && !Number.isNaN(numberB) && numberA !== numberB) {
-        return numberA - numberB;
+      const numberA = getSortablePlayerNumber(a);
+      const numberB = getSortablePlayerNumber(b);
+      if (numberA.hasNumericValue && numberB.hasNumericValue && numberA.numericValue !== numberB.numericValue) {
+        return numberA.numericValue - numberB.numericValue;
       }
-      if (!Number.isNaN(numberA) && Number.isNaN(numberB)) {
+      if (numberA.hasNumericValue && !numberB.hasNumericValue) {
         return -1;
       }
-      if (Number.isNaN(numberA) && !Number.isNaN(numberB)) {
+      if (!numberA.hasNumericValue && numberB.hasNumericValue) {
         return 1;
       }
       const nameA = formatPlayerRecord(a);
       const nameB = formatPlayerRecord(b);
+      if (numberA.rawValue && numberB.rawValue && numberA.rawValue !== numberB.rawValue) {
+        return numberA.rawValue.localeCompare(numberB.rawValue, undefined, { sensitivity: 'base' });
+      }
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
     }
 
@@ -261,19 +757,81 @@ let playerSortMode = 'number';
       button.setAttribute('title', description);
     }
 
+    function updateModalPlayerSortSelect() {
+      const select = document.getElementById('modalPlayerSortSelect');
+      if (!select) return;
+      if (select.value !== playerSortMode) {
+        select.value = playerSortMode;
+      }
+    }
+
+    function setPlayerSortMode(mode) {
+      const normalized = mode === 'name' ? 'name' : 'number';
+      if (playerSortMode === normalized) {
+        updatePlayerSortToggle();
+        updateModalPlayerSortSelect();
+        return;
+      }
+      playerSortMode = normalized;
+      setPlayerRecords(playerRecords);
+    }
+
     function setPlayerRecords(records) {
       const safeRecords = Array.isArray(records) ? records : [];
       const sortedRecords = sortPlayerRecords(safeRecords);
       playerRecords = sortedRecords;
-      players = sortedRecords.map(formatPlayerRecord);
+      players = sortedRecords.map(getPlayerDisplayData);
+      const validIds = new Set(sortedRecords.map(record => normalizePlayerId(record.id)).filter(id => id !== null));
+      Array.from(temporaryPlayerNumbers.keys()).forEach(playerId => {
+        if (!validIds.has(playerId)) {
+          temporaryPlayerNumbers.delete(playerId);
+        }
+      });
+      if (pendingTemporaryPlayer) {
+        const {
+          number: pendingNumber,
+          lastName: pendingLastName,
+          initial: pendingInitial,
+          value: pendingValue
+        } = pendingTemporaryPlayer;
+        const normalizedNumber = String(pendingNumber ?? '').trim();
+        const normalizedLast = String(pendingLastName ?? '').trim().toLocaleLowerCase();
+        const normalizedInitial = String(pendingInitial ?? '').trim().toLocaleLowerCase();
+        const match = sortedRecords.find(record => {
+          const recordId = normalizePlayerId(record.id);
+          if (recordId === null) {
+            return false;
+          }
+          const recordNumber = String(record.number ?? '').trim();
+          const recordLast = String(record.lastName ?? '').trim().toLocaleLowerCase();
+          const recordInitial = String(record.initial ?? '').trim().toLocaleLowerCase();
+          return (
+            recordNumber === normalizedNumber &&
+            recordLast === normalizedLast &&
+            recordInitial === normalizedInitial &&
+            !temporaryPlayerNumbers.has(recordId)
+          );
+        });
+        if (match) {
+          const matchId = normalizePlayerId(match.id);
+          if (matchId !== null) {
+            if (pendingValue) {
+              temporaryPlayerNumbers.set(matchId, pendingValue);
+            } else {
+              temporaryPlayerNumbers.delete(matchId);
+            }
+          }
+        }
+        pendingTemporaryPlayer = null;
+      }
       updatePlayerList();
       updateModalPlayerList();
       updatePlayerSortToggle();
+      updateModalPlayerSortSelect();
     }
 
     function togglePlayerSortMode() {
-      playerSortMode = playerSortMode === 'number' ? 'name' : 'number';
-      setPlayerRecords(playerRecords);
+      setPlayerSortMode(playerSortMode === 'number' ? 'name' : 'number');
     }
 
 
@@ -350,13 +908,64 @@ let playerSortMode = 'number';
 
     function maybeRecalculateFinalResult(target) {
       if (!target || !target.id) return;
-      const match = target.id.match(/^set(\d+)(SC|Opp)$/);
+      const match = target.id.match(/^set(\d+)(Home|Opp)$/);
       if (!match) return;
       const setNumber = parseInt(match[1], 10);
       if (Number.isNaN(setNumber)) return;
+
+      const editedKey = match[2] === 'Opp' ? 'opp' : 'home';
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      if (!homeInput || !oppInput) {
+        return;
+      }
+      const editedInput = editedKey === 'home' ? homeInput : oppInput;
+      const isDirectInputEvent = editedInput === target;
+      const editedScore = isDirectInputEvent ? parseScoreValue(editedInput.value) : null;
+      let didAutoFill = false;
+      let shouldUpdateScoreDisplay = false;
+      const isScoreModalOpenForSet = scoreGameState.setNumber === setNumber;
+
+      if (isScoreModalOpenForSet && isDirectInputEvent) {
+        const currentValue = editedKey === 'home' ? scoreGameState.home : scoreGameState.opp;
+        if (currentValue !== editedScore) {
+          if (editedKey === 'home') {
+            scoreGameState.home = editedScore;
+          } else {
+            scoreGameState.opp = editedScore;
+          }
+          shouldUpdateScoreDisplay = true;
+        }
+      }
+
+      if (isDirectInputEvent && editedScore !== null) {
+        const companionKey = editedKey === 'home' ? 'opp' : 'home';
+        const companionInput = companionKey === 'home' ? homeInput : oppInput;
+        if (companionInput && companionInput.value.trim() === '') {
+          const zeroString = formatScoreInputValue(0);
+          companionInput.value = zeroString;
+          didAutoFill = true;
+          if (isScoreModalOpenForSet) {
+            const zeroScore = parseScoreValue(zeroString);
+            const currentCompanion = companionKey === 'home' ? scoreGameState.home : scoreGameState.opp;
+            if (currentCompanion !== zeroScore) {
+              if (companionKey === 'home') {
+                scoreGameState.home = zeroScore;
+              } else {
+                scoreGameState.opp = zeroScore;
+              }
+              shouldUpdateScoreDisplay = true;
+            }
+          }
+        }
+      }
+
       const { finalStateChanged } = updateFinalizeButtonState(setNumber);
-      if (finalizedSets[setNumber] || finalStateChanged) {
+      if (didAutoFill || finalizedSets[setNumber] || finalStateChanged) {
         calculateResult();
+      }
+
+      if (shouldUpdateScoreDisplay && isScoreModalOpenForSet) {
+        updateScoreModalDisplay();
       }
     }
 
@@ -391,6 +1000,34 @@ let playerSortMode = 'number';
       return clampScoreValue(value).toString().padStart(2, '0');
     }
 
+    function getSetScoreInputs(setNumber) {
+      return {
+        homeInput: document.getElementById(`set${setNumber}Home`),
+        oppInput: document.getElementById(`set${setNumber}Opp`)
+      };
+    }
+
+    function syncSetInputsToStoredScores(setNumber, record) {
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      const homeValue = record ? record.homeScore : null;
+      const oppValue = record ? record.oppScore : null;
+      if (homeInput) {
+        homeInput.value = formatScoreInputValue(homeValue);
+      }
+      if (oppInput) {
+        oppInput.value = formatScoreInputValue(oppValue);
+      }
+      if (scoreGameState.setNumber === setNumber) {
+        const normalizedHome = homeInput ? parseScoreValue(homeInput.value) : null;
+        const normalizedOpp = oppInput ? parseScoreValue(oppInput.value) : null;
+        scoreGameState.home = normalizedHome;
+        scoreGameState.opp = normalizedOpp;
+        updateScoreModalDisplay();
+      }
+      updateFinalizeButtonState(setNumber);
+      calculateResult();
+    }
+
     function normalizeScoreInputValue(rawValue) {
       const parsed = parseScoreValue(rawValue);
       return parsed === null ? '' : clampScoreValue(parsed).toString();
@@ -406,82 +1043,428 @@ let playerSortMode = 'number';
       return normalizeScoreInputValue(String(value));
     }
 
-    function clearFinalizePopoverTimer(button) {
-      const timerId = finalizeButtonPopoverTimers.get(button);
+    function clearFinalizePopoverTimer(element) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const timerId = finalizePopoverTimers.get(host);
       if (timerId) {
         clearTimeout(timerId);
-        finalizeButtonPopoverTimers.delete(button);
+        finalizePopoverTimers.delete(host);
       }
     }
 
-    function showFinalizeTiePopover(button) {
-      if (!button) return;
-      let popover = bootstrap.Popover.getInstance(button);
-      if (!popover) {
-        popover = new bootstrap.Popover(button, {
+    function clearFinalizedStatePopoverTimer(element) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const timerId = finalizedStatePopoverTimers.get(host);
+      if (timerId) {
+        clearTimeout(timerId);
+        finalizedStatePopoverTimers.delete(host);
+      }
+    }
+
+    function ensureFinalizePopover(element, type) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return null;
+      const desiredType = type && FINALIZE_POPOVER_CONFIG[type] ? type : 'tie';
+      const existingType = host.dataset.finalizePopoverType;
+      let popover = bootstrap.Popover.getInstance(host);
+      if (!popover || existingType !== desiredType) {
+        if (popover) {
+          popover.dispose();
+        }
+        const config = FINALIZE_POPOVER_CONFIG[desiredType];
+        popover = new bootstrap.Popover(host, {
           container: 'body',
-          trigger: 'manual',
+          trigger: 'manual focus hover',
           placement: 'top',
-          title: FINALIZE_TIE_POPOVER_TITLE,
-          content: FINALIZE_TIE_POPOVER_MESSAGE,
-          customClass: 'finalize-error-popover'
+          title: config.title,
+          content: config.content,
+          customClass: config.customClass
         });
-      } else if (typeof popover.setContent === 'function') {
-        popover.setContent({
-          '.popover-header': FINALIZE_TIE_POPOVER_TITLE,
-          '.popover-body': FINALIZE_TIE_POPOVER_MESSAGE
-        });
+        host.dataset.finalizePopoverType = desiredType;
       } else {
-        button.setAttribute('data-bs-original-title', FINALIZE_TIE_POPOVER_TITLE);
-        button.setAttribute('data-bs-content', FINALIZE_TIE_POPOVER_MESSAGE);
+        const config = FINALIZE_POPOVER_CONFIG[desiredType];
+        if (typeof popover.setContent === 'function') {
+          popover.setContent({
+            '.popover-header': config.title,
+            '.popover-body': config.content
+          });
+        } else {
+          host.setAttribute('data-bs-original-title', config.title);
+          host.setAttribute('data-bs-content', config.content);
+        }
       }
+      return popover;
+    }
+
+    function showFinalizedStatePopover(element, { focus = false } = {}) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      clearFinalizePopoverTimer(host);
+      const popover = ensureFinalizePopover(host, 'finalized');
+      if (!popover) return;
       popover.show();
-      try {
-        button.focus({ preventScroll: true });
-      } catch (error) {
-        button.focus();
+      if (focus) {
+        try {
+          host.focus({ preventScroll: true });
+        } catch (error) {
+          host.focus();
+        }
       }
-      clearFinalizePopoverTimer(button);
+      clearFinalizedStatePopoverTimer(host);
       const timerId = setTimeout(() => {
         popover.hide();
-        finalizeButtonPopoverTimers.delete(button);
+        finalizedStatePopoverTimers.delete(host);
+      }, 2600);
+      finalizedStatePopoverTimers.set(host, timerId);
+    }
+
+    function destroyFinalizedStatePopover(element) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      clearFinalizedStatePopoverTimer(host);
+      if (host.dataset.finalizePopoverType === 'finalized') {
+        const popover = bootstrap.Popover.getInstance(host);
+        if (popover) {
+          popover.hide();
+          popover.dispose();
+        }
+        delete host.dataset.finalizePopoverType;
+      }
+    }
+
+    function hideFinalizePopover(element, type) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      clearFinalizePopoverTimer(host);
+      if (host.dataset.finalizePopoverType === type) {
+        const popover = bootstrap.Popover.getInstance(host);
+        if (popover) {
+          popover.hide();
+          popover.dispose();
+        }
+        delete host.dataset.finalizePopoverType;
+      }
+    }
+
+    function hideFinalizeTiePopover(element) {
+      hideFinalizePopover(element, 'tie');
+    }
+
+    function hideFinalizeMissingPopover(element) {
+      hideFinalizePopover(element, 'missing');
+    }
+
+    function getFinalizePopoverTargets(setNumber) {
+      const finalizeButton = resolveFinalizePopoverElement(document.getElementById(`finalizeButton${setNumber}`));
+      const targets = finalizeButton ? [finalizeButton] : [];
+      if (finalizedSets[setNumber]) {
+        const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+        if (homeInput) {
+          const homeTarget = resolveFinalizePopoverElement(homeInput);
+          if (homeTarget) {
+            targets.push(homeTarget);
+          }
+        }
+        if (oppInput) {
+          const oppTarget = resolveFinalizePopoverElement(oppInput);
+          if (oppTarget) {
+            targets.push(oppTarget);
+          }
+        }
+        const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
+        if (scoreButton) {
+          const scoreTarget = resolveFinalizePopoverElement(scoreButton);
+          if (scoreTarget) {
+            targets.push(scoreTarget);
+          }
+        }
+      }
+      return targets;
+    }
+
+    function showFinalizeTiePopover(element, { focus = false } = {}) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const popover = ensureFinalizePopover(host, 'tie');
+      if (!popover) return;
+      popover.show();
+      if (focus) {
+        try {
+          host.focus({ preventScroll: true });
+        } catch (error) {
+          host.focus();
+        }
+      }
+      clearFinalizePopoverTimer(host);
+      const timerId = setTimeout(() => {
+        popover.hide();
+        finalizePopoverTimers.delete(host);
       }, 2400);
-      finalizeButtonPopoverTimers.set(button, timerId);
+      finalizePopoverTimers.set(host, timerId);
+    }
+
+    function showFinalizeTiePopovers(setNumber) {
+      const targets = getFinalizePopoverTargets(setNumber);
+      targets.forEach((element, index) => {
+        showFinalizeTiePopover(element, { focus: index === 0 });
+      });
+    }
+
+    function showFinalizeMissingPopover(element, { focus = false } = {}) {
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const popover = ensureFinalizePopover(host, 'missing');
+      if (!popover) return;
+      popover.show();
+      if (focus) {
+        try {
+          host.focus({ preventScroll: true });
+        } catch (error) {
+          host.focus();
+        }
+      }
+      clearFinalizePopoverTimer(host);
+      const timerId = setTimeout(() => {
+        popover.hide();
+        finalizePopoverTimers.delete(host);
+      }, 2400);
+      finalizePopoverTimers.set(host, timerId);
+    }
+
+    function showFinalizeMissingScorePopovers(setNumber) {
+      const targets = getFinalizePopoverTargets(setNumber);
+      targets.forEach((element, index) => {
+        showFinalizeMissingPopover(element, { focus: index === 0 });
+      });
+    }
+
+    function hideFinalizeErrorPopovers(element) {
+      hideFinalizeTiePopover(element);
+      hideFinalizeMissingPopover(element);
+    }
+
+    function ensureFinalizedPopoverTargets(setNumber) {
+      getFinalizePopoverTargets(setNumber).forEach((element) => ensureFinalizePopover(element, 'finalized'));
+    }
+
+    function destroyFinalizedPopoverTargets(setNumber) {
+      getFinalizePopoverTargets(setNumber).forEach((element) => destroyFinalizedStatePopover(element));
+    }
+
+    function colorObjectToCss(color) {
+      if (!color) return '';
+      const r = Math.round(Math.max(0, Math.min(255, color.r ?? 0)));
+      const g = Math.round(Math.max(0, Math.min(255, color.g ?? 0)));
+      const b = Math.round(Math.max(0, Math.min(255, color.b ?? 0)));
+      const alpha = color.a === undefined ? 1 : Math.max(0, Math.min(1, color.a));
+      if (alpha >= 1) {
+        return `rgb(${r}, ${g}, ${b})`;
+      }
+      return `rgba(${r}, ${g}, ${b}, ${Number(alpha.toFixed(3))})`;
+    }
+
+    function mixColorWithGray(colorString, ratio = SCORE_FINALIZED_BACKGROUND_BLEND) {
+      if (!colorString) return null;
+      const base = parseCssColor(colorString);
+      if (!base) return null;
+      const blendRatio = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : SCORE_FINALIZED_BACKGROUND_BLEND;
+      const gray = SCORE_FINALIZED_GRAY_COLOR;
+      return {
+        r: base.r * (1 - blendRatio) + gray.r * blendRatio,
+        g: base.g * (1 - blendRatio) + gray.g * blendRatio,
+        b: base.b * (1 - blendRatio) + gray.b * blendRatio,
+        a: base.a
+      };
+    }
+
+    function resolveFinalizePopoverElement(element) {
+      if (!element) return null;
+      const wrapper = finalizedPopoverWrappers.get(element);
+      if (wrapper && wrapper.isConnected && wrapper.contains(element)) {
+        return wrapper;
+      }
+      if (wrapper && (!wrapper.isConnected || !wrapper.contains(element))) {
+        finalizedPopoverWrappers.delete(element);
+      }
+      return element;
+    }
+
+    function disableFinalizedPointerEvents(element) {
+      if (!element || element.dataset.finalizedPointerEventsValue) {
+        element.style.pointerEvents = 'none';
+        return;
+      }
+      const inlineValue = element.style.pointerEvents;
+      element.dataset.finalizedPointerEventsValue = inlineValue ? inlineValue : '__unset__';
+      element.style.pointerEvents = 'none';
+    }
+
+    function restoreFinalizedPointerEvents(element) {
+      if (!element) return;
+      const stored = element.dataset.finalizedPointerEventsValue;
+      if (stored && stored !== '__unset__') {
+        element.style.pointerEvents = stored;
+      } else if (stored === '__unset__') {
+        element.style.removeProperty('pointer-events');
+      }
+      delete element.dataset.finalizedPointerEventsValue;
+    }
+
+    function ensureFinalizedPopoverWrapper(element) {
+      if (!element) return null;
+      let wrapper = finalizedPopoverWrappers.get(element);
+      if (wrapper && wrapper.isConnected && wrapper.contains(element)) {
+        disableFinalizedPointerEvents(element);
+        return wrapper;
+      }
+      const parent = element.parentElement;
+      if (!parent) return null;
+      wrapper = document.createElement('span');
+      wrapper.classList.add('finalized-popover-wrapper');
+      if (element.classList.contains('form-control')) {
+        wrapper.classList.add('d-block', 'w-100');
+      } else {
+        wrapper.classList.add('d-inline-block');
+      }
+      wrapper.tabIndex = 0;
+      parent.insertBefore(wrapper, element);
+      wrapper.appendChild(element);
+      finalizedPopoverWrappers.set(element, wrapper);
+      disableFinalizedPointerEvents(element);
+      return wrapper;
+    }
+
+    function removeFinalizedPopoverWrapper(element) {
+      if (!element) return;
+      const wrapper = finalizedPopoverWrappers.get(element);
+      if (wrapper) {
+        destroyFinalizedStatePopover(wrapper);
+        if (wrapper.parentElement) {
+          wrapper.parentElement.insertBefore(element, wrapper);
+        }
+        wrapper.remove();
+        finalizedPopoverWrappers.delete(element);
+      }
+      restoreFinalizedPointerEvents(element);
+    }
+
+    function setSetScoreEditingDisabled(setNumber, disabled) {
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      const scoreInputs = [homeInput, oppInput];
+      scoreInputs.forEach((input) => {
+        if (!input) return;
+        if (disabled) {
+          const computed = window.getComputedStyle(input);
+          const originalBackground = computed.backgroundColor;
+          const originalColor = computed.color;
+          if (originalBackground) {
+            input.dataset.scoreOriginalBackground = originalBackground;
+          } else {
+            delete input.dataset.scoreOriginalBackground;
+          }
+          if (originalColor) {
+            input.dataset.scoreOriginalColor = originalColor;
+          } else {
+            delete input.dataset.scoreOriginalColor;
+          }
+          const mutedBackground = mixColorWithGray(originalBackground, SCORE_FINALIZED_BACKGROUND_BLEND);
+          const mutedText = mixColorWithGray(originalColor, SCORE_FINALIZED_TEXT_BLEND);
+          if (mutedBackground) {
+            input.style.backgroundColor = colorObjectToCss(mutedBackground);
+          }
+          if (mutedText) {
+            input.style.color = colorObjectToCss(mutedText);
+          }
+          input.setAttribute('disabled', 'disabled');
+          input.disabled = true;
+          input.classList.add('set-score-finalized');
+          ensureFinalizedPopoverWrapper(input);
+        } else {
+          input.removeAttribute('disabled');
+          input.disabled = false;
+          input.classList.remove('set-score-finalized');
+          if (input.dataset.scoreOriginalBackground) {
+            input.style.backgroundColor = input.dataset.scoreOriginalBackground;
+          } else {
+            input.style.removeProperty('background-color');
+          }
+          if (input.dataset.scoreOriginalColor) {
+            input.style.color = input.dataset.scoreOriginalColor;
+          } else {
+            input.style.removeProperty('color');
+          }
+          delete input.dataset.scoreOriginalBackground;
+          delete input.dataset.scoreOriginalColor;
+          removeFinalizedPopoverWrapper(input);
+        }
+      });
+      const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
+      if (scoreButton) {
+        if (disabled) {
+          scoreButton.classList.add('disabled');
+          scoreButton.setAttribute('aria-disabled', 'true');
+          scoreButton.disabled = true;
+          scoreButton.setAttribute('disabled', 'disabled');
+          ensureFinalizedPopoverWrapper(scoreButton);
+        } else {
+          scoreButton.classList.remove('disabled');
+          scoreButton.removeAttribute('aria-disabled');
+          scoreButton.disabled = false;
+          scoreButton.removeAttribute('disabled');
+          removeFinalizedPopoverWrapper(scoreButton);
+        }
+      }
     }
 
     function updateFinalizeButtonState(setNumber) {
       const button = document.getElementById(`finalizeButton${setNumber}`);
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!button || !scInput || !oppInput) {
-        return { isTie: false, finalStateChanged: false };
+      if (!button || !homeInput || !oppInput) {
+        return { isTie: false, finalStateChanged: false, isFinal: false };
       }
-      const scRaw = scInput.value.trim();
+      const popoverTargets = getFinalizePopoverTargets(setNumber);
+      hideFinalizeErrorPopovers(button);
+      const homeRaw = homeInput.value.trim();
       const oppRaw = oppInput.value.trim();
-      const bothScoresEntered = scRaw !== '' && oppRaw !== '';
-      const scScore = parseScoreValue(scRaw);
+      const homeScore = parseScoreValue(homeRaw);
       const oppScore = parseScoreValue(oppRaw);
-      const isTie = bothScoresEntered && scScore === oppScore;
-      button.classList.toggle('finalize-btn-error', isTie);
-      if (isTie) {
+      const isMissing = homeScore === null || oppScore === null;
+      const isTie = !isMissing && homeScore === oppScore;
+      const hasError = isTie || isMissing;
+      button.classList.toggle('finalize-btn-error', hasError);
+      if (hasError) {
         button.setAttribute('aria-disabled', 'true');
       } else {
         button.removeAttribute('aria-disabled');
-      }
-      if (!isTie) {
-        const popover = bootstrap.Popover.getInstance(button);
-        if (popover) {
-          popover.hide();
-        }
-        clearFinalizePopoverTimer(button);
+        popoverTargets.forEach((element) => hideFinalizeErrorPopovers(element));
       }
       let finalStateChanged = false;
-      if (isTie && finalizedSets[setNumber]) {
+      if (hasError && finalizedSets[setNumber]) {
         delete finalizedSets[setNumber];
         button.classList.remove('finalized-btn');
         finalStateChanged = true;
       }
-      return { isTie, finalStateChanged };
+      const previousFinal = button.dataset.finalized === 'true';
+      const isFinal = Boolean(finalizedSets[setNumber]);
+      if (previousFinal !== isFinal) {
+        finalStateChanged = true;
+      }
+      button.classList.toggle('finalized-btn', isFinal);
+      setSetScoreEditingDisabled(setNumber, isFinal);
+      if (isFinal) {
+        ensureFinalizedPopoverTargets(setNumber);
+      } else {
+        destroyFinalizedPopoverTargets(setNumber);
+      }
+      destroyFinalizedStatePopover(button);
+      button.dataset.finalized = isFinal ? 'true' : 'false';
+      if (button.dataset.finalizeInitialized !== 'true') {
+        button.dataset.finalizeInitialized = 'true';
+      }
+      return { isTie, isMissing, finalStateChanged, isFinal };
     }
 
     function updateAllFinalizeButtonStates() {
@@ -491,9 +1474,9 @@ let playerSortMode = 'number';
     }
 
     function updateScoreModalDisplay() {
-      const scDisplay = document.getElementById('scoreGameScDisplay');
+      const homeDisplay = document.getElementById('scoreGameHomeDisplay');
       const oppDisplay = document.getElementById('scoreGameOppDisplay');
-      if (scDisplay) scDisplay.textContent = formatScoreDisplay(scoreGameState.sc);
+      if (homeDisplay) homeDisplay.textContent = formatScoreDisplay(scoreGameState.home);
       if (oppDisplay) oppDisplay.textContent = formatScoreDisplay(scoreGameState.opp);
     }
 
@@ -505,8 +1488,8 @@ let playerSortMode = 'number';
     }
 
     function getTimeoutTeamName(team) {
-      const homeTeamHeaderId = isSwapped ? 'oppHeader' : 'scHeader';
-      const opponentHeaderId = isSwapped ? 'scHeader' : 'oppHeader';
+      const homeTeamHeaderId = isSwapped ? 'oppHeader' : 'homeHeader';
+      const opponentHeaderId = isSwapped ? 'homeHeader' : 'oppHeader';
       if (team === 'opp') {
         return getTeamHeaderName(opponentHeaderId, 'Opponent');
       }
@@ -519,7 +1502,7 @@ let playerSortMode = 'number';
 
     function createEmptySetTimeouts() {
       return {
-        sc: Array(TIMEOUT_COUNT).fill(false),
+        home: Array(TIMEOUT_COUNT).fill(false),
         opp: Array(TIMEOUT_COUNT).fill(false)
       };
     }
@@ -530,6 +1513,91 @@ let playerSortMode = 'number';
         state[setNumber] = createEmptySetTimeouts();
       });
       return state;
+    }
+
+    function resetMatchSetRecords() {
+      matchSetRecords.clear();
+    }
+
+    function normalizeSetRowForState(row) {
+      if (!row || typeof row !== 'object') return null;
+      const setNumber = Number(row.set_number ?? row.setNumber ?? row.number ?? row.id);
+      if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) return null;
+      const parseScore = (value) => {
+        if (value === null || value === undefined || value === '') {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const parseTimeout = (value) => Boolean(Number(value));
+      return {
+        id: row.id,
+        setNumber,
+        homeScore: parseScore(row.home_score ?? row.homeScore ?? row.home),
+        oppScore: parseScore(row.opp_score ?? row.oppScore ?? row.opp),
+        timeouts: {
+          home: [parseTimeout(row.home_timeout_1), parseTimeout(row.home_timeout_2)],
+          opp: [parseTimeout(row.opp_timeout_1), parseTimeout(row.opp_timeout_2)]
+        }
+      };
+    }
+
+    function primeMatchSetRecords(rows) {
+      resetMatchSetRecords();
+      const normalized = {};
+      if (!Array.isArray(rows)) {
+        return normalized;
+      }
+      const sortedRows = rows.slice().sort((a, b) => {
+        const aNumber = Number(a.set_number ?? a.setNumber ?? a.number ?? a.id ?? 0);
+        const bNumber = Number(b.set_number ?? b.setNumber ?? b.number ?? b.id ?? 0);
+        return aNumber - bNumber;
+      });
+      sortedRows.forEach((row) => {
+        const record = normalizeSetRowForState(row);
+        if (!record) return;
+        matchSetRecords.set(record.setNumber, {
+          id: record.id,
+          setNumber: record.setNumber,
+          homeScore: record.homeScore,
+          oppScore: record.oppScore,
+          timeouts: {
+            home: record.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+            opp: record.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+          }
+        });
+        normalized[record.setNumber] = {
+          home: normalizeStoredScoreValue(record.homeScore),
+          opp: normalizeStoredScoreValue(record.oppScore),
+          timeouts: {
+            home: record.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+            opp: record.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+          }
+        };
+      });
+      return normalized;
+    }
+
+    function getMatchSetRecord(setNumber) {
+      return matchSetRecords.get(setNumber) || null;
+    }
+
+    function setMatchSetRecord(setNumber, record) {
+      matchSetRecords.set(setNumber, {
+        id: record.id,
+        setNumber,
+        homeScore: record.homeScore,
+        oppScore: record.oppScore,
+        timeouts: {
+          home: record.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+          opp: record.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+        }
+      });
+    }
+
+    function deleteMatchSetRecord(setNumber) {
+      matchSetRecords.delete(setNumber);
     }
 
     function cloneTimeoutArray(values) {
@@ -551,15 +1619,15 @@ let playerSortMode = 'number';
 
     function setMatchTimeoutState(setNumber, timeouts) {
       matchTimeouts[setNumber] = {
-        sc: cloneTimeoutArray(timeouts?.sc),
+        home: cloneTimeoutArray(timeouts?.home),
         opp: cloneTimeoutArray(timeouts?.opp)
       };
     }
 
     function swapSetTimeoutState(state) {
       return {
-        sc: cloneTimeoutArray(state?.opp),
-        opp: cloneTimeoutArray(state?.sc)
+        home: cloneTimeoutArray(state?.opp),
+        opp: cloneTimeoutArray(state?.home)
       };
     }
 
@@ -574,13 +1642,13 @@ let playerSortMode = 'number';
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
       const stored = getMatchTimeoutState(setNumber);
-      stored.sc = scoreGameState.timeouts.sc.slice(0, TIMEOUT_COUNT).map(Boolean);
+      stored.home = scoreGameState.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean);
       stored.opp = scoreGameState.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean);
     }
 
     function loadSetTimeoutsIntoScoreState(setNumber) {
       const stored = getMatchTimeoutState(setNumber);
-      ['sc', 'opp'].forEach(team => {
+      ['home', 'opp'].forEach(team => {
         stopTimeoutTimer(team);
         scoreGameState.timeouts[team] = stored[team].slice();
         scoreGameState.activeTimeout[team] = null;
@@ -611,7 +1679,7 @@ let playerSortMode = 'number';
     }
 
     function getRunningTimeoutTeam() {
-      return ['sc', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team])) || null;
+      return ['home', 'opp'].find(team => Boolean(scoreGameState.timeoutTimers[team])) || null;
     }
 
     function cancelActiveTimeoutTimer() {
@@ -697,46 +1765,46 @@ let playerSortMode = 'number';
     }
 
     function refreshAllTimeoutDisplays() {
-      updateTimeoutUI('sc');
+      updateTimeoutUI('home');
       updateTimeoutUI('opp');
     }
 
     function swapScoreGameTimeoutState() {
       const wasRunning = {
-        sc: Boolean(scoreGameState.timeoutTimers.sc),
+        home: Boolean(scoreGameState.timeoutTimers.home),
         opp: Boolean(scoreGameState.timeoutTimers.opp)
       };
       const previousActive = {
-        sc: scoreGameState.activeTimeout.sc,
+        home: scoreGameState.activeTimeout.home,
         opp: scoreGameState.activeTimeout.opp
       };
       const previousRemaining = {
-        sc: scoreGameState.timeoutRemainingSeconds.sc ?? TIMEOUT_DURATION_SECONDS,
+        home: scoreGameState.timeoutRemainingSeconds.home ?? TIMEOUT_DURATION_SECONDS,
         opp: scoreGameState.timeoutRemainingSeconds.opp ?? TIMEOUT_DURATION_SECONDS
       };
 
-      stopTimeoutTimer('sc');
+      stopTimeoutTimer('home');
       stopTimeoutTimer('opp');
 
       const swappedTimeouts = swapSetTimeoutState(scoreGameState.timeouts);
-      scoreGameState.timeouts.sc = swappedTimeouts.sc;
+      scoreGameState.timeouts.home = swappedTimeouts.home;
       scoreGameState.timeouts.opp = swappedTimeouts.opp;
 
-      scoreGameState.activeTimeout.sc = previousActive.opp ?? null;
-      scoreGameState.activeTimeout.opp = previousActive.sc ?? null;
+      scoreGameState.activeTimeout.home = previousActive.opp ?? null;
+      scoreGameState.activeTimeout.opp = previousActive.home ?? null;
 
-      scoreGameState.timeoutRemainingSeconds.sc = previousRemaining.opp;
-      scoreGameState.timeoutRemainingSeconds.opp = previousRemaining.sc;
+      scoreGameState.timeoutRemainingSeconds.home = previousRemaining.opp;
+      scoreGameState.timeoutRemainingSeconds.opp = previousRemaining.home;
 
-      if (wasRunning.opp && scoreGameState.activeTimeout.sc !== null) {
-        startTimeoutTimer('sc');
+      if (wasRunning.opp && scoreGameState.activeTimeout.home !== null) {
+        startTimeoutTimer('home');
       }
 
-      if (wasRunning.sc && scoreGameState.activeTimeout.opp !== null) {
+      if (wasRunning.home && scoreGameState.activeTimeout.opp !== null) {
         startTimeoutTimer('opp');
       }
 
-      updateTimeoutUI('sc');
+      updateTimeoutUI('home');
       updateTimeoutUI('opp');
     }
 
@@ -801,17 +1869,17 @@ let playerSortMode = 'number';
       if (resetStored) {
         matchTimeouts = createEmptyMatchTimeouts();
       }
-      resetTeamTimeouts('sc', { skipPersist: true });
+      resetTeamTimeouts('home', { skipPersist: true });
       resetTeamTimeouts('opp', { skipPersist: true });
       persistCurrentSetTimeouts();
     }
 
     function updateScoreColorClasses() {
-      const scHeader = document.getElementById('scHeader');
+      const homeHeader = document.getElementById('homeHeader');
       const oppHeader = document.getElementById('oppHeader');
-      if (scHeader) {
-        scHeader.classList.add('left-score');
-        scHeader.classList.remove('right-score');
+      if (homeHeader) {
+        homeHeader.classList.add('left-score');
+        homeHeader.classList.remove('right-score');
       }
       if (oppHeader) {
         oppHeader.classList.add('right-score');
@@ -819,11 +1887,11 @@ let playerSortMode = 'number';
       }
 
       for (let i = 1; i <= 5; i++) {
-        const scInput = document.getElementById(`set${i}SC`);
+        const homeInput = document.getElementById(`set${i}Home`);
         const oppInput = document.getElementById(`set${i}Opp`);
-        if (scInput) {
-          scInput.classList.add('left-score');
-          scInput.classList.remove('right-score');
+        if (homeInput) {
+          homeInput.classList.add('left-score');
+          homeInput.classList.remove('right-score');
         }
         if (oppInput) {
           oppInput.classList.add('right-score');
@@ -844,16 +1912,16 @@ let playerSortMode = 'number';
     function updateScoreModalLabels() {
       const leftLabel = document.getElementById('scoreGameLeftLabel');
       const rightLabel = document.getElementById('scoreGameRightLabel');
-      const leftName = getTeamHeaderName('scHeader', getHomeTeamName());
+      const leftName = getTeamHeaderName('homeHeader', getHomeTeamName());
       const rightName = getTeamHeaderName('oppHeader', 'Opponent');
       if (leftLabel) leftLabel.textContent = leftName;
       if (rightLabel) rightLabel.textContent = rightName;
-      const scIncrementZone = document.querySelector('#scoreGameModal .score-zone.increment[data-team="sc"]');
-      const scDecrementZone = document.querySelector('#scoreGameModal .score-zone.decrement[data-team="sc"]');
+      const homeIncrementZone = document.querySelector('#scoreGameModal .score-zone.increment[data-team="home"]');
+      const homeDecrementZone = document.querySelector('#scoreGameModal .score-zone.decrement[data-team="home"]');
       const oppIncrementZone = document.querySelector('#scoreGameModal .score-zone.increment[data-team="opp"]');
       const oppDecrementZone = document.querySelector('#scoreGameModal .score-zone.decrement[data-team="opp"]');
-      if (scIncrementZone) scIncrementZone.setAttribute('aria-label', `Increase ${leftName} score`);
-      if (scDecrementZone) scDecrementZone.setAttribute('aria-label', `Decrease ${leftName} score`);
+      if (homeIncrementZone) homeIncrementZone.setAttribute('aria-label', `Increase ${leftName} score`);
+      if (homeDecrementZone) homeDecrementZone.setAttribute('aria-label', `Decrease ${leftName} score`);
       if (oppIncrementZone) oppIncrementZone.setAttribute('aria-label', `Increase ${rightName} score`);
       if (oppDecrementZone) oppDecrementZone.setAttribute('aria-label', `Decrease ${rightName} score`);
       refreshAllTimeoutDisplays();
@@ -864,9 +1932,9 @@ let playerSortMode = 'number';
     function applyScoreModalToInputs({ triggerSave = true } = {}) {
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (scInput) scInput.value = formatScoreInputValue(scoreGameState.sc);
+      if (homeInput) homeInput.value = formatScoreInputValue(scoreGameState.home);
       if (oppInput) oppInput.value = formatScoreInputValue(scoreGameState.opp);
       const { finalStateChanged } = updateFinalizeButtonState(setNumber);
       if (triggerSave) {
@@ -878,7 +1946,9 @@ let playerSortMode = 'number';
     }
 
     function adjustScoreModal(team, delta) {
-      const key = team === 'opp' ? 'opp' : 'sc';
+      const { setNumber } = scoreGameState;
+      if (!setNumber) return;
+      const key = team === 'opp' ? 'opp' : 'home';
       const currentValue = scoreGameState[key];
       const baseValue = currentValue === null || currentValue === undefined ? 0 : currentValue;
       const newValue = clampScoreValue(baseValue + delta);
@@ -889,9 +1959,9 @@ let playerSortMode = 'number';
     }
 
     function openScoreGameModal(setNumber) {
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!scInput || !oppInput) return;
+      if (!homeInput || !oppInput) return false;
       if (scoreGameState.setNumber !== null) {
         persistCurrentSetTimeouts();
         if (scoreGameState.setNumber !== setNumber) {
@@ -899,7 +1969,7 @@ let playerSortMode = 'number';
         }
       }
       scoreGameState.setNumber = setNumber;
-      scoreGameState.sc = parseScoreValue(scInput.value);
+      scoreGameState.home = parseScoreValue(homeInput.value);
       scoreGameState.opp = parseScoreValue(oppInput.value);
       loadSetTimeoutsIntoScoreState(setNumber);
       updateScoreModalLabels();
@@ -916,7 +1986,9 @@ let playerSortMode = 'number';
       if (scoreGameModalInstance) {
         updateScoreGameModalLayout();
         scoreGameModalInstance.show();
+        return true;
       }
+      return false;
     }
 
     
@@ -933,12 +2005,37 @@ let playerSortMode = 'number';
           await apiClient.createPlayer(payload);
         }
         await loadPlayers();
+        return true;
       } catch (error) {
         console.error('Failed to save player', error);
         alert('Unable to save player. Please try again.');
+        return false;
       }
+      return true;
     }
 
+
+
+    function getPlayerFormErrorElement() {
+      if (!playerFormErrorElement) {
+        playerFormErrorElement = document.getElementById('playerFormError');
+      }
+      return playerFormErrorElement;
+    }
+
+    function showPlayerFormError(message) {
+      const element = getPlayerFormErrorElement();
+      if (!element) return;
+      element.textContent = message;
+      element.classList.remove('d-none');
+    }
+
+    function clearPlayerFormError() {
+      const element = getPlayerFormErrorElement();
+      if (!element) return;
+      element.textContent = '';
+      element.classList.add('d-none');
+    }
 
     
     async function deletePlayer(id) {
@@ -1141,7 +2238,7 @@ let playerSortMode = 'number';
       const baseHomeName = getHomeTeamName();
       const homeName = swapped ? opponentName : baseHomeName;
       const awayName = swapped ? baseHomeName : opponentName;
-      setTeamHeaderName('scHeader', homeName, { roleDescription: 'Home team' });
+      setTeamHeaderName('homeHeader', homeName, { roleDescription: 'Home team' });
       setTeamHeaderName('oppHeader', awayName, { roleDescription: 'Opponent team' });
       updateScoreModalLabels();
     }
@@ -1152,10 +2249,10 @@ let playerSortMode = 'number';
       updateScoreModalLabels();
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      if (!scInput || !oppInput) return;
-      scoreGameState.sc = parseScoreValue(scInput.value);
+      if (!homeInput || !oppInput) return;
+      scoreGameState.home = parseScoreValue(homeInput.value);
       scoreGameState.opp = parseScoreValue(oppInput.value);
       updateScoreModalDisplay();
     }
@@ -1168,10 +2265,10 @@ let playerSortMode = 'number';
       const opponentInput = document.getElementById('opponent').value.trim();
       const opponentName = opponentInput || 'Opponent';
       for (let i = 1; i <= 5; i++) {
-        const scScore = document.getElementById(`set${i}SC`).value;
+        const homeScore = document.getElementById(`set${i}Home`).value;
         const oppScore = document.getElementById(`set${i}Opp`).value;
-        document.getElementById(`set${i}SC`).value = oppScore;
-        document.getElementById(`set${i}Opp`).value = scScore;
+        document.getElementById(`set${i}Home`).value = oppScore;
+        document.getElementById(`set${i}Opp`).value = homeScore;
       }
       updateAllFinalizeButtonStates();
       updateSetHeaders(opponentName, isSwapped); // Update headers after swap
@@ -1185,13 +2282,105 @@ let playerSortMode = 'number';
 
     
     async function submitPlayer() {
-      const number = document.getElementById('number').value.trim();
-      const lastName = document.getElementById('lastName').value.trim();
-      const initial = document.getElementById('initial').value.trim() || '';
-      if (number && lastName) {
-        const idToSave = editingPlayerId !== null ? editingPlayerId : null;
-        await savePlayer(number, lastName, initial, idToSave);
+      const numberInput = document.getElementById('number');
+      const lastNameInput = document.getElementById('lastName');
+      const initialInput = document.getElementById('initial');
+      const tempNumberElement = document.getElementById('tempNumber');
+
+      const number = numberInput ? numberInput.value.trim() : '';
+      const lastName = lastNameInput ? lastNameInput.value.trim() : '';
+      const initial = initialInput ? initialInput.value.trim() : '';
+      const tempNumber = tempNumberElement ? tempNumberElement.value.trim() : '';
+
+      if (numberInput) {
+        numberInput.value = number;
       }
+      if (lastNameInput) {
+        lastNameInput.value = lastName;
+      }
+      if (initialInput) {
+        initialInput.value = initial;
+      }
+      if (tempNumberElement) {
+        tempNumberElement.value = tempNumber;
+      }
+
+      clearPlayerFormError();
+
+      if (!number) {
+        showPlayerFormError('Player number is required.');
+        if (numberInput) {
+          numberInput.focus();
+          if (typeof numberInput.select === 'function') {
+            numberInput.select();
+          }
+        }
+        return;
+      }
+
+      if (!lastName) {
+        showPlayerFormError('Player last name is required.');
+        if (lastNameInput) {
+          lastNameInput.focus();
+          if (typeof lastNameInput.select === 'function') {
+            lastNameInput.select();
+          }
+        }
+        return;
+      }
+
+      const idToSave = editingPlayerId !== null ? editingPlayerId : null;
+      const previousPending = pendingTemporaryPlayer;
+      let normalizedId = null;
+      let hadPreviousTempEntry = false;
+      let previousTempValue = '';
+
+      if (idToSave !== null) {
+        normalizedId = normalizePlayerId(idToSave);
+        if (normalizedId !== null && temporaryPlayerNumbers.has(normalizedId)) {
+          hadPreviousTempEntry = true;
+          previousTempValue = temporaryPlayerNumbers.get(normalizedId);
+        }
+      }
+
+      if (idToSave !== null) {
+        if (normalizedId !== null) {
+          if (tempNumber) {
+            temporaryPlayerNumbers.set(normalizedId, tempNumber);
+          } else {
+            temporaryPlayerNumbers.delete(normalizedId);
+          }
+        }
+        pendingTemporaryPlayer = null;
+        updateModalPlayerList();
+      } else if (tempNumber) {
+        pendingTemporaryPlayer = {
+          number,
+          lastName,
+          initial,
+          value: tempNumber
+        };
+      } else {
+        pendingTemporaryPlayer = null;
+      }
+
+      const saveSucceeded = await savePlayer(number, lastName, initial, idToSave);
+
+      if (!saveSucceeded) {
+        pendingTemporaryPlayer = previousPending;
+        if (normalizedId !== null) {
+          if (hadPreviousTempEntry) {
+            temporaryPlayerNumbers.set(normalizedId, previousTempValue);
+          } else {
+            temporaryPlayerNumbers.delete(normalizedId);
+          }
+        }
+        if (idToSave !== null) {
+          updateModalPlayerList();
+        }
+        return;
+      }
+
       resetPlayerForm();
     }
 
@@ -1199,17 +2388,27 @@ let playerSortMode = 'number';
     function updatePlayerList() {
       const list = document.getElementById('playerList');
       list.innerHTML = '';
+      const rosterSelection = Array.isArray(loadedMatchPlayers) ? loadedMatchPlayers : [];
       players.forEach((player, index) => {
         const div = document.createElement('div');
         div.className = 'player-item form-check';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.value = player;
         checkbox.className = 'form-check-input';
         const checkboxId = `player-select-${index}`;
         checkbox.id = checkboxId;
-        if (loadedMatchPlayers.includes(player)) {
-          checkbox.checked = true;
+        const normalizedId = player.id;
+        if (normalizedId !== null) {
+          checkbox.value = normalizedId;
+          checkbox.dataset.playerId = normalizedId;
+          if (
+            rosterSelection.some(entry => normalizePlayerId(entry?.playerId) === normalizedId)
+          ) {
+            checkbox.checked = true;
+          }
+        } else {
+          checkbox.value = '';
+          checkbox.disabled = true;
         }
         div.appendChild(checkbox);
         const label = document.createElement('label');
@@ -1439,7 +2638,7 @@ let playerSortMode = 'number';
     }
 
     function refreshJerseySelectDisplays() {
-      updateJerseySelectDisplay(document.getElementById('jerseyColorSC'));
+      updateJerseySelectDisplay(document.getElementById('jerseyColorHome'));
       updateJerseySelectDisplay(document.getElementById('jerseyColorOpp'));
     }
 
@@ -1510,7 +2709,7 @@ let playerSortMode = 'number';
 
     function ensureDistinctJerseyColors(changedSelect, { showModal = true } = {}) {
       if (isResolvingJerseyColorConflict) return;
-      const homeSelect = document.getElementById('jerseyColorSC');
+      const homeSelect = document.getElementById('jerseyColorHome');
       const opponentSelect = document.getElementById('jerseyColorOpp');
       if (!homeSelect || !opponentSelect) return;
 
@@ -1839,7 +3038,7 @@ let playerSortMode = 'number';
     });
 
     function applyJerseyColorToNumbers() {
-      const jerseySelect = document.getElementById('jerseyColorSC');
+      const jerseySelect = document.getElementById('jerseyColorHome');
       if (!jerseySelect) return;
       updateJerseySelectDisplay(jerseySelect);
       const { backgroundColor, textColor } = getJerseyColorStyles(jerseySelect.value);
@@ -1853,15 +3052,24 @@ let playerSortMode = 'number';
 
     function createPlayerDisplay(player) {
       const fragment = document.createDocumentFragment();
-      const playerParts = player.trim().split(/\s+/);
-      const numberPart = playerParts.shift() || '';
-      const nameText = playerParts.join(' ').trim();
+      if (!player || typeof player !== 'object') {
+        const fallback = document.createElement('span');
+        fallback.className = 'player-name';
+        fallback.textContent = typeof player === 'string' ? player : '';
+        fragment.appendChild(fallback);
+        return fragment;
+      }
 
-      if (numberPart) {
+      const displayNumber = String(player.tempNumber || player.number || '').trim();
+      const lastName = String(player.lastName || '').trim();
+      const initial = String(player.initial || '').trim();
+      const nameText = [lastName, initial].filter(Boolean).join(' ');
+
+      if (displayNumber) {
         const numberCircle = document.createElement('span');
         numberCircle.className = 'player-number-circle';
-        numberCircle.textContent = numberPart;
-        const jerseyColor = document.getElementById('jerseyColorSC').value;
+        numberCircle.textContent = displayNumber;
+        const jerseyColor = document.getElementById('jerseyColorHome').value;
         const { backgroundColor, textColor } = getJerseyColorStyles(jerseyColor);
         numberCircle.style.backgroundColor = backgroundColor;
         numberCircle.style.color = textColor;
@@ -1890,10 +3098,18 @@ let playerSortMode = 'number';
 
         const displayContainer = document.createElement('div');
         displayContainer.className = 'd-flex align-items-center';
-        const playerDisplay = createPlayerDisplay(
-          formatPlayerRecord(playerData)
-        );
+        const displayData = getPlayerDisplayData(playerData);
+        const playerDisplay = createPlayerDisplay(displayData);
         displayContainer.appendChild(playerDisplay);
+        const recordId = normalizePlayerId(playerData.id);
+        if (recordId !== null && temporaryPlayerNumbers.has(recordId)) {
+          const tempBadge = document.createElement('span');
+          const tempValue = temporaryPlayerNumbers.get(recordId);
+          tempBadge.className = 'badge text-bg-secondary ms-2';
+          tempBadge.textContent = `Temp #${tempValue}`;
+          tempBadge.setAttribute('aria-label', `Temporary number ${tempValue}`);
+          displayContainer.appendChild(tempBadge);
+        }
 
         const buttonGroup = document.createElement('div');
         buttonGroup.className = 'btn-group btn-group-sm';
@@ -1926,8 +3142,14 @@ let playerSortMode = 'number';
       document.getElementById('number').value = player.number;
       document.getElementById('lastName').value = player.lastName;
       document.getElementById('initial').value = player.initial || '';
+      const tempInput = document.getElementById('tempNumber');
+      if (tempInput) {
+        const tempValue = temporaryPlayerNumbers.get(normalizePlayerId(player.id));
+        tempInput.value = tempValue !== undefined ? tempValue : '';
+      }
       document.getElementById('savePlayerBtn').textContent = 'Update Player';
       document.getElementById('cancelEditBtn').style.display = 'inline-block';
+      clearPlayerFormError();
     }
 
     function cancelEdit() {
@@ -1936,9 +3158,14 @@ let playerSortMode = 'number';
 
     function resetPlayerForm() {
       editingPlayerId = null;
+      clearPlayerFormError();
       document.getElementById('number').value = '';
       document.getElementById('lastName').value = '';
       document.getElementById('initial').value = '';
+      const tempInput = document.getElementById('tempNumber');
+      if (tempInput) {
+        tempInput.value = '';
+      }
       document.getElementById('savePlayerBtn').textContent = 'Add Player';
       document.getElementById('cancelEditBtn').style.display = 'none';
     }
@@ -1946,24 +3173,27 @@ let playerSortMode = 'number';
     function finalizeSet(setNumber) {
       const button = document.getElementById(`finalizeButton${setNumber}`);
       if (!button) return;
-      const scInput = document.getElementById(`set${setNumber}SC`);
+      const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
-      const scRaw = scInput ? scInput.value.trim() : '';
+      const homeRaw = homeInput ? homeInput.value.trim() : '';
       const oppRaw = oppInput ? oppInput.value.trim() : '';
-      const bothScoresEntered = scRaw !== '' && oppRaw !== '';
-      const scScore = parseScoreValue(scRaw);
+      const homeScore = parseScoreValue(homeRaw);
       const oppScore = parseScoreValue(oppRaw);
-      if (bothScoresEntered && scScore === oppScore) {
+      const scoresMissing = homeScore === null || oppScore === null;
+      if (scoresMissing) {
         updateFinalizeButtonState(setNumber);
-        showFinalizeTiePopover(button);
+        showFinalizeMissingScorePopovers(setNumber);
+        return;
+      }
+      if (homeScore === oppScore) {
+        updateFinalizeButtonState(setNumber);
+        showFinalizeTiePopovers(setNumber);
         return;
       }
       if (finalizedSets[setNumber]) {
         delete finalizedSets[setNumber];
-        button.classList.remove('finalized-btn');
       } else {
         finalizedSets[setNumber] = true;
-        button.classList.add('finalized-btn');
       }
       updateFinalizeButtonState(setNumber);
       calculateResult();
@@ -1971,25 +3201,25 @@ let playerSortMode = 'number';
     }
 
     function calculateResult() {
-      let scWins = 0;
+      let homeWins = 0;
       let oppWins = 0;
       for (let i = 1; i <= 5; i++) {
         if (finalizedSets[i]) {
-          const scScore = parseScoreValue(document.getElementById(`set${i}SC`).value);
+          const homeScore = parseScoreValue(document.getElementById(`set${i}Home`).value);
           const oppScore = parseScoreValue(document.getElementById(`set${i}Opp`).value);
-          if (scScore === null || oppScore === null) {
+          if (homeScore === null || oppScore === null) {
             continue;
           }
           if (isSwapped) {
-            if (oppScore > scScore) scWins++;
-            else if (scScore > oppScore) oppWins++;
+            if (oppScore > homeScore) homeWins++;
+            else if (homeScore > oppScore) oppWins++;
           } else {
-            if (scScore > oppScore) scWins++;
-            else if (oppScore > scScore) oppWins++;
+            if (homeScore > oppScore) homeWins++;
+            else if (oppScore > homeScore) oppWins++;
           }
         }
       }
-      document.getElementById('resultSC').value = Math.min(scWins, 3);
+      document.getElementById('resultHome').value = Math.min(homeWins, 3);
       document.getElementById('resultOpp').value = Math.min(oppWins, 3);
     }
 
@@ -1997,9 +3227,151 @@ let playerSortMode = 'number';
     function getSerializedSetTimeouts(setNumber) {
       const stored = getMatchTimeoutState(setNumber);
       return {
-        sc: stored.sc.slice(0, TIMEOUT_COUNT).map(Boolean),
+        home: stored.home.slice(0, TIMEOUT_COUNT).map(Boolean),
         opp: stored.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
       };
+    }
+
+    function collectSetFormState() {
+      const states = {};
+      SET_NUMBERS.forEach((setNumber) => {
+        const homeInput = document.getElementById(`set${setNumber}Home`);
+        const oppInput = document.getElementById(`set${setNumber}Opp`);
+        const homeValue = homeInput ? homeInput.value : '';
+        const oppValue = oppInput ? oppInput.value : '';
+        states[setNumber] = {
+          homeScore: parseScoreValue(homeValue),
+          oppScore: parseScoreValue(oppValue),
+          timeouts: getSerializedSetTimeouts(setNumber)
+        };
+      });
+      return states;
+    }
+
+    function hasSetStateData(state) {
+      if (!state) return false;
+      const hasScores = state.homeScore !== null || state.oppScore !== null;
+      const timeoutValues = [...(state.timeouts?.home || []), ...(state.timeouts?.opp || [])];
+      const hasTimeouts = timeoutValues.some(Boolean);
+      return hasScores || hasTimeouts;
+    }
+
+    function scoresEqual(a, b) {
+      const normalize = (value) => {
+        if (value === null || value === undefined || value === '') {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const left = normalize(a);
+      const right = normalize(b);
+      if (left === null && right === null) return true;
+      return left === right;
+    }
+
+    async function applySetEdits(matchId, desiredStates) {
+      if (!matchId || !desiredStates) return;
+      for (const setNumber of SET_NUMBERS) {
+        const desired = desiredStates[setNumber];
+        const existing = getMatchSetRecord(setNumber);
+        const hasData = hasSetStateData(desired);
+        if (!hasData) {
+          if (existing) {
+            try {
+              await apiClient.deleteSet(existing.id);
+            } catch (error) {
+              console.error(`Failed to delete set ${setNumber}`, error);
+              throw error;
+            }
+            deleteMatchSetRecord(setNumber);
+          }
+          continue;
+        }
+
+        if (!existing) {
+          try {
+            const response = await apiClient.createSet({
+              match_id: matchId,
+              set_number: setNumber,
+              home_score: desired.homeScore,
+              opp_score: desired.oppScore,
+              home_timeout_1: desired.timeouts.home[0] ? 1 : 0,
+              home_timeout_2: desired.timeouts.home[1] ? 1 : 0,
+              opp_timeout_1: desired.timeouts.opp[0] ? 1 : 0,
+              opp_timeout_2: desired.timeouts.opp[1] ? 1 : 0
+            });
+            const newId = response?.id;
+            if (newId !== undefined && newId !== null) {
+              setMatchSetRecord(setNumber, {
+                id: newId,
+                homeScore: desired.homeScore,
+                oppScore: desired.oppScore,
+                timeouts: {
+                  home: desired.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+                  opp: desired.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+                }
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to create set ${setNumber}`, error);
+            throw error;
+          }
+          continue;
+        }
+
+        try {
+          const setIsFinalized = Boolean(finalizedSets[setNumber]);
+          const homeScoreChanged = !scoresEqual(existing.homeScore, desired.homeScore);
+          const oppScoreChanged = !scoresEqual(existing.oppScore, desired.oppScore);
+
+          if (homeScoreChanged) {
+            if (!setIsFinalized) {
+              await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
+            } else {
+              try {
+                await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
+              } catch (scoreError) {
+                console.warn(`Unable to update finalized set ${setNumber} home score`, scoreError);
+              }
+            }
+            existing.homeScore = desired.homeScore;
+          }
+
+          if (oppScoreChanged) {
+            if (!setIsFinalized) {
+              await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+            } else {
+              try {
+                await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+              } catch (scoreError) {
+                console.warn(`Unable to update finalized set ${setNumber} opp score`, scoreError);
+              }
+            }
+            existing.oppScore = desired.oppScore;
+          }
+          for (let index = 0; index < desired.timeouts.home.length; index += 1) {
+            const value = desired.timeouts.home[index];
+            const desiredBool = Boolean(value);
+            if (Boolean(existing.timeouts.home[index]) !== desiredBool) {
+              await apiClient.updateSetTimeout(existing.id, 'home', index + 1, desiredBool ? 1 : 0);
+              existing.timeouts.home[index] = desiredBool;
+            }
+          }
+          for (let index = 0; index < desired.timeouts.opp.length; index += 1) {
+            const value = desired.timeouts.opp[index];
+            const desiredBool = Boolean(value);
+            if (Boolean(existing.timeouts.opp[index]) !== desiredBool) {
+              await apiClient.updateSetTimeout(existing.id, 'opp', index + 1, desiredBool ? 1 : 0);
+              existing.timeouts.opp[index] = desiredBool;
+            }
+          }
+          setMatchSetRecord(setNumber, existing);
+        } catch (error) {
+          console.error(`Failed to update set ${setNumber}`, error);
+          throw error;
+        }
+      }
     }
 
 
@@ -2018,6 +3390,27 @@ let playerSortMode = 'number';
         const value = parseInt(element.value, 10);
         return Number.isNaN(value) ? null : value;
       };
+      const rosterSelections = [];
+      const seenRosterIds = new Set();
+      document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
+        if (!cb.checked) return;
+        const playerId = normalizePlayerId(cb.dataset.playerId ?? cb.value);
+        if (playerId === null || seenRosterIds.has(playerId)) {
+          return;
+        }
+        seenRosterIds.add(playerId);
+        const rosterEntry = { playerId };
+        const tempValue = temporaryPlayerNumbers.get(playerId);
+        if (tempValue !== null && tempValue !== undefined) {
+          const tempString = String(tempValue).trim();
+          if (tempString) {
+            rosterEntry.tempNumber = tempString;
+          }
+        }
+        rosterSelections.push(rosterEntry);
+      });
+      const normalizedRosterSelections = normalizeRosterArray(rosterSelections);
+
       const match = {
         date: document.getElementById('date').value,
         location: document.getElementById('location').value,
@@ -2028,53 +3421,59 @@ let playerSortMode = 'number';
           nonLeague: document.getElementById('nonLeague').checked
         },
         opponent: document.getElementById('opponent').value.trim() || 'Opponent',
-        jerseyColorSC: document.getElementById('jerseyColorSC').value,
+        jerseyColorHome: document.getElementById('jerseyColorHome').value,
         jerseyColorOpp: document.getElementById('jerseyColorOpp').value,
-        resultSC: parseResultValue('resultSC'),
+        resultHome: parseResultValue('resultHome'),
         resultOpp: parseResultValue('resultOpp'),
         firstServer: document.getElementById('firstServer').value,
-        players: Array.from(document.querySelectorAll('#playerList input[type="checkbox"]:checked')).map(cb => cb.value),
+        players: normalizedRosterSelections,
         sets: {
           1: {
-            sc: normalizeScoreInputValue(document.getElementById('set1SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set1Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set1Opp').value),
             timeouts: getSerializedSetTimeouts(1)
           },
           2: {
-            sc: normalizeScoreInputValue(document.getElementById('set2SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set2Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set2Opp').value),
             timeouts: getSerializedSetTimeouts(2)
           },
           3: {
-            sc: normalizeScoreInputValue(document.getElementById('set3SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set3Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set3Opp').value),
             timeouts: getSerializedSetTimeouts(3)
           },
           4: {
-            sc: normalizeScoreInputValue(document.getElementById('set4SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set4Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set4Opp').value),
             timeouts: getSerializedSetTimeouts(4)
           },
           5: {
-            sc: normalizeScoreInputValue(document.getElementById('set5SC').value),
+            home: normalizeScoreInputValue(document.getElementById('set5Home').value),
             opp: normalizeScoreInputValue(document.getElementById('set5Opp').value),
             timeouts: getSerializedSetTimeouts(5)
           }
         },
         finalizedSets: { ...finalizedSets },
-        isSwapped: isSwapped
+        deleted: false
       };
+      const { body } = apiClient.prepareMatchPayload(match);
+      const setStates = collectSetFormState();
       const matchId = currentMatchId;
-      loadedMatchPlayers = [...match.players];
+      loadedMatchPlayers = normalizedRosterSelections.map(entry => ({ ...entry }));
       try {
         const response = matchId !== null
           ? await apiClient.updateMatch(matchId, match)
           : await apiClient.createMatch(match);
         const savedId = response?.id ?? matchId ?? null;
-        if (savedId !== null && currentMatchId !== savedId) {
-          currentMatchId = savedId;
-          const newUrl = `${window.location.pathname}?matchId=${savedId}`;
-          window.history.replaceState(null, '', newUrl);
+        if (savedId !== null) {
+          if (currentMatchId !== savedId) {
+            currentMatchId = savedId;
+            const newUrl = `${window.location.pathname}?matchId=${savedId}`;
+            window.history.replaceState(null, '', newUrl);
+          }
+          await applySetEdits(savedId, setStates);
+          await apiClient.updateFinalizedSets(savedId, body.finalized_sets);
         }
         hasPendingChanges = false;
         if (showAlert) {
@@ -2114,11 +3513,86 @@ let playerSortMode = 'number';
     }
 
 
-    
+    function applyTemporaryNumbersFromRoster(roster) {
+      if (!Array.isArray(roster)) {
+        return;
+      }
+      roster.forEach(entry => {
+        const normalized = normalizeRosterEntry(entry);
+        if (!normalized) {
+          return;
+        }
+        const { playerId, tempNumber } = normalized;
+        if (tempNumber) {
+          temporaryPlayerNumbers.set(playerId, tempNumber);
+        } else {
+          temporaryPlayerNumbers.delete(playerId);
+        }
+      });
+    }
+
+    function convertLegacyRosterEntries(legacyRoster) {
+      if (!Array.isArray(legacyRoster) || legacyRoster.length === 0) {
+        return [];
+      }
+      const lookup = new Map();
+      playerRecords.forEach(record => {
+        const recordId = normalizePlayerId(record.id);
+        if (recordId === null) {
+          return;
+        }
+        const key = formatLegacyPlayerRecord(record).toLocaleLowerCase();
+        if (!key || lookup.has(key)) {
+          return;
+        }
+        lookup.set(key, recordId);
+      });
+      const converted = [];
+      const seen = new Set();
+      legacyRoster.forEach(entry => {
+        if (typeof entry !== 'string') {
+          return;
+        }
+        const normalizedKey = entry.trim().toLocaleLowerCase();
+        if (!normalizedKey) {
+          return;
+        }
+        const playerId = lookup.get(normalizedKey);
+        if (!playerId || seen.has(playerId)) {
+          return;
+        }
+        seen.add(playerId);
+        converted.push({ playerId });
+      });
+      return converted;
+    }
+
+    function extractRosterFromMatch(match) {
+      if (!match) {
+        return [];
+      }
+      const structuredRoster = normalizeRosterArray(match.players);
+      if (structuredRoster.length > 0) {
+        return structuredRoster;
+      }
+      if (Array.isArray(match.legacyPlayers) && match.legacyPlayers.length > 0) {
+        return normalizeRosterArray(convertLegacyRosterEntries(match.legacyPlayers));
+      }
+      return [];
+    }
+
+
+
     async function loadMatchFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       const matchId = urlParams.get('matchId');
       suppressAutoSave = true;
+      isSwapped = false;
+      const existingOpponentInput = document.getElementById('opponent');
+      if (existingOpponentInput) {
+        const currentOpponent = existingOpponentInput.value.trim() || 'Opponent';
+        updateSetHeaders(currentOpponent, isSwapped);
+      }
       if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
         autoSaveTimeout = null;
@@ -2140,12 +3614,16 @@ let playerSortMode = 'number';
         }
       };
       resetAllTimeouts({ resetStored: true });
+      resetMatchSetRecords();
       if (matchId) {
         try {
           const match = await apiClient.getMatch(matchId);
           if (match) {
             currentMatchId = match.id;
-            loadedMatchPlayers = Array.isArray(match.players) ? match.players : [];
+            const roster = extractRosterFromMatch(match);
+            loadedMatchPlayers = roster.map(entry => ({ ...entry }));
+            match.players = loadedMatchPlayers.map(entry => ({ ...entry }));
+            applyTemporaryNumbersFromRoster(loadedMatchPlayers);
             document.getElementById('date').value = match.date || '';
             document.getElementById('location').value = match.location || '';
             document.getElementById('tournament').checked = Boolean(match.types?.tournament);
@@ -2153,33 +3631,34 @@ let playerSortMode = 'number';
             document.getElementById('postSeason').checked = Boolean(match.types?.postSeason);
             document.getElementById('nonLeague').checked = Boolean(match.types?.nonLeague);
             document.getElementById('opponent').value = match.opponent || '';
-            document.getElementById('jerseyColorSC').value = match.jerseyColorSC || 'white';
+            document.getElementById('jerseyColorHome').value = match.jerseyColorHome || 'white';
             document.getElementById('jerseyColorOpp').value = match.jerseyColorOpp || 'white';
             refreshJerseySelectDisplays();
-            ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
+            ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
             applyJerseyColorToNumbers();
-            document.getElementById('resultSC').value = match.resultSC ?? 0;
+            document.getElementById('resultHome').value = match.resultHome ?? 0;
             document.getElementById('resultOpp').value = match.resultOpp ?? 0;
             const storedFirstServer = match.firstServer || '';
             updateOpponentName();
             setFirstServerSelection(storedFirstServer);
-            updatePlayerList();
+            const setRows = match.id ? await apiClient.getMatchSets(match.id) : [];
+            const setsFromRows = primeMatchSetRecords(setRows);
+            const combinedSets = Object.keys(setsFromRows).length > 0 ? setsFromRows : match.sets;
             for (let i = 1; i <= 5; i++) {
-              const scInput = document.getElementById(`set${i}SC`);
+              const homeInput = document.getElementById(`set${i}Home`);
               const oppInput = document.getElementById(`set${i}Opp`);
-              if (scInput) {
-                scInput.value = normalizeStoredScoreValue(match.sets?.[i]?.sc);
+              if (homeInput) {
+                homeInput.value = normalizeStoredScoreValue(combinedSets?.[i]?.home);
               }
               if (oppInput) {
-                oppInput.value = normalizeStoredScoreValue(match.sets?.[i]?.opp);
+                oppInput.value = normalizeStoredScoreValue(combinedSets?.[i]?.opp);
               }
             }
             SET_NUMBERS.forEach((setNumber) => {
-              const setData = match.sets?.[setNumber] ?? match.sets?.[String(setNumber)];
+              const setData = combinedSets?.[setNumber] ?? combinedSets?.[String(setNumber)];
               setMatchTimeoutState(setNumber, setData?.timeouts);
             });
             finalizedSets = { ...(match.finalizedSets || {}) };
-            isSwapped = Boolean(match.isSwapped);
             resetFinalizeButtons();
             for (let i = 1; i <= 5; i++) {
               if (finalizedSets[i]) {
@@ -2190,14 +3669,12 @@ let playerSortMode = 'number';
               }
             }
             updateAllFinalizeButtonStates();
-            if (isSwapped) swapScores();
             calculateResult();
           } else {
             currentMatchId = null;
             loadedMatchPlayers = [];
             finalizedSets = {};
             resetFinalizeButtons();
-            updatePlayerList();
           }
         } catch (error) {
           console.error('Failed to load match', error);
@@ -2206,15 +3683,14 @@ let playerSortMode = 'number';
           loadedMatchPlayers = [];
           finalizedSets = {};
           resetFinalizeButtons();
-          updatePlayerList();
         }
       } else {
         currentMatchId = matchId ? parseInt(matchId, 10) : null;
         loadedMatchPlayers = [];
         finalizedSets = {};
         resetFinalizeButtons();
-        updatePlayerList();
       }
+      setPlayerRecords(playerRecords);
       hasPendingChanges = false;
       suppressAutoSave = false;
     }
@@ -2316,10 +3792,10 @@ let playerSortMode = 'number';
       }
 
       for (let i = 1; i <= 5; i++) {
-        const scInput = document.getElementById(`set${i}SC`);
+        const homeInput = document.getElementById(`set${i}Home`);
         const oppInput = document.getElementById(`set${i}Opp`);
         const finalizeButton = document.getElementById(`finalizeButton${i}`);
-        if (scInput) scInput.value = '';
+        if (homeInput) homeInput.value = '';
         if (oppInput) oppInput.value = '';
         if (finalizeButton) finalizeButton.classList.remove('finalized-btn');
       }
@@ -2330,7 +3806,8 @@ let playerSortMode = 'number';
       });
 
       resetAllTimeouts({ resetStored: true });
-      scoreGameState.sc = null;
+      resetMatchSetRecords();
+      scoreGameState.home = null;
       scoreGameState.opp = null;
       updateScoreModalDisplay();
 
@@ -2347,7 +3824,7 @@ let playerSortMode = 'number';
       updateOpponentName();
       updateFirstServeOptions();
       refreshJerseySelectDisplays();
-      ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
+      ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
       applyJerseyColorToNumbers();
       setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
 
@@ -2371,22 +3848,56 @@ let playerSortMode = 'number';
         updateOpponentName();
         scheduleAutoSave();
       });
+      playerFormErrorElement = document.getElementById('playerFormError');
+      const playerModalElement = document.getElementById('playerModal');
+      const playerModalInputs = ['number', 'lastName', 'initial', 'tempNumber']
+        .map(id => document.getElementById(id))
+        .filter(Boolean);
+      const handlePlayerModalEnterKey = (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submitPlayer();
+        }
+      };
+      playerModalInputs.forEach(input => {
+        input.addEventListener('keydown', handlePlayerModalEnterKey);
+      });
+      ['number', 'lastName'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+          input.addEventListener('input', () => {
+            clearPlayerFormError();
+          });
+        }
+      });
+      if (playerModalElement) {
+        playerModalElement.addEventListener('hidden.bs.modal', () => {
+          clearPlayerFormError();
+        });
+      }
       jerseyConflictModalMessageElement = document.getElementById('jerseyConflictModalMessage');
       const jerseyConflictModalElement = document.getElementById('jerseyConflictModal');
       if (jerseyConflictModalElement) {
         jerseyConflictModalInstance = new bootstrap.Modal(jerseyConflictModalElement);
       }
-      initializeJerseySelect(document.getElementById('jerseyColorSC'), { applyToNumbers: true });
+      initializeJerseySelect(document.getElementById('jerseyColorHome'), { applyToNumbers: true });
       initializeJerseySelect(document.getElementById('jerseyColorOpp'));
       setupJerseyThemeObserver();
       handleJerseyThemeChange();
-      ensureDistinctJerseyColors(document.getElementById('jerseyColorSC'), { showModal: false });
+      ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
       const sortToggleBtn = document.getElementById('playerSortToggleBtn');
       if (sortToggleBtn) {
         sortToggleBtn.addEventListener('click', () => {
           togglePlayerSortMode();
         });
         updatePlayerSortToggle();
+      }
+      const modalSortSelect = document.getElementById('modalPlayerSortSelect');
+      if (modalSortSelect) {
+        modalSortSelect.addEventListener('change', (event) => {
+          setPlayerSortMode(event.target.value);
+        });
+        modalSortSelect.value = playerSortMode;
       }
       const autoSaveTargets = document.querySelector('.container');
       if (autoSaveTargets) {
@@ -2428,7 +3939,7 @@ let playerSortMode = 'number';
           persistCurrentSetTimeouts();
           cancelActiveTimeoutTimer();
           scoreGameState.setNumber = null;
-          scoreGameState.sc = null;
+          scoreGameState.home = null;
           scoreGameState.opp = null;
           updateScoreModalDisplay();
           refreshAllTimeoutDisplays();
@@ -2476,10 +3987,20 @@ let playerSortMode = 'number';
         resetAllTimeouts({ resetStored: true });
       }
       document.querySelectorAll('.score-game-btn').forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (event) => {
           const setNumber = parseInt(button.getAttribute('data-set'), 10);
-          if (!Number.isNaN(setNumber)) {
-            openScoreGameModal(setNumber);
+          if (Number.isNaN(setNumber)) {
+            return;
+          }
+          if (button.disabled) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          const didOpen = openScoreGameModal(setNumber);
+          if (!didOpen) {
+            event.preventDefault();
+            event.stopPropagation();
           }
         });
       });

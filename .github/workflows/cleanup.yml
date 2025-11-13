@@ -145,20 +145,6 @@ jobs:
               echo "Preview Worker $PREVIEW_NAME not found, skipping deletion"
             fi
 
-            D1_DBS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" \
-              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              -H "Content-Type: application/json")
-            if echo "$D1_DBS" | jq -e --arg name "$PREVIEW_DB_NAME" '.result[] | select(.name == $name)' > /dev/null 2>&1; then
-              echo "Deleting preview D1 database: $PREVIEW_DB_NAME"
-              if npx wrangler d1 delete "$PREVIEW_DB_NAME"; then
-                echo "Preview D1 database $PREVIEW_DB_NAME deleted"
-              else
-                echo "Failed to delete preview D1 database $PREVIEW_DB_NAME"
-                exit 1
-              fi
-            else
-              echo "Preview D1 database $PREVIEW_DB_NAME not found, skipping deletion"
-            fi
           else
             echo "Failed to authenticate with Cloudflare, skipping cleanup"
             exit 1
