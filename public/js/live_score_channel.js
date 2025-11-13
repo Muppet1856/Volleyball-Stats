@@ -149,6 +149,30 @@
 
   function handleError(event) {
     console.warn('LiveScoreChannel socket error', event);
+    const detail = {
+      type: event?.type || 'error',
+      message: event?.message || null
+    };
+    notifyStatus('error', detail);
+    if (manualClose) {
+      return;
+    }
+    if (!socket) {
+      scheduleReconnect();
+      return;
+    }
+    const { readyState } = socket;
+    if (readyState === WebSocket.CLOSING || readyState === WebSocket.CLOSED) {
+      scheduleReconnect();
+      return;
+    }
+    try {
+      socket.close();
+    } catch (error) {
+      console.warn('LiveScoreChannel failed to close socket after error', error);
+      cleanupSocket();
+      scheduleReconnect();
+    }
   }
 
   function openSocket() {
