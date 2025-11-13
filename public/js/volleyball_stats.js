@@ -44,6 +44,7 @@ function updateHomeTeamUI() {
   if (typeof updateOpponentName === 'function') {
     updateOpponentName();
   }
+  broadcastLabelsIfChanged('label_change');
 }
 
 const apiClient = (() => {
@@ -631,6 +632,335 @@ function normalizeRosterArray(roster) {
     const SCORE_FINALIZED_BACKGROUND_BLEND = 0.5;
     const SCORE_FINALIZED_TEXT_BLEND = 0.35;
     const SCORE_FINALIZED_GRAY_COLOR = { r: 173, g: 181, b: 189, a: 1 };
+
+    const LIVE_CHANNEL_MAX_RECONNECT_ATTEMPTS = 8;
+    let liveScoreMessageUnsubscribe = null;
+    let liveScoreStatusUnsubscribe = null;
+    let liveScorePendingLeaveTimer = null;
+    let shouldResyncAfterReconnect = false;
+    let isApplyingRemoteScoreUpdate = false;
+    let lastBroadcastedLabels = { home: null, opp: null };
+
+    function getLiveScoreChannel() {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window.LiveScoreChannel || null;
+    }
+
+    function hasActiveMatchForLiveChannel() {
+      return currentMatchId !== null && currentMatchId !== undefined;
+    }
+
+    function shouldBroadcastLiveScoreUpdates() {
+      return hasActiveMatchForLiveChannel() && !isApplyingRemoteScoreUpdate && Boolean(getLiveScoreChannel());
+    }
+
+    function connectLiveScoreChannel() {
+      const channel = getLiveScoreChannel();
+      if (!channel || !hasActiveMatchForLiveChannel()) {
+        return;
+      }
+      channel.connect({ maxReconnectAttempts: LIVE_CHANNEL_MAX_RECONNECT_ATTEMPTS });
+      if (!liveScoreMessageUnsubscribe) {
+        liveScoreMessageUnsubscribe = channel.onMessage(handleLiveScoreMessage);
+      }
+      if (!liveScoreStatusUnsubscribe) {
+        liveScoreStatusUnsubscribe = channel.onStatusChange(handleLiveScoreStatusChange);
+      }
+    }
+
+    function disconnectLiveScoreChannel() {
+      if (liveScoreMessageUnsubscribe) {
+        liveScoreMessageUnsubscribe();
+        liveScoreMessageUnsubscribe = null;
+      }
+      if (liveScoreStatusUnsubscribe) {
+        liveScoreStatusUnsubscribe();
+        liveScoreStatusUnsubscribe = null;
+      }
+      const channel = getLiveScoreChannel();
+      if (channel) {
+        channel.disconnect();
+      }
+      shouldResyncAfterReconnect = false;
+    }
+
+    function clearPendingLiveLeave() {
+      if (liveScorePendingLeaveTimer) {
+        clearTimeout(liveScorePendingLeaveTimer);
+        liveScorePendingLeaveTimer = null;
+      }
+    }
+
+    function sendLiveScoreJoin({ setNumber = null, reason } = {}) {
+      if (!shouldBroadcastLiveScoreUpdates()) {
+        return;
+      }
+      const channel = getLiveScoreChannel();
+      const activeSet = setNumber !== null && setNumber !== undefined ? setNumber : scoreGameState.setNumber;
+      channel.send({
+        type: 'score:join',
+        matchId: currentMatchId,
+        setNumber: activeSet ?? null,
+        reason,
+        timestamp: Date.now()
+      });
+    }
+
+    function sendLiveScoreLeave({ setNumber = null } = {}) {
+      if (!shouldBroadcastLiveScoreUpdates()) {
+        return;
+      }
+      const channel = getLiveScoreChannel();
+      const activeSet = setNumber !== null && setNumber !== undefined ? setNumber : scoreGameState.setNumber;
+      channel.send({
+        type: 'score:leave',
+        matchId: currentMatchId,
+        setNumber: activeSet ?? null,
+        timestamp: Date.now()
+      });
+    }
+
+    function buildLiveScoreStatePayload({ reason, setNumber } = {}) {
+      const activeSet = setNumber !== undefined ? setNumber : scoreGameState.setNumber;
+      return {
+        type: 'score:update',
+        matchId: currentMatchId,
+        setNumber: activeSet ?? null,
+        reason,
+        state: {
+          scores: {
+            home: scoreGameState.home,
+            opp: scoreGameState.opp
+          },
+          timeouts: {
+            home: Array.isArray(scoreGameState.timeouts.home)
+              ? scoreGameState.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean)
+              : Array(TIMEOUT_COUNT).fill(false),
+            opp: Array.isArray(scoreGameState.timeouts.opp)
+              ? scoreGameState.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+              : Array(TIMEOUT_COUNT).fill(false)
+          },
+          activeTimeout: {
+            home: scoreGameState.activeTimeout.home ?? null,
+            opp: scoreGameState.activeTimeout.opp ?? null
+          },
+          timeoutRemainingSeconds: {
+            home: scoreGameState.timeoutRemainingSeconds.home ?? TIMEOUT_DURATION_SECONDS,
+            opp: scoreGameState.timeoutRemainingSeconds.opp ?? TIMEOUT_DURATION_SECONDS
+          },
+          timeoutRunning: {
+            home: Boolean(scoreGameState.timeoutTimers.home),
+            opp: Boolean(scoreGameState.timeoutTimers.opp)
+          },
+          swapped: Boolean(isSwapped),
+          labels: {
+            home: getHomeTeamName(),
+            opp: getOpponentTeamName()
+          },
+          finalizedSets: { ...finalizedSets }
+        },
+        timestamp: Date.now()
+      };
+    }
+
+    function broadcastLiveScoreState(reason, options = {}) {
+      if (!shouldBroadcastLiveScoreUpdates()) {
+        return;
+      }
+      const channel = getLiveScoreChannel();
+      const payload = buildLiveScoreStatePayload({ reason, ...options });
+      lastBroadcastedLabels = { ...payload.state.labels };
+      channel.send(payload);
+    }
+
+    function broadcastLabelsIfChanged(reason = 'labels') {
+      if (!shouldBroadcastLiveScoreUpdates()) {
+        return;
+      }
+      const currentLabels = {
+        home: getHomeTeamName(),
+        opp: getOpponentTeamName()
+      };
+      if (
+        currentLabels.home === lastBroadcastedLabels.home &&
+        currentLabels.opp === lastBroadcastedLabels.opp
+      ) {
+        return;
+      }
+      lastBroadcastedLabels = currentLabels;
+      broadcastLiveScoreState(reason);
+    }
+
+    function handleLiveScoreStatusChange(status, detail = {}) {
+      if (status === 'connected') {
+        const isReconnect = Boolean(detail?.isReconnect);
+        if (shouldResyncAfterReconnect && hasActiveMatchForLiveChannel()) {
+          shouldResyncAfterReconnect = false;
+          setTimeout(() => {
+            if (typeof loadMatchFromUrl === 'function') {
+              loadMatchFromUrl();
+            }
+          }, 0);
+        }
+        clearPendingLiveLeave();
+        if (scoreGameState.setNumber !== null) {
+          sendLiveScoreJoin({ setNumber: scoreGameState.setNumber, reason: isReconnect ? 'rejoined' : 'connected' });
+          broadcastLiveScoreState(isReconnect ? 'reconnect_sync' : 'sync');
+        }
+      } else if (status === 'reconnecting') {
+        shouldResyncAfterReconnect = true;
+      } else if (status === 'failed') {
+        shouldResyncAfterReconnect = true;
+      }
+    }
+
+    function normalizeLiveScoreValue(value) {
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) {
+        return null;
+      }
+      return Math.max(0, Math.round(numeric));
+    }
+
+    function applyRemoteLiveScoreState(message) {
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+      const { state = {} } = message;
+      const incomingSetNumber = Number(message.setNumber);
+      const validSetNumber = Number.isInteger(incomingSetNumber) ? incomingSetNumber : scoreGameState.setNumber;
+      isApplyingRemoteScoreUpdate = true;
+      try {
+        if (typeof state.labels === 'object' && state.labels) {
+          if (state.labels.home !== undefined) {
+            const homeName = String(state.labels.home ?? '').trim();
+            homeTeamName = homeName || HOME_TEAM_FALLBACK;
+            updateHomeTeamUI();
+          }
+          if (state.labels.opp !== undefined) {
+            const opponentInput = document.getElementById('opponent');
+            if (opponentInput) {
+              opponentInput.value = String(state.labels.opp ?? '');
+            }
+            updateOpponentName();
+          }
+        }
+
+        if (typeof state.swapped === 'boolean' && state.swapped !== isSwapped) {
+          swapScores();
+        }
+
+        if (validSetNumber && scoreGameState.setNumber !== validSetNumber) {
+          scoreGameState.setNumber = validSetNumber;
+        }
+
+        if (state.scores && typeof state.scores === 'object') {
+          scoreGameState.home = normalizeLiveScoreValue(state.scores.home);
+          scoreGameState.opp = normalizeLiveScoreValue(state.scores.opp);
+        }
+
+        if (state.timeouts && typeof state.timeouts === 'object') {
+          ['home', 'opp'].forEach((team) => {
+            const values = Array.isArray(state.timeouts[team]) ? state.timeouts[team] : [];
+            scoreGameState.timeouts[team] = values.slice(0, TIMEOUT_COUNT).map(Boolean);
+          });
+        }
+
+        if (state.activeTimeout && typeof state.activeTimeout === 'object') {
+          ['home', 'opp'].forEach((team) => {
+            const index = Number(state.activeTimeout[team]);
+            scoreGameState.activeTimeout[team] = Number.isInteger(index) ? index : null;
+          });
+        } else {
+          scoreGameState.activeTimeout.home = null;
+          scoreGameState.activeTimeout.opp = null;
+        }
+
+        if (state.timeoutRemainingSeconds && typeof state.timeoutRemainingSeconds === 'object') {
+          ['home', 'opp'].forEach((team) => {
+            const value = Number(state.timeoutRemainingSeconds[team]);
+            scoreGameState.timeoutRemainingSeconds[team] = Number.isFinite(value)
+              ? Math.max(0, Math.round(value))
+              : TIMEOUT_DURATION_SECONDS;
+          });
+        } else {
+          scoreGameState.timeoutRemainingSeconds.home = TIMEOUT_DURATION_SECONDS;
+          scoreGameState.timeoutRemainingSeconds.opp = TIMEOUT_DURATION_SECONDS;
+        }
+
+        stopTimeoutTimer('home');
+        stopTimeoutTimer('opp');
+
+        if (state.timeoutRunning && typeof state.timeoutRunning === 'object') {
+          ['home', 'opp'].forEach((team) => {
+            if (state.timeoutRunning[team] && scoreGameState.activeTimeout[team] !== null) {
+              startTimeoutTimer(team, { broadcast: false });
+            }
+          });
+        }
+
+        if (state.finalizedSets && typeof state.finalizedSets === 'object') {
+          finalizedSets = Object.entries(state.finalizedSets).reduce((acc, [key, value]) => {
+            const parsedKey = Number(key);
+            if (!Number.isNaN(parsedKey)) {
+              acc[parsedKey] = Boolean(value);
+            }
+            return acc;
+          }, {});
+          updateAllFinalizeButtonStates();
+          calculateResult();
+        }
+
+        if (validSetNumber) {
+          setMatchTimeoutState(validSetNumber, state.timeouts);
+        }
+
+        updateScoreModalLabels();
+        updateScoreModalDisplay();
+        applyScoreModalToInputs({ triggerSave: true });
+        refreshAllTimeoutDisplays();
+        updateTimeoutTimerDisplay();
+        lastBroadcastedLabels = {
+          home: getHomeTeamName(),
+          opp: getOpponentTeamName()
+        };
+      } finally {
+        isApplyingRemoteScoreUpdate = false;
+      }
+    }
+
+    function handleLiveScoreMessage(message) {
+      const channel = getLiveScoreChannel();
+      if (!channel || !message || typeof message !== 'object') {
+        return;
+      }
+      if (message.clientId && message.clientId === channel.getClientId()) {
+        return;
+      }
+      if (hasActiveMatchForLiveChannel()) {
+        const incomingMatchId = Number(message.matchId);
+        if (!Number.isNaN(incomingMatchId) && Number(currentMatchId) !== incomingMatchId) {
+          return;
+        }
+      }
+      switch (message.type) {
+        case 'score:update':
+          applyRemoteLiveScoreState(message);
+          break;
+        case 'score:join':
+          if (shouldBroadcastLiveScoreUpdates()) {
+            broadcastLiveScoreState('sync');
+          }
+          break;
+        default:
+          break;
+      }
+    }
 
     function getScoreGameModalDialog() {
       const modalElement = document.getElementById('scoreGameModal');
@@ -1665,17 +1995,29 @@ function normalizeRosterArray(roster) {
       }
     }
 
-    function startTimeoutTimer(team) {
+    function startTimeoutTimer(team, { broadcast = true } = {}) {
       stopTimeoutTimer(team);
       scoreGameState.timeoutTimers[team] = window.setInterval(() => {
-        scoreGameState.timeoutRemainingSeconds[team] = Math.max(0, scoreGameState.timeoutRemainingSeconds[team] - 1);
+        scoreGameState.timeoutRemainingSeconds[team] = Math.max(
+          0,
+          scoreGameState.timeoutRemainingSeconds[team] - 1
+        );
         updateTimeoutUI(team);
+        if (broadcast && shouldBroadcastLiveScoreUpdates()) {
+          broadcastLiveScoreState('timeout_tick');
+        }
         if (scoreGameState.timeoutRemainingSeconds[team] <= 0) {
           stopTimeoutTimer(team);
           scoreGameState.activeTimeout[team] = null;
           updateTimeoutUI(team);
+          if (broadcast && shouldBroadcastLiveScoreUpdates()) {
+            broadcastLiveScoreState('timeout_complete');
+          }
         }
       }, 1000);
+      if (broadcast && shouldBroadcastLiveScoreUpdates()) {
+        broadcastLiveScoreState('timeout_start');
+      }
     }
 
     function getRunningTimeoutTeam() {
@@ -1691,6 +2033,7 @@ function normalizeRosterArray(roster) {
       scoreGameState.activeTimeout[runningTeam] = null;
       scoreGameState.timeoutRemainingSeconds[runningTeam] = TIMEOUT_DURATION_SECONDS;
       updateTimeoutUI(runningTeam);
+      broadcastLiveScoreState('timeout_cancel');
       return true;
     }
 
@@ -1797,11 +2140,11 @@ function normalizeRosterArray(roster) {
       scoreGameState.timeoutRemainingSeconds.opp = previousRemaining.home;
 
       if (wasRunning.opp && scoreGameState.activeTimeout.home !== null) {
-        startTimeoutTimer('home');
+        startTimeoutTimer('home', { broadcast: !isApplyingRemoteScoreUpdate });
       }
 
       if (wasRunning.home && scoreGameState.activeTimeout.opp !== null) {
-        startTimeoutTimer('opp');
+        startTimeoutTimer('opp', { broadcast: !isApplyingRemoteScoreUpdate });
       }
 
       updateTimeoutUI('home');
@@ -1839,6 +2182,7 @@ function normalizeRosterArray(roster) {
         updateTimeoutUI(team);
         persistCurrentSetTimeouts();
         scheduleAutoSave();
+        broadcastLiveScoreState('timeout_toggle');
         return;
       }
 
@@ -1852,6 +2196,7 @@ function normalizeRosterArray(roster) {
       updateTimeoutUI(team);
       persistCurrentSetTimeouts();
       scheduleAutoSave();
+      broadcastLiveScoreState('timeout_toggle');
     }
 
     function resetTeamTimeouts(team, { skipPersist = false } = {}) {
@@ -1863,6 +2208,7 @@ function normalizeRosterArray(roster) {
       if (!skipPersist) {
         persistCurrentSetTimeouts();
       }
+      broadcastLiveScoreState('timeout_reset');
     }
 
     function resetAllTimeouts({ resetStored = false } = {}) {
@@ -1872,6 +2218,7 @@ function normalizeRosterArray(roster) {
       resetTeamTimeouts('home', { skipPersist: true });
       resetTeamTimeouts('opp', { skipPersist: true });
       persistCurrentSetTimeouts();
+      broadcastLiveScoreState('timeout_reset_all');
     }
 
     function updateScoreColorClasses() {
@@ -1956,6 +2303,7 @@ function normalizeRosterArray(roster) {
       scoreGameState[key] = newValue;
       updateScoreModalDisplay();
       applyScoreModalToInputs();
+      broadcastLiveScoreState('score_change');
     }
 
     function openScoreGameModal(setNumber) {
@@ -1985,6 +2333,8 @@ function normalizeRosterArray(roster) {
       }
       if (scoreGameModalInstance) {
         updateScoreGameModalLayout();
+        sendLiveScoreJoin({ setNumber, reason: 'set_change' });
+        broadcastLiveScoreState('set_change', { setNumber });
         scoreGameModalInstance.show();
         return true;
       }
@@ -2278,6 +2628,7 @@ function normalizeRosterArray(roster) {
       }
       scheduleAutoSave();
       syncScoreGameModalAfterSwap();
+      broadcastLiveScoreState('swap');
     }
 
     
@@ -3198,6 +3549,7 @@ function normalizeRosterArray(roster) {
       updateFinalizeButtonState(setNumber);
       calculateResult();
       scheduleAutoSave();
+      broadcastLiveScoreState('finalized_toggle', { setNumber });
     }
 
     function calculateResult() {
@@ -3472,6 +3824,11 @@ function normalizeRosterArray(roster) {
             const newUrl = `${window.location.pathname}?matchId=${savedId}`;
             window.history.replaceState(null, '', newUrl);
           }
+          connectLiveScoreChannel();
+          lastBroadcastedLabels = {
+            home: getHomeTeamName(),
+            opp: getOpponentTeamName()
+          };
           await applySetEdits(savedId, setStates);
           await apiClient.updateFinalizedSets(savedId, body.finalized_sets);
         }
@@ -3620,6 +3977,7 @@ function normalizeRosterArray(roster) {
           const match = await apiClient.getMatch(matchId);
           if (match) {
             currentMatchId = match.id;
+            connectLiveScoreChannel();
             const roster = extractRosterFromMatch(match);
             loadedMatchPlayers = roster.map(entry => ({ ...entry }));
             match.players = loadedMatchPlayers.map(entry => ({ ...entry }));
@@ -3670,26 +4028,33 @@ function normalizeRosterArray(roster) {
             }
             updateAllFinalizeButtonStates();
             calculateResult();
+            lastBroadcastedLabels = {
+              home: getHomeTeamName(),
+              opp: getOpponentTeamName()
+            };
           } else {
             currentMatchId = null;
             loadedMatchPlayers = [];
             finalizedSets = {};
             resetFinalizeButtons();
-          }
-        } catch (error) {
-          console.error('Failed to load match', error);
-          setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
-          currentMatchId = null;
-          loadedMatchPlayers = [];
-          finalizedSets = {};
-          resetFinalizeButtons();
+            disconnectLiveScoreChannel();
         }
-      } else {
-        currentMatchId = matchId ? parseInt(matchId, 10) : null;
+      } catch (error) {
+        console.error('Failed to load match', error);
+        setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
+        currentMatchId = null;
         loadedMatchPlayers = [];
         finalizedSets = {};
         resetFinalizeButtons();
+        disconnectLiveScoreChannel();
       }
+    } else {
+      currentMatchId = matchId ? parseInt(matchId, 10) : null;
+      loadedMatchPlayers = [];
+      finalizedSets = {};
+      resetFinalizeButtons();
+      disconnectLiveScoreChannel();
+    }
       setPlayerRecords(playerRecords);
       hasPendingChanges = false;
       suppressAutoSave = false;
@@ -3784,6 +4149,7 @@ function normalizeRosterArray(roster) {
       loadedMatchPlayers = [];
       finalizedSets = {};
       isSwapped = false;
+      disconnectLiveScoreChannel();
 
       const form = document.getElementById('matchForm');
       if (form) {
@@ -3847,6 +4213,7 @@ function normalizeRosterArray(roster) {
       opponentInput.addEventListener('input', () => {
         updateOpponentName();
         scheduleAutoSave();
+        broadcastLabelsIfChanged('label_change');
       });
       playerFormErrorElement = document.getElementById('playerFormError');
       const playerModalElement = document.getElementById('playerModal');
@@ -3928,6 +4295,9 @@ function normalizeRosterArray(roster) {
           setScoreModalBackgroundLock(true);
           updateScoreGameModalLayout();
           updateTimeoutTimerDisplay();
+          clearPendingLiveLeave();
+          sendLiveScoreJoin({ reason: 'modal_open' });
+          broadcastLiveScoreState('modal_open');
         });
         scoreGameModalElement.addEventListener('shown.bs.modal', () => {
           updateScoreGameModalLayout();
@@ -3935,9 +4305,14 @@ function normalizeRosterArray(roster) {
           updateTimeoutLayoutForSwap();
         });
         scoreGameModalElement.addEventListener('hidden.bs.modal', () => {
+          const closedSet = scoreGameState.setNumber;
           setScoreModalBackgroundLock(false);
           persistCurrentSetTimeouts();
           cancelActiveTimeoutTimer();
+          clearPendingLiveLeave();
+          liveScorePendingLeaveTimer = setTimeout(() => {
+            sendLiveScoreLeave({ setNumber: closedSet });
+          }, 150);
           scoreGameState.setNumber = null;
           scoreGameState.home = null;
           scoreGameState.opp = null;
