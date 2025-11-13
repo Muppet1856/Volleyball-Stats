@@ -605,12 +605,19 @@ function normalizeRosterArray(roster) {
     const finalizedStatePopoverTimers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
     const FINALIZE_TIE_POPOVER_MESSAGE = 'Set scores are tied. Adjust one team\'s score before marking the set final.';
+    const FINALIZE_MISSING_POPOVER_TITLE = 'Scores missing';
+    const FINALIZE_MISSING_POPOVER_MESSAGE = 'Enter both scores before finalizing the set.';
     const FINALIZED_SET_POPOVER_TITLE = 'Score finalized';
     const FINALIZED_SET_POPOVER_MESSAGE = 'This set\'s score is finalized. Toggle the final status to make changes.';
     const FINALIZE_POPOVER_CONFIG = {
       tie: {
         title: FINALIZE_TIE_POPOVER_TITLE,
         content: FINALIZE_TIE_POPOVER_MESSAGE,
+        customClass: 'finalize-error-popover'
+      },
+      missing: {
+        title: FINALIZE_MISSING_POPOVER_TITLE,
+        content: FINALIZE_MISSING_POPOVER_MESSAGE,
         customClass: 'finalize-error-popover'
       },
       finalized: {
@@ -1067,10 +1074,10 @@ function normalizeRosterArray(roster) {
       }
     }
 
-    function hideFinalizeTiePopover(element) {
+    function hideFinalizePopover(element, type) {
       if (!element) return;
       clearFinalizePopoverTimer(element);
-      if (element.dataset.finalizePopoverType === 'tie') {
+      if (element.dataset.finalizePopoverType === type) {
         const popover = bootstrap.Popover.getInstance(element);
         if (popover) {
           popover.hide();
@@ -1078,6 +1085,14 @@ function normalizeRosterArray(roster) {
         }
         delete element.dataset.finalizePopoverType;
       }
+    }
+
+    function hideFinalizeTiePopover(element) {
+      hideFinalizePopover(element, 'tie');
+    }
+
+    function hideFinalizeMissingPopover(element) {
+      hideFinalizePopover(element, 'missing');
     }
 
     function getFinalizePopoverTargets(setNumber) {
@@ -1111,6 +1126,38 @@ function normalizeRosterArray(roster) {
       targets.forEach((element, index) => {
         showFinalizeTiePopover(element, { focus: index === 0 });
       });
+    }
+
+    function showFinalizeMissingPopover(element, { focus = false } = {}) {
+      if (!element) return;
+      const popover = ensureFinalizePopover(element, 'missing');
+      if (!popover) return;
+      popover.show();
+      if (focus) {
+        try {
+          element.focus({ preventScroll: true });
+        } catch (error) {
+          element.focus();
+        }
+      }
+      clearFinalizePopoverTimer(element);
+      const timerId = setTimeout(() => {
+        popover.hide();
+        finalizePopoverTimers.delete(element);
+      }, 2400);
+      finalizePopoverTimers.set(element, timerId);
+    }
+
+    function showFinalizeMissingScorePopovers(setNumber) {
+      const targets = getFinalizePopoverTargets(setNumber);
+      targets.forEach((element, index) => {
+        showFinalizeMissingPopover(element, { focus: index === 0 });
+      });
+    }
+
+    function hideFinalizeErrorPopovers(element) {
+      hideFinalizeTiePopover(element);
+      hideFinalizeMissingPopover(element);
     }
 
     function ensureFinalizedPopoverTargets(setNumber) {
@@ -1218,22 +1265,23 @@ function normalizeRosterArray(roster) {
         return { isTie: false, finalStateChanged: false, isFinal: false };
       }
       const popoverTargets = getFinalizePopoverTargets(setNumber);
-      hideFinalizeTiePopover(button);
+      hideFinalizeErrorPopovers(button);
       const homeRaw = homeInput.value.trim();
       const oppRaw = oppInput.value.trim();
-      const bothScoresEntered = homeRaw !== '' && oppRaw !== '';
       const homeScore = parseScoreValue(homeRaw);
       const oppScore = parseScoreValue(oppRaw);
-      const isTie = bothScoresEntered && homeScore === oppScore;
-      button.classList.toggle('finalize-btn-error', isTie);
-      if (isTie) {
+      const isMissing = homeScore === null || oppScore === null;
+      const isTie = !isMissing && homeScore === oppScore;
+      const hasError = isTie || isMissing;
+      button.classList.toggle('finalize-btn-error', hasError);
+      if (hasError) {
         button.setAttribute('aria-disabled', 'true');
       } else {
         button.removeAttribute('aria-disabled');
-        popoverTargets.forEach((element) => hideFinalizeTiePopover(element));
+        popoverTargets.forEach((element) => hideFinalizeErrorPopovers(element));
       }
       let finalStateChanged = false;
-      if (isTie && finalizedSets[setNumber]) {
+      if (hasError && finalizedSets[setNumber]) {
         delete finalizedSets[setNumber];
         button.classList.remove('finalized-btn');
         finalStateChanged = true;
@@ -1255,7 +1303,7 @@ function normalizeRosterArray(roster) {
       if (button.dataset.finalizeInitialized !== 'true') {
         button.dataset.finalizeInitialized = 'true';
       }
-      return { isTie, finalStateChanged, isFinal };
+      return { isTie, isMissing, finalStateChanged, isFinal };
     }
 
     function updateAllFinalizeButtonStates() {
@@ -2885,10 +2933,15 @@ function normalizeRosterArray(roster) {
       const oppInput = document.getElementById(`set${setNumber}Opp`);
       const homeRaw = homeInput ? homeInput.value.trim() : '';
       const oppRaw = oppInput ? oppInput.value.trim() : '';
-      const bothScoresEntered = homeRaw !== '' && oppRaw !== '';
       const homeScore = parseScoreValue(homeRaw);
       const oppScore = parseScoreValue(oppRaw);
-      if (bothScoresEntered && homeScore === oppScore) {
+      const scoresMissing = homeScore === null || oppScore === null;
+      if (scoresMissing) {
+        updateFinalizeButtonState(setNumber);
+        showFinalizeMissingScorePopovers(setNumber);
+        return;
+      }
+      if (homeScore === oppScore) {
         updateFinalizeButtonState(setNumber);
         showFinalizeTiePopovers(setNumber);
         return;
