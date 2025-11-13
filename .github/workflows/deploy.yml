@@ -79,16 +79,16 @@ jobs:
               echo "env_name=" >> $GITHUB_OUTPUT
             else
               ENV=$(sanitize "$BRANCH_NAME")
-+             # Check if this branch has an open PR (to avoid duplicate runs with pull_request trigger)
-+             API_URL="https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${BRANCH_NAME}&state=open"
-+             PR_COUNT=$(curl -s -H "Authorization: token ${{ github.token }}" -H "Accept: application/vnd.github.v3+json" "$API_URL" | jq 'length')
-+             if [ "$PR_COUNT" -gt 0 ]; then
-+               echo "type=skip" >> $GITHUB_OUTPUT
-+               echo "Skipping push deployment for branch $BRANCH_NAME (open PR exists; handled by pull_request trigger)"
-+             else
-+               echo "type=branch" >> $GITHUB_OUTPUT
-+               echo "env_name=$ENV" >> $GITHUB_OUTPUT
-+             fi
+              # Check if this branch has an open PR (to avoid duplicate runs with pull_request trigger)
+              API_URL="https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${BRANCH_NAME}&state=open"
+              PR_COUNT=$(curl -s -H "Authorization: token ${{ github.token }}" -H "Accept: application/vnd.github.v3+json" "$API_URL" | jq 'length')
+              if [ "$PR_COUNT" -gt 0 ]; then
+                echo "type=skip" >> $GITHUB_OUTPUT
+                echo "Skipping push deployment for branch $BRANCH_NAME (open PR exists; handled by pull_request trigger)"
+              else
+                echo "type=branch" >> $GITHUB_OUTPUT
+                echo "env_name=$ENV" >> $GITHUB_OUTPUT
+              fi
             fi
 
           elif [ "$EVENT" = "pull_request" ]; then
