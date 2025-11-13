@@ -281,6 +281,8 @@ jobs:
 
           COUNT=$(jq 'keys | length' "$VARS_JSON")
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
+          
+          echo "$(cat wrangler.toml)"
 
       # ————————————————————————
       # Deploy Worker
