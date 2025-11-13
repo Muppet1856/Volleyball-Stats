@@ -39,12 +39,365 @@
     }
   };
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const matchIdParam = urlParams.get('matchId');
+  const setParam = urlParams.get('set');
+  const parsedMatchId = matchIdParam ? parseInt(matchIdParam, 10) : NaN;
+  const matchId = Number.isInteger(parsedMatchId) ? parsedMatchId : null;
+  const parsedSet = setParam ? parseInt(setParam, 10) : NaN;
+  const DEFAULT_SET_NUMBER = 1;
+  let activeSetNumber = Number.isInteger(parsedSet) && parsedSet >= 1 && parsedSet <= 5 ? parsedSet : DEFAULT_SET_NUMBER;
+
+  let liveChannel = null;
+  let liveMessageUnsubscribe = null;
+  let liveStatusUnsubscribe = null;
+  let liveClientId = null;
+  let liveStatus = 'disconnected';
+  let interactionLocked = matchId !== null;
+  let manualFallback = matchId === null;
+  let isApplyingRemoteUpdate = false;
+  let statusElement = null;
+  let lastBroadcastSnapshot = null;
+
+  function getLiveChannel() {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return window.LiveScoreChannel || null;
+  }
+
+  function canApplyLocalMutation() {
+    return manualFallback || !interactionLocked;
+  }
+
+  function setControlsEnabled(enabled) {
+    const disable = !enabled;
+    document.querySelectorAll('[data-role="score-zone"]').forEach((zone) => {
+      zone.setAttribute('aria-disabled', disable ? 'true' : 'false');
+      zone.tabIndex = disable ? -1 : 0;
+      zone.classList.toggle('live-disabled', disable);
+      zone.style.pointerEvents = disable ? 'none' : '';
+    });
+    document.querySelectorAll('.timeout-box').forEach((button) => {
+      button.disabled = disable;
+      button.classList.toggle('disabled', disable);
+    });
+    const swapButton = document.getElementById('scorekeeperSwapBtn');
+    if (swapButton) {
+      swapButton.disabled = disable;
+      swapButton.classList.toggle('disabled', disable);
+    }
+    const resetScoresBtn = document.getElementById('scorekeeperResetScoresBtn');
+    if (resetScoresBtn) {
+      resetScoresBtn.disabled = disable;
+    }
+    const resetTimeoutsBtn = document.getElementById('scorekeeperResetTimeoutsBtn');
+    if (resetTimeoutsBtn) {
+      resetTimeoutsBtn.disabled = disable;
+    }
+    const homeInput = document.getElementById('scorekeeperHomeName');
+    if (homeInput) {
+      homeInput.disabled = disable;
+    }
+    const oppInput = document.getElementById('scorekeeperOppName');
+    if (oppInput) {
+      oppInput.disabled = disable;
+    }
+  }
+
+  function updateLiveStatusIndicator(status, detail = {}) {
+    if (!statusElement) {
+      statusElement = document.getElementById('scorekeeperLiveStatus');
+    }
+    if (!statusElement) {
+      return;
+    }
+    const classMap = {
+      connecting: 'text-bg-warning',
+      connected: 'text-bg-success',
+      reconnecting: 'text-bg-warning',
+      failed: 'text-bg-danger',
+      disconnected: 'text-bg-secondary',
+      manual: 'text-bg-secondary'
+    };
+    const textMap = {
+      connecting: 'Connecting…',
+      connected: 'Live',
+      reconnecting: 'Reconnecting…',
+      failed: 'Offline',
+      disconnected: 'Offline',
+      manual: 'Manual'
+    };
+    const targetClass = classMap[status] || 'text-bg-secondary';
+    statusElement.className = `badge rounded-pill scorekeeper-live-indicator ${targetClass}`;
+    statusElement.textContent = textMap[status] || 'Offline';
+    if (status === 'reconnecting' && detail?.attempt) {
+      statusElement.textContent = `${textMap[status]} (${detail.attempt})`;
+    }
+  }
+
+  function getScorekeeperSnapshot() {
+    return {
+      scores: { ...scorekeeperState.scores },
+      timeouts: {
+        home: scorekeeperState.timeouts.home.slice(0, TIMEOUT_COUNT).map(Boolean),
+        opp: scorekeeperState.timeouts.opp.slice(0, TIMEOUT_COUNT).map(Boolean)
+      },
+      activeTimeout: {
+        home: scorekeeperState.activeTimeout.home ?? null,
+        opp: scorekeeperState.activeTimeout.opp ?? null
+      },
+      timeoutRemainingSeconds: {
+        home: scorekeeperState.timeoutRemainingSeconds.home ?? TIMEOUT_DURATION_SECONDS,
+        opp: scorekeeperState.timeoutRemainingSeconds.opp ?? TIMEOUT_DURATION_SECONDS
+      },
+      timeoutRunning: {
+        home: Boolean(scorekeeperState.timeoutTimers.home),
+        opp: Boolean(scorekeeperState.timeoutTimers.opp)
+      },
+      labels: { ...scorekeeperState.labels },
+      swapped: scorekeeperState.display.left === 'opp',
+      finalizedSets: {}
+    };
+  }
+
+  function broadcastScorekeeperState(reason) {
+    if (!liveChannel || matchId === null || isApplyingRemoteUpdate) {
+      return;
+    }
+    const payload = {
+      type: 'score:update',
+      matchId,
+      setNumber: activeSetNumber,
+      reason,
+      state: getScorekeeperSnapshot(),
+      timestamp: Date.now()
+    };
+    lastBroadcastSnapshot = payload.state;
+    liveChannel.send(payload);
+  }
+
+  function sendLiveJoin(reason) {
+    if (!liveChannel || matchId === null) {
+      return;
+    }
+    liveChannel.send({
+      type: 'score:join',
+      matchId,
+      setNumber: activeSetNumber,
+      reason,
+      timestamp: Date.now()
+    });
+  }
+
+  function sendLiveLeave() {
+    if (!liveChannel || matchId === null) {
+      return;
+    }
+    liveChannel.send({
+      type: 'score:leave',
+      matchId,
+      setNumber: activeSetNumber,
+      timestamp: Date.now()
+    });
+  }
+
+  function applyRemoteSnapshot(message) {
+    const { state = {} } = message;
+    if (!state || typeof state !== 'object') {
+      return;
+    }
+    isApplyingRemoteUpdate = true;
+    try {
+      if (message.setNumber !== undefined && message.setNumber !== null) {
+        const numericSet = Number(message.setNumber);
+        if (Number.isInteger(numericSet) && numericSet >= 1 && numericSet <= 5) {
+          activeSetNumber = numericSet;
+        }
+      }
+      if (state.labels && typeof state.labels === 'object') {
+        if (typeof state.labels.home === 'string') {
+          scorekeeperState.labels.home = state.labels.home;
+        }
+        if (typeof state.labels.opp === 'string') {
+          scorekeeperState.labels.opp = state.labels.opp;
+        }
+        const homeInput = document.getElementById('scorekeeperHomeName');
+        if (homeInput) {
+          homeInput.value = scorekeeperState.labels.home;
+        }
+        const oppInput = document.getElementById('scorekeeperOppName');
+        if (oppInput) {
+          oppInput.value = scorekeeperState.labels.opp;
+        }
+        syncTeamLabelDisplays();
+      }
+      if (state.swapped !== undefined) {
+        const shouldSwap = Boolean(state.swapped);
+        const expectedLeft = shouldSwap ? 'opp' : 'home';
+        const expectedRight = shouldSwap ? 'home' : 'opp';
+        scorekeeperState.display.left = expectedLeft;
+        scorekeeperState.display.right = expectedRight;
+        updateDisplayAssignments();
+      }
+      if (state.scores && typeof state.scores === 'object') {
+        if (state.scores.home !== undefined) {
+          scorekeeperState.scores.home = clampScoreValue(state.scores.home);
+        }
+        if (state.scores.opp !== undefined) {
+          scorekeeperState.scores.opp = clampScoreValue(state.scores.opp);
+        }
+        updateScoreDisplays();
+      }
+      if (state.timeouts && typeof state.timeouts === 'object') {
+        ['home', 'opp'].forEach((team) => {
+          const values = Array.isArray(state.timeouts[team]) ? state.timeouts[team] : [];
+          scorekeeperState.timeouts[team] = values.slice(0, TIMEOUT_COUNT).map(Boolean);
+        });
+      }
+      if (state.activeTimeout && typeof state.activeTimeout === 'object') {
+        ['home', 'opp'].forEach((team) => {
+          const index = Number(state.activeTimeout[team]);
+          scorekeeperState.activeTimeout[team] = Number.isInteger(index) ? index : null;
+        });
+      } else {
+        scorekeeperState.activeTimeout.home = null;
+        scorekeeperState.activeTimeout.opp = null;
+      }
+      if (state.timeoutRemainingSeconds && typeof state.timeoutRemainingSeconds === 'object') {
+        ['home', 'opp'].forEach((team) => {
+          const value = Number(state.timeoutRemainingSeconds[team]);
+          scorekeeperState.timeoutRemainingSeconds[team] = Number.isFinite(value)
+            ? Math.max(0, Math.round(value))
+            : TIMEOUT_DURATION_SECONDS;
+        });
+      }
+      stopTimeoutTimer('home');
+      stopTimeoutTimer('opp');
+      if (state.timeoutRunning && typeof state.timeoutRunning === 'object') {
+        ['home', 'opp'].forEach((team) => {
+          if (state.timeoutRunning[team] && scorekeeperState.activeTimeout[team] !== null) {
+            startTimeoutTimer(team, { broadcast: false });
+          }
+        });
+      }
+      refreshAllTimeoutDisplays();
+      updateTimeoutTimerDisplay();
+      lastBroadcastSnapshot = getScorekeeperSnapshot();
+    } finally {
+      isApplyingRemoteUpdate = false;
+    }
+  }
+
+  function handleLiveMessage(message) {
+    if (!liveChannel || !message || typeof message !== 'object') {
+      return;
+    }
+    if (message.clientId && message.clientId === liveClientId) {
+      return;
+    }
+    if (matchId !== null) {
+      const incomingMatchId = Number(message.matchId);
+      if (!Number.isNaN(incomingMatchId) && incomingMatchId !== matchId) {
+        return;
+      }
+    }
+    switch (message.type) {
+      case 'score:update':
+        applyRemoteSnapshot(message);
+        break;
+      case 'score:join':
+        if (!interactionLocked && !manualFallback) {
+          broadcastScorekeeperState('sync');
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  function handleLiveStatusChange(status, detail = {}) {
+    liveStatus = status;
+    if (status === 'connected') {
+      updateLiveStatusIndicator('connected', detail);
+      interactionLocked = false;
+      if (manualFallback) {
+        manualFallback = false;
+      }
+      setControlsEnabled(true);
+      sendLiveJoin(detail?.isReconnect ? 'rejoined' : 'connected');
+      broadcastScorekeeperState(detail?.isReconnect ? 'reconnect_sync' : 'sync');
+    } else if (status === 'connecting' || status === 'reconnecting') {
+      updateLiveStatusIndicator(status, detail);
+      interactionLocked = true;
+      setControlsEnabled(false);
+    } else if (status === 'failed') {
+      manualFallback = true;
+      interactionLocked = false;
+      setControlsEnabled(true);
+      updateLiveStatusIndicator('manual');
+    } else if (status === 'disconnected') {
+      if (manualFallback) {
+        updateLiveStatusIndicator('manual');
+      } else {
+        updateLiveStatusIndicator('disconnected', detail);
+        interactionLocked = true;
+        setControlsEnabled(false);
+      }
+    } else {
+      updateLiveStatusIndicator(status, detail);
+    }
+  }
+
+  function cleanupLiveChannel() {
+    if (liveMessageUnsubscribe) {
+      liveMessageUnsubscribe();
+      liveMessageUnsubscribe = null;
+    }
+    if (liveStatusUnsubscribe) {
+      liveStatusUnsubscribe();
+      liveStatusUnsubscribe = null;
+    }
+    if (liveChannel) {
+      liveChannel.disconnect();
+    }
+    liveChannel = null;
+    liveClientId = null;
+  }
+
+  function initializeLiveChannel() {
+    liveChannel = getLiveChannel();
+    if (!liveChannel || matchId === null) {
+      manualFallback = true;
+      interactionLocked = false;
+      setControlsEnabled(true);
+      updateLiveStatusIndicator('manual');
+      return;
+    }
+    liveClientId = liveChannel.getClientId();
+    liveChannel.connect();
+    liveMessageUnsubscribe = liveChannel.onMessage(handleLiveMessage);
+    liveStatusUnsubscribe = liveChannel.onStatusChange(handleLiveStatusChange);
+    updateLiveStatusIndicator('connecting');
+    setControlsEnabled(false);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     attachEventListeners();
     updateDisplayAssignments();
     updateScoreDisplays();
     refreshAllTimeoutDisplays();
     loadInitialTeamNames();
+    statusElement = document.getElementById('scorekeeperLiveStatus');
+    setControlsEnabled(!interactionLocked || manualFallback);
+    initializeLiveChannel();
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (!manualFallback) {
+      sendLiveLeave();
+    }
+    cleanupLiveChannel();
   });
 
   async function loadInitialTeamNames() {
@@ -67,6 +420,7 @@
         oppInput.value = scorekeeperState.labels.opp;
       }
       syncTeamLabelDisplays();
+      broadcastScorekeeperState('label_sync');
     }
   }
 
@@ -107,25 +461,43 @@
     const resetTimeoutsBtn = document.getElementById('scorekeeperResetTimeoutsBtn');
     if (resetTimeoutsBtn) {
       resetTimeoutsBtn.addEventListener('click', () => {
+        if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) {
+          return;
+        }
         TEAM_KEYS.forEach((team) => resetTeamTimeouts(team));
         refreshAllTimeoutDisplays();
         announceTimeoutStatus('All timeouts have been reset.');
+        if (!isApplyingRemoteUpdate) {
+          broadcastScorekeeperState('timeout_reset_all');
+        }
       });
     }
 
     const homeInput = document.getElementById('scorekeeperHomeName');
     if (homeInput) {
       homeInput.addEventListener('input', () => {
+        if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) {
+          return;
+        }
         scorekeeperState.labels.home = normalizeTeamName(homeInput.value) || DEFAULT_LABELS.home;
         syncTeamLabelDisplays();
+        if (!isApplyingRemoteUpdate) {
+          broadcastScorekeeperState('label_change');
+        }
       });
     }
 
     const oppInput = document.getElementById('scorekeeperOppName');
     if (oppInput) {
       oppInput.addEventListener('input', () => {
+        if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) {
+          return;
+        }
         scorekeeperState.labels.opp = normalizeTeamName(oppInput.value) || DEFAULT_LABELS.opp;
         syncTeamLabelDisplays();
+        if (!isApplyingRemoteUpdate) {
+          broadcastScorekeeperState('label_change');
+        }
       });
     }
   }
@@ -213,6 +585,7 @@
     const zone = event.currentTarget;
     const team = zone.dataset.team;
     if (!TEAM_KEYS.includes(team)) return;
+    if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) return;
     const action = zone.dataset.action;
     const delta = action === 'decrement' ? -1 : 1;
     adjustScore(team, delta);
@@ -224,6 +597,9 @@
     if (next === current) return;
     scorekeeperState.scores[team] = next;
     updateScoreDisplays();
+    if (!isApplyingRemoteUpdate) {
+      broadcastScorekeeperState('score_change');
+    }
   }
 
   function clampScoreValue(value) {
@@ -251,12 +627,18 @@
   }
 
   function swapDisplaySides() {
+    if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) {
+      return;
+    }
     const previousDisplay = { ...scorekeeperState.display };
     scorekeeperState.display.left = previousDisplay.right;
     scorekeeperState.display.right = previousDisplay.left;
     updateDisplayAssignments();
     announceTimeoutStatus('Team sides swapped.');
     updateScoreDisplays();
+    if (!isApplyingRemoteUpdate) {
+      broadcastScorekeeperState('swap');
+    }
   }
 
   function getTeamName(team) {
@@ -266,6 +648,9 @@
   function handleTimeoutSelection(team, index, event) {
     if (event) {
       event.stopPropagation();
+    }
+    if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) {
+      return;
     }
     if (!scorekeeperState.timeouts[team] || index < 0 || index >= TIMEOUT_COUNT) {
       return;
@@ -285,6 +670,9 @@
       scorekeeperState.timeouts[team][index] = false;
       refreshTimeoutDisplayForTeam(team);
       announceTimeoutStatus(`${getTeamName(team)} timeout returned to available.`);
+      if (!isApplyingRemoteUpdate) {
+        broadcastScorekeeperState('timeout_toggle');
+      }
       return;
     }
 
@@ -297,6 +685,9 @@
     startTimeoutTimer(team);
     refreshTimeoutDisplayForTeam(team);
     announceTimeoutStatus(`${getTeamName(team)} timeout started.`);
+    if (!isApplyingRemoteUpdate) {
+      broadcastScorekeeperState('timeout_toggle');
+    }
   }
 
   function refreshAllTimeoutDisplays() {
@@ -324,9 +715,15 @@
   }
 
   function resetScores() {
+    if (!isApplyingRemoteUpdate && !canApplyLocalMutation()) {
+      return;
+    }
     scorekeeperState.scores.home = 0;
     scorekeeperState.scores.opp = 0;
     updateScoreDisplays();
+    if (!isApplyingRemoteUpdate) {
+      broadcastScorekeeperState('score_reset');
+    }
   }
 
   function resetTeamTimeouts(team) {
@@ -337,11 +734,17 @@
     refreshTimeoutDisplayForTeam(team);
   }
 
-  function startTimeoutTimer(team) {
+  function startTimeoutTimer(team, { broadcast = true } = {}) {
     stopTimeoutTimer(team);
     scorekeeperState.timeoutTimers[team] = window.setInterval(() => {
-      scorekeeperState.timeoutRemainingSeconds[team] = Math.max(0, scorekeeperState.timeoutRemainingSeconds[team] - 1);
+      scorekeeperState.timeoutRemainingSeconds[team] = Math.max(
+        0,
+        scorekeeperState.timeoutRemainingSeconds[team] - 1
+      );
       updateTimeoutTimerDisplay();
+      if (broadcast && !isApplyingRemoteUpdate) {
+        broadcastScorekeeperState('timeout_tick');
+      }
       if (scorekeeperState.timeoutRemainingSeconds[team] <= 0) {
         stopTimeoutTimer(team);
         const activeIndex = scorekeeperState.activeTimeout[team];
@@ -352,9 +755,15 @@
         }
         updateTimeoutTimerDisplay();
         announceTimeoutStatus(`${getTeamName(team)} timeout complete.`);
+        if (broadcast && !isApplyingRemoteUpdate) {
+          broadcastScorekeeperState('timeout_complete');
+        }
       }
     }, 1000);
     updateTimeoutTimerDisplay();
+    if (broadcast && !isApplyingRemoteUpdate) {
+      broadcastScorekeeperState('timeout_start');
+    }
   }
 
   function stopTimeoutTimer(team) {

@@ -59,6 +59,20 @@
       min-width: 9rem;
     }
 
+    .scorekeeper-live-indicator {
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .scorekeeper-live-indicator.badge {
+      font-size: 0.85rem;
+      padding: 0.5rem 0.75rem;
+    }
+
+    .live-disabled {
+      opacity: 0.6;
+    }
+
     @media (max-width: 576px) {
       .scorekeeper-shell {
         padding-top: 1.5rem;
@@ -81,12 +95,13 @@
 
     <section class="scorekeeper-card">
       <div class="modal-content score-modal">
-        <div class="modal-header flex-wrap align-items-center">
+        <div class="modal-header flex-wrap align-items-center gap-2">
           <div class="me-auto">
             <h2 class="modal-title h4 mb-0">Live Set Scoring</h2>
             <p class="text-muted small mb-0">Tap or click the panels to update scores. Adjust team names below to match your matchup.</p>
           </div>
-          <div class="scorekeeper-actions d-flex flex-wrap">
+          <span id="scorekeeperLiveStatus" class="badge rounded-pill text-bg-secondary scorekeeper-live-indicator" role="status" aria-live="polite">Offline</span>
+          <div class="scorekeeper-actions d-flex flex-wrap ms-auto">
             <button type="button" class="btn btn-outline-primary" id="scorekeeperResetScoresBtn">
               <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
               Reset Scores
@@ -158,6 +173,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/live_score_channel.js" defer></script>
   <script src="/js/scorekeeper.js" defer></script>
 </body>
 </html>
