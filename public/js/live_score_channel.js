@@ -23,6 +23,8 @@
   let maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS;
   let currentStatus = 'disconnected';
   let lastStatusDetail = null;
+  let connectionMatchId = null;
+  let connectionSetNumber = null;
 
   const clientId = generateClientId();
 
@@ -45,7 +47,34 @@
     }
     const { protocol, host } = globalScope.location;
     const scheme = protocol === 'https:' ? 'wss' : 'ws';
-    return `${scheme}://${host}/api/live/score`;
+    let url = `${scheme}://${host}/api/live/score`;
+    const params = new URLSearchParams();
+    if (connectionMatchId !== null) {
+      params.set('matchId', String(connectionMatchId));
+    }
+    if (connectionSetNumber !== null) {
+      params.set('setNumber', String(connectionSetNumber));
+    }
+    const query = params.toString();
+    if (query) {
+      url += `?${query}`;
+    }
+    return url;
+  }
+
+  function sanitizePositiveInteger(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const parsed = typeof value === 'string' ? Number(value) : value;
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    const integer = Math.floor(parsed);
+    if (integer <= 0) {
+      return null;
+    }
+    return integer;
   }
 
   function notifyStatus(status, detail = null) {
@@ -224,6 +253,12 @@
   function connect(options = {}) {
     if (typeof options.maxReconnectAttempts === 'number') {
       maxReconnectAttempts = Math.max(1, Math.floor(options.maxReconnectAttempts));
+    }
+    if (Object.prototype.hasOwnProperty.call(options, 'matchId')) {
+      connectionMatchId = sanitizePositiveInteger(options.matchId);
+    }
+    if (Object.prototype.hasOwnProperty.call(options, 'setNumber')) {
+      connectionSetNumber = sanitizePositiveInteger(options.setNumber);
     }
     ensureConnection();
   }

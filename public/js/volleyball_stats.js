@@ -661,7 +661,11 @@ function normalizeRosterArray(roster) {
       if (!channel || !hasActiveMatchForLiveChannel()) {
         return;
       }
-      channel.connect({ maxReconnectAttempts: LIVE_CHANNEL_MAX_RECONNECT_ATTEMPTS });
+      channel.connect({
+        maxReconnectAttempts: LIVE_CHANNEL_MAX_RECONNECT_ATTEMPTS,
+        matchId: currentMatchId,
+        setNumber: scoreGameState.setNumber ?? undefined
+      });
       if (!liveScoreMessageUnsubscribe) {
         liveScoreMessageUnsubscribe = channel.onMessage(handleLiveScoreMessage);
       }

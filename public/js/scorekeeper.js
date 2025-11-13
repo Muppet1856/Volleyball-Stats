@@ -375,7 +375,10 @@
       return;
     }
     liveClientId = liveChannel.getClientId();
-    liveChannel.connect();
+    liveChannel.connect({
+      matchId,
+      setNumber: activeSetNumber
+    });
     liveMessageUnsubscribe = liveChannel.onMessage(handleLiveMessage);
     liveStatusUnsubscribe = liveChannel.onStatusChange(handleLiveStatusChange);
     updateLiveStatusIndicator('connecting');
