@@ -34,7 +34,6 @@ function normalizeTimeout(value: any): number {
 }
 
 const SET_NOT_FOUND_ERROR = "SET_NOT_FOUND";
-const SET_FINALIZED_ERROR = "SET_FINALIZED";
 
 function parseFinalizedSetsColumn(value: any): Record<number, boolean> {
   if (typeof value === "string") {
@@ -112,15 +111,6 @@ function updateScoreWithFinalizedGuard(
       if (!Number.isInteger(matchId) || !Number.isInteger(setNumber)) {
         throw new Error(SET_NOT_FOUND_ERROR);
       }
-      const matchCursor = sql.exec(`SELECT finalized_sets FROM matches WHERE id = ?`, matchId);
-      const matchRow = matchCursor.toArray()[0];
-      if (!matchRow) {
-        throw new Error(SET_NOT_FOUND_ERROR);
-      }
-      const finalizedSets = parseFinalizedSetsColumn(matchRow.finalized_sets);
-      if (finalizedSets[setNumber]) {
-        throw new Error(SET_FINALIZED_ERROR);
-      }
       sql.exec(`UPDATE sets SET ${column} = ? WHERE id = ?`, normalizeScore(scoreValue), setId);
     });
     return textResponse(successMessage, 200);
@@ -128,9 +118,6 @@ function updateScoreWithFinalizedGuard(
     if (error instanceof Error) {
       if (error.message === SET_NOT_FOUND_ERROR) {
         return errorResponse("Set not found", 404);
-      }
-      if (error.message === SET_FINALIZED_ERROR) {
-        return errorResponse("Set is finalized; scores cannot be updated", 409);
       }
       return errorResponse(`${errorPrefix}: ${error.message}`, 500);
     }
