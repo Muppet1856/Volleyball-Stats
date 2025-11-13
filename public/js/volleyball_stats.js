@@ -603,6 +603,7 @@ function normalizeRosterArray(roster) {
     let matchTimeouts = createEmptyMatchTimeouts();
     const finalizePopoverTimers = new WeakMap();
     const finalizedStatePopoverTimers = new WeakMap();
+    const finalizedPopoverWrappers = new WeakMap();
     const FINALIZE_TIE_POPOVER_TITLE = 'Scores tied';
     const FINALIZE_TIE_POPOVER_MESSAGE = 'Set scores are tied. Adjust one team\'s score before marking the set final.';
     const FINALIZE_MISSING_POPOVER_TITLE = 'Scores missing';
@@ -1042,32 +1043,37 @@ function normalizeRosterArray(roster) {
     }
 
     function clearFinalizePopoverTimer(element) {
-      const timerId = finalizePopoverTimers.get(element);
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const timerId = finalizePopoverTimers.get(host);
       if (timerId) {
         clearTimeout(timerId);
-        finalizePopoverTimers.delete(element);
+        finalizePopoverTimers.delete(host);
       }
     }
 
     function clearFinalizedStatePopoverTimer(element) {
-      const timerId = finalizedStatePopoverTimers.get(element);
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const timerId = finalizedStatePopoverTimers.get(host);
       if (timerId) {
         clearTimeout(timerId);
-        finalizedStatePopoverTimers.delete(element);
+        finalizedStatePopoverTimers.delete(host);
       }
     }
 
     function ensureFinalizePopover(element, type) {
-      if (!element) return null;
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return null;
       const desiredType = type && FINALIZE_POPOVER_CONFIG[type] ? type : 'tie';
-      const existingType = element.dataset.finalizePopoverType;
-      let popover = bootstrap.Popover.getInstance(element);
+      const existingType = host.dataset.finalizePopoverType;
+      let popover = bootstrap.Popover.getInstance(host);
       if (!popover || existingType !== desiredType) {
         if (popover) {
           popover.dispose();
         }
         const config = FINALIZE_POPOVER_CONFIG[desiredType];
-        popover = new bootstrap.Popover(element, {
+        popover = new bootstrap.Popover(host, {
           container: 'body',
           trigger: 'manual focus hover',
           placement: 'top',
@@ -1075,7 +1081,7 @@ function normalizeRosterArray(roster) {
           content: config.content,
           customClass: config.customClass
         });
-        element.dataset.finalizePopoverType = desiredType;
+        host.dataset.finalizePopoverType = desiredType;
       } else {
         const config = FINALIZE_POPOVER_CONFIG[desiredType];
         if (typeof popover.setContent === 'function') {
@@ -1084,57 +1090,60 @@ function normalizeRosterArray(roster) {
             '.popover-body': config.content
           });
         } else {
-          element.setAttribute('data-bs-original-title', config.title);
-          element.setAttribute('data-bs-content', config.content);
+          host.setAttribute('data-bs-original-title', config.title);
+          host.setAttribute('data-bs-content', config.content);
         }
       }
       return popover;
     }
 
     function showFinalizedStatePopover(element, { focus = false } = {}) {
-      if (!element) return;
-      clearFinalizePopoverTimer(element);
-      const popover = ensureFinalizePopover(element, 'finalized');
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      clearFinalizePopoverTimer(host);
+      const popover = ensureFinalizePopover(host, 'finalized');
       if (!popover) return;
       popover.show();
       if (focus) {
         try {
-          element.focus({ preventScroll: true });
+          host.focus({ preventScroll: true });
         } catch (error) {
-          element.focus();
+          host.focus();
         }
       }
-      clearFinalizedStatePopoverTimer(element);
+      clearFinalizedStatePopoverTimer(host);
       const timerId = setTimeout(() => {
         popover.hide();
-        finalizedStatePopoverTimers.delete(element);
+        finalizedStatePopoverTimers.delete(host);
       }, 2600);
-      finalizedStatePopoverTimers.set(element, timerId);
+      finalizedStatePopoverTimers.set(host, timerId);
     }
 
     function destroyFinalizedStatePopover(element) {
-      if (!element) return;
-      clearFinalizedStatePopoverTimer(element);
-      if (element.dataset.finalizePopoverType === 'finalized') {
-        const popover = bootstrap.Popover.getInstance(element);
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      clearFinalizedStatePopoverTimer(host);
+      if (host.dataset.finalizePopoverType === 'finalized') {
+        const popover = bootstrap.Popover.getInstance(host);
         if (popover) {
           popover.hide();
           popover.dispose();
         }
-        delete element.dataset.finalizePopoverType;
+        delete host.dataset.finalizePopoverType;
       }
     }
 
     function hideFinalizePopover(element, type) {
-      if (!element) return;
-      clearFinalizePopoverTimer(element);
-      if (element.dataset.finalizePopoverType === type) {
-        const popover = bootstrap.Popover.getInstance(element);
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      clearFinalizePopoverTimer(host);
+      if (host.dataset.finalizePopoverType === type) {
+        const popover = bootstrap.Popover.getInstance(host);
         if (popover) {
           popover.hide();
           popover.dispose();
         }
-        delete element.dataset.finalizePopoverType;
+        delete host.dataset.finalizePopoverType;
       }
     }
 
@@ -1147,28 +1156,52 @@ function normalizeRosterArray(roster) {
     }
 
     function getFinalizePopoverTargets(setNumber) {
-      const finalizeButton = document.getElementById(`finalizeButton${setNumber}`);
-      return finalizeButton ? [finalizeButton] : [];
+      const finalizeButton = resolveFinalizePopoverElement(document.getElementById(`finalizeButton${setNumber}`));
+      const targets = finalizeButton ? [finalizeButton] : [];
+      if (finalizedSets[setNumber]) {
+        const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+        if (homeInput) {
+          const homeTarget = resolveFinalizePopoverElement(homeInput);
+          if (homeTarget) {
+            targets.push(homeTarget);
+          }
+        }
+        if (oppInput) {
+          const oppTarget = resolveFinalizePopoverElement(oppInput);
+          if (oppTarget) {
+            targets.push(oppTarget);
+          }
+        }
+        const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
+        if (scoreButton) {
+          const scoreTarget = resolveFinalizePopoverElement(scoreButton);
+          if (scoreTarget) {
+            targets.push(scoreTarget);
+          }
+        }
+      }
+      return targets;
     }
 
     function showFinalizeTiePopover(element, { focus = false } = {}) {
-      if (!element) return;
-      const popover = ensureFinalizePopover(element, 'tie');
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const popover = ensureFinalizePopover(host, 'tie');
       if (!popover) return;
       popover.show();
       if (focus) {
         try {
-          element.focus({ preventScroll: true });
+          host.focus({ preventScroll: true });
         } catch (error) {
-          element.focus();
+          host.focus();
         }
       }
-      clearFinalizePopoverTimer(element);
+      clearFinalizePopoverTimer(host);
       const timerId = setTimeout(() => {
         popover.hide();
-        finalizePopoverTimers.delete(element);
+        finalizePopoverTimers.delete(host);
       }, 2400);
-      finalizePopoverTimers.set(element, timerId);
+      finalizePopoverTimers.set(host, timerId);
     }
 
     function showFinalizeTiePopovers(setNumber) {
@@ -1179,23 +1212,24 @@ function normalizeRosterArray(roster) {
     }
 
     function showFinalizeMissingPopover(element, { focus = false } = {}) {
-      if (!element) return;
-      const popover = ensureFinalizePopover(element, 'missing');
+      const host = resolveFinalizePopoverElement(element);
+      if (!host) return;
+      const popover = ensureFinalizePopover(host, 'missing');
       if (!popover) return;
       popover.show();
       if (focus) {
         try {
-          element.focus({ preventScroll: true });
+          host.focus({ preventScroll: true });
         } catch (error) {
-          element.focus();
+          host.focus();
         }
       }
-      clearFinalizePopoverTimer(element);
+      clearFinalizePopoverTimer(host);
       const timerId = setTimeout(() => {
         popover.hide();
-        finalizePopoverTimers.delete(element);
+        finalizePopoverTimers.delete(host);
       }, 2400);
-      finalizePopoverTimers.set(element, timerId);
+      finalizePopoverTimers.set(host, timerId);
     }
 
     function showFinalizeMissingScorePopovers(setNumber) {
@@ -1244,9 +1278,81 @@ function normalizeRosterArray(roster) {
       };
     }
 
+    function resolveFinalizePopoverElement(element) {
+      if (!element) return null;
+      const wrapper = finalizedPopoverWrappers.get(element);
+      if (wrapper && wrapper.isConnected && wrapper.contains(element)) {
+        return wrapper;
+      }
+      if (wrapper && (!wrapper.isConnected || !wrapper.contains(element))) {
+        finalizedPopoverWrappers.delete(element);
+      }
+      return element;
+    }
+
+    function disableFinalizedPointerEvents(element) {
+      if (!element || element.dataset.finalizedPointerEventsValue) {
+        element.style.pointerEvents = 'none';
+        return;
+      }
+      const inlineValue = element.style.pointerEvents;
+      element.dataset.finalizedPointerEventsValue = inlineValue ? inlineValue : '__unset__';
+      element.style.pointerEvents = 'none';
+    }
+
+    function restoreFinalizedPointerEvents(element) {
+      if (!element) return;
+      const stored = element.dataset.finalizedPointerEventsValue;
+      if (stored && stored !== '__unset__') {
+        element.style.pointerEvents = stored;
+      } else if (stored === '__unset__') {
+        element.style.removeProperty('pointer-events');
+      }
+      delete element.dataset.finalizedPointerEventsValue;
+    }
+
+    function ensureFinalizedPopoverWrapper(element) {
+      if (!element) return null;
+      let wrapper = finalizedPopoverWrappers.get(element);
+      if (wrapper && wrapper.isConnected && wrapper.contains(element)) {
+        disableFinalizedPointerEvents(element);
+        return wrapper;
+      }
+      const parent = element.parentElement;
+      if (!parent) return null;
+      wrapper = document.createElement('span');
+      wrapper.classList.add('finalized-popover-wrapper');
+      if (element.classList.contains('form-control')) {
+        wrapper.classList.add('d-block', 'w-100');
+      } else {
+        wrapper.classList.add('d-inline-block');
+      }
+      wrapper.tabIndex = 0;
+      parent.insertBefore(wrapper, element);
+      wrapper.appendChild(element);
+      finalizedPopoverWrappers.set(element, wrapper);
+      disableFinalizedPointerEvents(element);
+      return wrapper;
+    }
+
+    function removeFinalizedPopoverWrapper(element) {
+      if (!element) return;
+      const wrapper = finalizedPopoverWrappers.get(element);
+      if (wrapper) {
+        destroyFinalizedStatePopover(wrapper);
+        if (wrapper.parentElement) {
+          wrapper.parentElement.insertBefore(element, wrapper);
+        }
+        wrapper.remove();
+        finalizedPopoverWrappers.delete(element);
+      }
+      restoreFinalizedPointerEvents(element);
+    }
+
     function setSetScoreEditingDisabled(setNumber, disabled) {
       const { homeInput, oppInput } = getSetScoreInputs(setNumber);
-      [homeInput, oppInput].forEach((input) => {
+      const scoreInputs = [homeInput, oppInput];
+      scoreInputs.forEach((input) => {
         if (!input) return;
         if (disabled) {
           const computed = window.getComputedStyle(input);
@@ -1273,6 +1379,7 @@ function normalizeRosterArray(roster) {
           input.setAttribute('disabled', 'disabled');
           input.disabled = true;
           input.classList.add('set-score-finalized');
+          ensureFinalizedPopoverWrapper(input);
         } else {
           input.removeAttribute('disabled');
           input.disabled = false;
@@ -1289,6 +1396,7 @@ function normalizeRosterArray(roster) {
           }
           delete input.dataset.scoreOriginalBackground;
           delete input.dataset.scoreOriginalColor;
+          removeFinalizedPopoverWrapper(input);
         }
       });
       const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
@@ -1298,11 +1406,13 @@ function normalizeRosterArray(roster) {
           scoreButton.setAttribute('aria-disabled', 'true');
           scoreButton.disabled = true;
           scoreButton.setAttribute('disabled', 'disabled');
+          ensureFinalizedPopoverWrapper(scoreButton);
         } else {
           scoreButton.classList.remove('disabled');
           scoreButton.removeAttribute('aria-disabled');
           scoreButton.disabled = false;
           scoreButton.removeAttribute('disabled');
+          removeFinalizedPopoverWrapper(scoreButton);
         }
       }
     }
