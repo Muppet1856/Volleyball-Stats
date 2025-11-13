@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scorekeeper | Volleyball Game Stats</title>
+  <link rel="icon" type="image/svg+xml" sizes="any" href="volleyball.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <script>
+    (() => {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const updateTheme = () => {
+        document.documentElement.setAttribute('data-bs-theme', mediaQuery.matches ? 'dark' : 'light');
+      };
+      updateTheme();
+      if (typeof mediaQuery.addEventListener === 'function') {
+        mediaQuery.addEventListener('change', updateTheme);
+      } else if (typeof mediaQuery.addListener === 'function') {
+        mediaQuery.addListener(updateTheme);
+      }
+    })();
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/css/volleyball_stats.css">
+  <style>
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at top, rgba(13, 110, 253, 0.1), transparent 55%), var(--bs-body-bg);
+    }
+
+    .scorekeeper-shell {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1rem 3rem;
+    }
+
+    .scorekeeper-card {
+      border-radius: var(--bs-border-radius-lg);
+      box-shadow: var(--bs-box-shadow-lg);
+      overflow: hidden;
+      background: var(--bs-body-bg);
+    }
+
+    .scorekeeper-controls {
+      gap: 1rem;
+    }
+
+    .scorekeeper-controls .form-label {
+      font-weight: 600;
+    }
+
+    .scorekeeper-actions {
+      gap: 0.75rem;
+    }
+
+    .scorekeeper-actions .btn {
+      min-width: 9rem;
+    }
+
+    @media (max-width: 576px) {
+      .scorekeeper-shell {
+        padding-top: 1.5rem;
+      }
+
+      .scorekeeper-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="scorekeeper-shell">
+    <header class="mb-4 text-center">
+      <p class="text-uppercase text-muted fw-semibold mb-1">Volleyball Game Stats</p>
+      <h1 class="display-5 fw-bold mb-3">Scorekeeper</h1>
+      <p class="lead text-muted mb-0">A streamlined scoring surface for in-match tracking. Update scores, manage timeouts, and mirror the in-app scoring modal wherever you are.</p>
+    </header>
+
+    <section class="scorekeeper-card">
+      <div class="modal-content score-modal">
+        <div class="modal-header flex-wrap align-items-center">
+          <div class="me-auto">
+            <h2 class="modal-title h4 mb-0">Live Set Scoring</h2>
+            <p class="text-muted small mb-0">Tap or click the panels to update scores. Adjust team names below to match your matchup.</p>
+          </div>
+          <div class="scorekeeper-actions d-flex flex-wrap">
+            <button type="button" class="btn btn-outline-primary" id="scorekeeperResetScoresBtn">
+              <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+              Reset Scores
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="scorekeeperResetTimeoutsBtn">
+              <i class="bi bi-stopwatch me-1" aria-hidden="true"></i>
+              Reset Timeouts
+            </button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="scoreboard-wrapper" id="scorekeeperScoreboard">
+            <button type="button" class="btn btn-light modal-swap-btn swap-btn" id="scorekeeperSwapBtn" aria-label="Swap team sides"></button>
+            <div class="team-panel team-blue" data-position="left">
+              <span class="score-team-label" id="scorekeeperLeftLabel">Home Team</span>
+              <div class="score-zone increment" role="button" tabindex="0" data-role="score-zone" data-position="left" data-team="home" data-action="increment" aria-label="Increase Home Team score"></div>
+              <div class="score-zone decrement" role="button" tabindex="0" data-role="score-zone" data-position="left" data-team="home" data-action="decrement" aria-label="Decrease Home Team score"></div>
+              <div class="score-value" id="scorekeeperLeftScore">00</div>
+            </div>
+            <div class="team-panel team-red" data-position="right">
+              <span class="score-team-label" id="scorekeeperRightLabel">Opponent</span>
+              <div class="score-zone increment" role="button" tabindex="0" data-role="score-zone" data-position="right" data-team="opp" data-action="increment" aria-label="Increase Opponent score"></div>
+              <div class="score-zone decrement" role="button" tabindex="0" data-role="score-zone" data-position="right" data-team="opp" data-action="decrement" aria-label="Decrease Opponent score"></div>
+              <div class="score-value" id="scorekeeperRightScore">00</div>
+            </div>
+          </div>
+          <p class="score-instruction text-center text-muted mb-4">Tap or click above the score to add a point. Tap or click below to remove one.</p>
+          <div class="timeout-row" role="group" aria-label="Timeout controls">
+            <div class="timeout-bar">
+              <div class="timeout-container" data-position="left" data-team="home" aria-label="Home Team timeouts">
+                <div class="timeout-boxes">
+                  <button type="button" class="timeout-box btn" data-team="home" data-timeout-index="0" aria-pressed="false" aria-label="Home Team first timeout available">
+                    <span class="timeout-box-text">TO</span>
+                  </button>
+                  <button type="button" class="timeout-box btn" data-team="home" data-timeout-index="1" aria-pressed="false" aria-label="Home Team second timeout available">
+                    <span class="timeout-box-text">TO</span>
+                  </button>
+                </div>
+              </div>
+              <div class="timeout-container" data-position="right" data-team="opp" aria-label="Opponent timeouts">
+                <div class="timeout-boxes">
+                  <button type="button" class="timeout-box btn" data-team="opp" data-timeout-index="0" aria-pressed="false" aria-label="Opponent first timeout available">
+                    <span class="timeout-box-text">TO</span>
+                  </button>
+                  <button type="button" class="timeout-box btn" data-team="opp" data-timeout-index="1" aria-pressed="false" aria-label="Opponent second timeout available">
+                    <span class="timeout-box-text">TO</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div id="scorekeeperTimeoutDisplay" class="timeout-timer-display" role="status" aria-live="polite"></div>
+            <div id="scorekeeperTimeoutSrStatus" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+          </div>
+        </div>
+        <div class="border-top px-4 py-3 bg-body-tertiary">
+          <form class="row row-cols-1 row-cols-md-2 g-3 scorekeeper-controls" novalidate>
+            <div class="col">
+              <label for="scorekeeperHomeName" class="form-label">Home Team Name</label>
+              <input type="text" class="form-control" id="scorekeeperHomeName" placeholder="Home Team" autocomplete="off">
+            </div>
+            <div class="col">
+              <label for="scorekeeperOppName" class="form-label">Opponent Name</label>
+              <input type="text" class="form-control" id="scorekeeperOppName" placeholder="Opponent" autocomplete="off">
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/scorekeeper.js" defer></script>
+</body>
+</html>

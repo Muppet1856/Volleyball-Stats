@@ -181,6 +181,19 @@ export default {
     }
     if (asset && asset.status < 400) return asset; // 2xx/3xx → file served
 
+    if (request.method === "GET" && (path === "/scorekeeper" || path === "/scorekeeper/")) {
+      const scorekeeperUrl = new URL(request.url);
+      scorekeeperUrl.pathname = "/scorekeeper.html";
+      try {
+        const scorekeeperAsset = await env.ASSETS.fetch(new Request(scorekeeperUrl.toString(), request));
+        if (scorekeeperAsset && scorekeeperAsset.status < 400) {
+          return scorekeeperAsset;
+        }
+      } catch (error) {
+        if (env.debug === "true") console.log("Failed to serve scorekeeper asset:", (error as Error).message);
+      }
+    }
+
     /* 3. Handle /api/config directly (no DB needed) */
     if (path === "/api/config") {
       if (request.method !== "GET") {
