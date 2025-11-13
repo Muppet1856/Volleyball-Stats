@@ -190,8 +190,13 @@ export default {
 
     /* 4. Route other API requests to the Durable Object (singleton instance) */
     if (path.startsWith("/api/")) {
-      const doId = env["Match-DO"].idFromName("global");  // Fixed name for singleton DO
-      const doStub = env["Match-DO"].get(doId);
+      const doBindingName = findDurableObjectBinding(env);
+      if (!doBindingName) {
+        return errorResponse("Durable Object binding not found in env", 500);
+      }
+
+      const doId = (env as any)[doBindingName].idFromName("global");
+      const doStub = (env as any)[doBindingName].get(doId);
       return doStub.fetch(request);
     }
 
