@@ -910,9 +910,60 @@ function normalizeRosterArray(roster) {
       if (!match) return;
       const setNumber = parseInt(match[1], 10);
       if (Number.isNaN(setNumber)) return;
+
+      const editedKey = match[2] === 'Opp' ? 'opp' : 'home';
+      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+      if (!homeInput || !oppInput) {
+        return;
+      }
+      const editedInput = editedKey === 'home' ? homeInput : oppInput;
+      const isDirectInputEvent = editedInput === target;
+      const editedScore = isDirectInputEvent ? parseScoreValue(editedInput.value) : null;
+      let didAutoFill = false;
+      let shouldUpdateScoreDisplay = false;
+      const isScoreModalOpenForSet = scoreGameState.setNumber === setNumber;
+
+      if (isScoreModalOpenForSet && isDirectInputEvent) {
+        const currentValue = editedKey === 'home' ? scoreGameState.home : scoreGameState.opp;
+        if (currentValue !== editedScore) {
+          if (editedKey === 'home') {
+            scoreGameState.home = editedScore;
+          } else {
+            scoreGameState.opp = editedScore;
+          }
+          shouldUpdateScoreDisplay = true;
+        }
+      }
+
+      if (isDirectInputEvent && editedScore !== null) {
+        const companionKey = editedKey === 'home' ? 'opp' : 'home';
+        const companionInput = companionKey === 'home' ? homeInput : oppInput;
+        if (companionInput && companionInput.value.trim() === '') {
+          const zeroString = formatScoreInputValue(0);
+          companionInput.value = zeroString;
+          didAutoFill = true;
+          if (isScoreModalOpenForSet) {
+            const zeroScore = parseScoreValue(zeroString);
+            const currentCompanion = companionKey === 'home' ? scoreGameState.home : scoreGameState.opp;
+            if (currentCompanion !== zeroScore) {
+              if (companionKey === 'home') {
+                scoreGameState.home = zeroScore;
+              } else {
+                scoreGameState.opp = zeroScore;
+              }
+              shouldUpdateScoreDisplay = true;
+            }
+          }
+        }
+      }
+
       const { finalStateChanged } = updateFinalizeButtonState(setNumber);
-      if (finalizedSets[setNumber] || finalStateChanged) {
+      if (didAutoFill || finalizedSets[setNumber] || finalStateChanged) {
         calculateResult();
+      }
+
+      if (shouldUpdateScoreDisplay && isScoreModalOpenForSet) {
+        updateScoreModalDisplay();
       }
     }
 
