@@ -87,17 +87,15 @@ jobs:
           fi
           COMPAT_DATE=$(date +%Y-%m-%d)
 
-          cat > wrangler.toml <<EOF
-          name = "${FINAL_NAME}"
-          main = "src/index.ts"
-          compatibility_date = "${COMPAT_DATE}"
-          EOF
+          echo "name = \"${FINAL_NAME}\"" > wrangler.toml
+          echo "main = \"src/index.ts\"" >> wrangler.toml
+          echo "compatibility_date = \"${COMPAT_DATE}\"" >> wrangler.toml
 
           {
             echo "" >> wrangler.toml
             echo "[durable_objects]" >> wrangler.toml
             echo "bindings = [" >> wrangler.toml
-            echo "  { name = \"${{ env.BINDING_NAME }}\", class_name = \"MatchState\" }" >> wrangler.toml
+            echo "  { name = \"${{ env.DURABLE_OBJECT_NAME }}\", class_name = \"MatchState\" }" >> wrangler.toml
             echo "]" >> wrangler.toml
             echo "" >> wrangler.toml
             echo "[[migrations]]" >> wrangler.toml
