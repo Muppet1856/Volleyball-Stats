@@ -1147,9 +1147,8 @@ function normalizeRosterArray(roster) {
     }
 
     function getFinalizePopoverTargets(setNumber) {
-      const { homeInput, oppInput } = getSetScoreInputs(setNumber);
-      const scoreButton = document.querySelector(`.score-game-btn[data-set="${setNumber}"]`);
-      return [scoreButton, homeInput, oppInput].filter(Boolean);
+      const finalizeButton = document.getElementById(`finalizeButton${setNumber}`);
+      return finalizeButton ? [finalizeButton] : [];
     }
 
     function showFinalizeTiePopover(element, { focus = false } = {}) {
