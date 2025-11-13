@@ -1296,14 +1296,14 @@ function normalizeRosterArray(roster) {
         if (disabled) {
           scoreButton.classList.add('disabled');
           scoreButton.setAttribute('aria-disabled', 'true');
-          scoreButton.dataset.scoreGameDisabled = 'true';
+          scoreButton.disabled = true;
+          scoreButton.setAttribute('disabled', 'disabled');
         } else {
           scoreButton.classList.remove('disabled');
           scoreButton.removeAttribute('aria-disabled');
-          delete scoreButton.dataset.scoreGameDisabled;
+          scoreButton.disabled = false;
+          scoreButton.removeAttribute('disabled');
         }
-        scoreButton.removeAttribute('disabled');
-        scoreButton.disabled = false;
       }
     }
 
@@ -1837,11 +1837,6 @@ function normalizeRosterArray(roster) {
     function adjustScoreModal(team, delta) {
       const { setNumber } = scoreGameState;
       if (!setNumber) return;
-      if (finalizedSets[setNumber]) {
-        const existing = getMatchSetRecord(setNumber);
-        syncSetInputsToStoredScores(setNumber, existing);
-        return;
-      }
       const key = team === 'opp' ? 'opp' : 'home';
       const currentValue = scoreGameState[key];
       const baseValue = currentValue === null || currentValue === undefined ? 0 : currentValue;
@@ -1852,15 +1847,7 @@ function normalizeRosterArray(roster) {
       applyScoreModalToInputs();
     }
 
-    function openScoreGameModal(setNumber, { triggerElement = null } = {}) {
-      if (finalizedSets[setNumber]) {
-        const finalizeButton = document.getElementById(`finalizeButton${setNumber}`);
-        const popoverTarget = triggerElement || document.querySelector(`.score-game-btn[data-set="${setNumber}"]`) || finalizeButton;
-        if (popoverTarget) {
-          showFinalizedStatePopover(popoverTarget);
-        }
-        return false;
-      }
+    function openScoreGameModal(setNumber) {
       const homeInput = document.getElementById(`set${setNumber}Home`);
       const oppInput = document.getElementById(`set${setNumber}Opp`);
       if (!homeInput || !oppInput) return false;
@@ -3771,13 +3758,12 @@ function normalizeRosterArray(roster) {
           if (Number.isNaN(setNumber)) {
             return;
           }
-          if (button.dataset.scoreGameDisabled === 'true' || finalizedSets[setNumber]) {
+          if (button.disabled) {
             event.preventDefault();
             event.stopPropagation();
-            showFinalizedStatePopover(button);
             return;
           }
-          const didOpen = openScoreGameModal(setNumber, { triggerElement: button });
+          const didOpen = openScoreGameModal(setNumber);
           if (!didOpen) {
             event.preventDefault();
             event.stopPropagation();
