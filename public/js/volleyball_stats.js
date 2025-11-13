@@ -513,6 +513,7 @@ let players = [];
 let playerSortMode = 'number';
 const temporaryPlayerNumbers = new Map();
 let pendingTemporaryPlayer = null;
+let playerFormErrorElement = null;
 
 function normalizePlayerId(value) {
   if (value === null || value === undefined) {
@@ -2004,12 +2005,37 @@ function normalizeRosterArray(roster) {
           await apiClient.createPlayer(payload);
         }
         await loadPlayers();
+        return true;
       } catch (error) {
         console.error('Failed to save player', error);
         alert('Unable to save player. Please try again.');
+        return false;
       }
+      return true;
     }
 
+
+
+    function getPlayerFormErrorElement() {
+      if (!playerFormErrorElement) {
+        playerFormErrorElement = document.getElementById('playerFormError');
+      }
+      return playerFormErrorElement;
+    }
+
+    function showPlayerFormError(message) {
+      const element = getPlayerFormErrorElement();
+      if (!element) return;
+      element.textContent = message;
+      element.classList.remove('d-none');
+    }
+
+    function clearPlayerFormError() {
+      const element = getPlayerFormErrorElement();
+      if (!element) return;
+      element.textContent = '';
+      element.classList.add('d-none');
+    }
 
     
     async function deletePlayer(id) {
@@ -2256,36 +2282,105 @@ function normalizeRosterArray(roster) {
 
     
     async function submitPlayer() {
-      const number = document.getElementById('number').value.trim();
-      const lastName = document.getElementById('lastName').value.trim();
-      const initial = document.getElementById('initial').value.trim() || '';
+      const numberInput = document.getElementById('number');
+      const lastNameInput = document.getElementById('lastName');
+      const initialInput = document.getElementById('initial');
       const tempNumberElement = document.getElementById('tempNumber');
+
+      const number = numberInput ? numberInput.value.trim() : '';
+      const lastName = lastNameInput ? lastNameInput.value.trim() : '';
+      const initial = initialInput ? initialInput.value.trim() : '';
       const tempNumber = tempNumberElement ? tempNumberElement.value.trim() : '';
-      if (number && lastName) {
-        const idToSave = editingPlayerId !== null ? editingPlayerId : null;
-        if (idToSave !== null) {
-          const normalizedId = normalizePlayerId(idToSave);
-          if (normalizedId !== null) {
-            if (tempNumber) {
-              temporaryPlayerNumbers.set(normalizedId, tempNumber);
-            } else {
-              temporaryPlayerNumbers.delete(normalizedId);
-            }
-          }
-          pendingTemporaryPlayer = null;
-          updateModalPlayerList();
-        } else if (tempNumber) {
-          pendingTemporaryPlayer = {
-            number,
-            lastName,
-            initial,
-            value: tempNumber
-          };
-        } else {
-          pendingTemporaryPlayer = null;
-        }
-        await savePlayer(number, lastName, initial, idToSave);
+
+      if (numberInput) {
+        numberInput.value = number;
       }
+      if (lastNameInput) {
+        lastNameInput.value = lastName;
+      }
+      if (initialInput) {
+        initialInput.value = initial;
+      }
+      if (tempNumberElement) {
+        tempNumberElement.value = tempNumber;
+      }
+
+      clearPlayerFormError();
+
+      if (!number) {
+        showPlayerFormError('Player number is required.');
+        if (numberInput) {
+          numberInput.focus();
+          if (typeof numberInput.select === 'function') {
+            numberInput.select();
+          }
+        }
+        return;
+      }
+
+      if (!lastName) {
+        showPlayerFormError('Player last name is required.');
+        if (lastNameInput) {
+          lastNameInput.focus();
+          if (typeof lastNameInput.select === 'function') {
+            lastNameInput.select();
+          }
+        }
+        return;
+      }
+
+      const idToSave = editingPlayerId !== null ? editingPlayerId : null;
+      const previousPending = pendingTemporaryPlayer;
+      let normalizedId = null;
+      let hadPreviousTempEntry = false;
+      let previousTempValue = '';
+
+      if (idToSave !== null) {
+        normalizedId = normalizePlayerId(idToSave);
+        if (normalizedId !== null && temporaryPlayerNumbers.has(normalizedId)) {
+          hadPreviousTempEntry = true;
+          previousTempValue = temporaryPlayerNumbers.get(normalizedId);
+        }
+      }
+
+      if (idToSave !== null) {
+        if (normalizedId !== null) {
+          if (tempNumber) {
+            temporaryPlayerNumbers.set(normalizedId, tempNumber);
+          } else {
+            temporaryPlayerNumbers.delete(normalizedId);
+          }
+        }
+        pendingTemporaryPlayer = null;
+        updateModalPlayerList();
+      } else if (tempNumber) {
+        pendingTemporaryPlayer = {
+          number,
+          lastName,
+          initial,
+          value: tempNumber
+        };
+      } else {
+        pendingTemporaryPlayer = null;
+      }
+
+      const saveSucceeded = await savePlayer(number, lastName, initial, idToSave);
+
+      if (!saveSucceeded) {
+        pendingTemporaryPlayer = previousPending;
+        if (normalizedId !== null) {
+          if (hadPreviousTempEntry) {
+            temporaryPlayerNumbers.set(normalizedId, previousTempValue);
+          } else {
+            temporaryPlayerNumbers.delete(normalizedId);
+          }
+        }
+        if (idToSave !== null) {
+          updateModalPlayerList();
+        }
+        return;
+      }
+
       resetPlayerForm();
     }
 
@@ -3054,6 +3149,7 @@ function normalizeRosterArray(roster) {
       }
       document.getElementById('savePlayerBtn').textContent = 'Update Player';
       document.getElementById('cancelEditBtn').style.display = 'inline-block';
+      clearPlayerFormError();
     }
 
     function cancelEdit() {
@@ -3062,6 +3158,7 @@ function normalizeRosterArray(roster) {
 
     function resetPlayerForm() {
       editingPlayerId = null;
+      clearPlayerFormError();
       document.getElementById('number').value = '';
       document.getElementById('lastName').value = '';
       document.getElementById('initial').value = '';
@@ -3751,6 +3848,33 @@ function normalizeRosterArray(roster) {
         updateOpponentName();
         scheduleAutoSave();
       });
+      playerFormErrorElement = document.getElementById('playerFormError');
+      const playerModalElement = document.getElementById('playerModal');
+      const playerModalInputs = ['number', 'lastName', 'initial', 'tempNumber']
+        .map(id => document.getElementById(id))
+        .filter(Boolean);
+      const handlePlayerModalEnterKey = (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submitPlayer();
+        }
+      };
+      playerModalInputs.forEach(input => {
+        input.addEventListener('keydown', handlePlayerModalEnterKey);
+      });
+      ['number', 'lastName'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+          input.addEventListener('input', () => {
+            clearPlayerFormError();
+          });
+        }
+      });
+      if (playerModalElement) {
+        playerModalElement.addEventListener('hidden.bs.modal', () => {
+          clearPlayerFormError();
+        });
+      }
       jerseyConflictModalMessageElement = document.getElementById('jerseyConflictModalMessage');
       const jerseyConflictModalElement = document.getElementById('jerseyConflictModal');
       if (jerseyConflictModalElement) {
