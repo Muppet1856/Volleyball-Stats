@@ -5,11 +5,13 @@ import { jsonResponse, errorResponse } from "./utils/responses";  // Add this im
 import * as matchApi from "./api/match";
 import * as playerApi from "./api/player";
 import * as setApi from "./api/set";
+import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
 export interface Env {
-  "Match-DO": DurableObjectNamespace;
+  ASSETS: any;
   debug?: string;
-  HOME_TEAM?: string;  // Updated to match wrangler.toml
+  HOME_TEAM?: string;
+  // Let the runtime find the DO
 }
 
 /* -------------------------------------------------
@@ -204,3 +206,16 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 };
+
+/**
+ * Finds the first key in `env` that is a DurableObjectNamespace.
+ * This works because only DO bindings have the `idFromName` method.
+ */
+function findDurableObjectBinding(env: Record<string, any>): string | null {
+  for (const [key, value] of Object.entries(env)) {
+    if (value && typeof value === 'object' && typeof (value as any).idFromName === 'function') {
+      return key;
+    }
+  }
+  return null;
+}
