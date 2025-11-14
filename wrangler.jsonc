@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "volleyball-stats",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-11-13",
+  "migrations": [{
+    "tag": "v1",
+    "new_sqlite_classes": [
+      "MatchState"
+      ]
+  }],
+  "assets": {
+    "directory": "./public/",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "debug": "true",
+    "HOME_TEAM": "Stoney Creek"
+  },
+  "route": {
+    "pattern": "volleyballscore.app/*",
+    "zone_name": "volleyballscore.app"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "Match-DO",
+        "class_name": "MatchState"
+      }
+    ]
+  }
+}
