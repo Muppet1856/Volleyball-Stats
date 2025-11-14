@@ -45,6 +45,42 @@ export class MatchState {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    /* ---------- WebSocket handling (e.g., for live updates) ---------- */
+    if (path.startsWith('/ws')) {
+      const upgradeHeader = request.headers.get('Upgrade');
+
+      if (upgradeHeader !== 'websocket') {
+        // Redirect non-WS traffic away from /ws (e.g., HTTP/HTTPS GETs)
+        url.pathname = '/';  // Or '/docs' or external URL
+        return Response.redirect(url.toString(), 302);  // Temporary redirect
+      }
+
+      if (upgradeHeader !== 'websocket') {
+        return errorResponse('Expected Upgrade: websocket', 426);
+      }
+     
+      const webSocketPair = new WebSocketPair();
+      const [client, server] = Object.values(webSocketPair);
+
+      server.accept();
+
+      // Example: Echo + DB tie-in (e.g., query on connect)
+      if (this.isDebug) {
+        const cursor = sql.exec('SELECT COUNT(*) FROM matches');
+        server.send(`Debug: ${cursor.next().value['COUNT(*)']} matches in DB`);
+      }
+
+      server.addEventListener('message', (event) => {
+        server.send(event.data);  // Echo; replace with broadcast or DB ops
+      });
+
+      server.addEventListener('close', () => {
+        console.log('WS connection closed');
+      });
+
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     /* ---------- /api/* routing ---------- */
     if (path.startsWith("/api/")) {
       const parts = path.slice(5).split("/"); // remove "/api"
@@ -157,9 +193,10 @@ export class MatchState {
    ------------------------------------------------- */
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+
     const url = new URL(request.url);
     const path = url.pathname;
-
+    
     /* 1. Chrome DevTools probe – silence 500 */
     if (path === "/.well-known/appspecific/com.chrome.devtools.json") {
       return new Response("{}", { headers: { "Content-Type": "application/json" } });
@@ -184,7 +221,7 @@ export default {
     }
 
     /* 4. Route other API requests to the Durable Object (singleton instance) */
-    if (path.startsWith("/api/")) {
+    if (path.startsWith("/api/") || path.startsWith("/ws")) {
       const doBindingName = findDurableObjectBinding(env);
       if (!doBindingName) {
         return errorResponse("Durable Object binding not found in env", 500);
@@ -192,7 +229,11 @@ export default {
 
       const doId = (env as any)[doBindingName].idFromName("global");
       const doStub = (env as any)[doBindingName].get(doId);
-      return doStub.fetch(request);
+      try {
+        return await doStub.fetch(request);
+      } catch (e) {
+        return errorResponse(`DO fetch failed: ${(e as Error).message}`, 500);
+      }
     }
 
     /* 5. Fallback for unhandled paths */
