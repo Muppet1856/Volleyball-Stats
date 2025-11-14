@@ -28,5 +28,7 @@
         "class_name": "MatchState"
       }
     ]
-  }
+  },
+  "workers_dev": true,
+  "previews_url": true
 }
