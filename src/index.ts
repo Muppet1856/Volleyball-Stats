@@ -55,10 +55,6 @@ export class MatchState {
         return Response.redirect(url.toString(), 302);  // Temporary redirect
       }
 
-      if (upgradeHeader !== 'websocket') {
-        return errorResponse('Expected Upgrade: websocket', 426);
-      }
-     
       const webSocketPair = new WebSocketPair();
       const [client, server] = Object.values(webSocketPair);
 
@@ -70,8 +66,169 @@ export class MatchState {
         server.send(`Debug: ${cursor.next().value['COUNT(*)']} matches in DB`);
       }
 
-      server.addEventListener('message', (event) => {
-        server.send(event.data);  // Echo; replace with broadcast or DB ops
+      server.addEventListener('message', async (event) => {
+        try {
+          const payload = JSON.parse(event.data as string);
+          const resource = Object.keys(payload)[0];
+          if (!resource) throw new Error('Invalid payload: missing resource');
+
+          const actionObj = payload[resource];
+          const action = Object.keys(actionObj)[0];
+          if (!action) throw new Error('Invalid payload: missing action');
+
+          const data = actionObj[action] || {};
+
+          let res: Response;
+
+          switch (resource) {
+            case 'match':
+              switch (action) {
+                case 'create':
+                  // Mock Request for create
+                  const mockReq = {
+                    json: async () => data,
+                  } as Request;
+                  res = await matchApi.createMatch(storage, mockReq);
+                  break;
+                case 'set-location':
+                  res = await matchApi.setLocation(storage, data.matchId, data.location);
+                  break;
+                case 'set-date-time':
+                  res = await matchApi.setDateTime(storage, data.matchId, data.date);
+                  break;
+                case 'set-opp-name':
+                  res = await matchApi.setOppName(storage, data.matchId, data.opponent);
+                  break;
+                case 'set-type':
+                  res = await matchApi.setType(storage, data.matchId, data.types);
+                  break;
+                case 'set-result':
+                  res = await matchApi.setResult(storage, data.matchId, data.resultHome, data.resultOpp);
+                  break;
+                case 'set-players':
+                  res = await matchApi.setPlayers(storage, data.matchId, data.players);
+                  break;
+                case 'set-home-color':
+                  res = await matchApi.setHomeColor(storage, data.matchId, data.jerseyColorHome);
+                  break;
+                case 'set-opp-color':
+                  res = await matchApi.setOppColor(storage, data.matchId, data.jerseyColorOpp);
+                  break;
+                case 'set-first-server':
+                  res = await matchApi.setFirstServer(storage, data.matchId, data.firstServer);
+                  break;
+                case 'set-deleted':
+                  res = await matchApi.setDeleted(storage, data.matchId, data.deleted);
+                  break;
+                case 'get':
+                  if (data.id) {
+                    // Assuming get single match; but matchApi has getMatches for all, no single. Adapt if needed.
+                    // For now, treat as get all if no id
+                    res = await matchApi.getMatches(storage);
+                  } else {
+                    res = await matchApi.getMatches(storage);
+                  }
+                  break;
+                case 'delete':
+                  res = await matchApi.deleteMatch(storage, data.id);
+                  break;
+                default:
+                  throw new Error(`Unknown action for match: ${action}`);
+              }
+              break;
+
+            case 'player':
+              switch (action) {
+                case 'create':
+                  const mockReq = {
+                    json: async () => data,
+                  } as Request;
+                  res = await playerApi.createPlayer(storage, mockReq);
+                  break;
+                case 'set-lname':
+                  res = await playerApi.setPlayerLName(storage, data.playerId, data.lastName);
+                  break;
+                case 'set-fname':
+                  res = await playerApi.setPlayerFName(storage, data.playerId, data.initial);
+                  break;
+                case 'set-number':
+                  res = await playerApi.setPlayerNumber(storage, data.playerId, data.number);
+                  break;
+                case 'get':
+                  if (data.id) {
+                    res = await playerApi.getPlayer(storage, data.id);
+                  } else {
+                    res = await playerApi.getPlayers(storage);
+                  }
+                  break;
+                case 'delete':
+                  res = await playerApi.deletePlayer(storage, data.id);
+                  break;
+                default:
+                  throw new Error(`Unknown action for player: ${action}`);
+              }
+              break;
+
+            case 'set':
+              switch (action) {
+                case 'create':
+                  const mockReq = {
+                    json: async () => data,
+                  } as Request;
+                  res = await setApi.createSet(storage, mockReq);
+                  break;
+                case 'set-home-score':
+                  res = await setApi.setHomeScore(storage, data.setId, data.homeScore);
+                  break;
+                case 'set-opp-score':
+                  res = await setApi.setOppScore(storage, data.setId, data.oppScore);
+                  break;
+                case 'set-home-timeout':
+                  res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value);
+                  break;
+                case 'set-opp-timeout':
+                  res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value);
+                  break;
+                case 'set-is-final':
+                  res = await setApi.setIsFinal(storage, data.matchId, data.finalizedSets);
+                  break;
+                case 'get':
+                  if (data.id) {
+                    res = await setApi.getSet(storage, data.id);
+                  } else {
+                    res = await setApi.getSets(storage, data.matchId);
+                  }
+                  break;
+                case 'delete':
+                  res = await setApi.deleteSet(storage, data.id);
+                  break;
+                default:
+                  throw new Error(`Unknown action for set: ${action}`);
+              }
+              break;
+
+            default:
+              throw new Error(`Unknown resource: ${resource}`);
+          }
+
+          // Prepare response to send over WS
+          const responseBody = res.headers.get('Content-Type')?.includes('json')
+            ? await res.json()
+            : await res.text();
+          server.send(JSON.stringify({
+            resource,
+            action,
+            status: res.status,
+            body: responseBody,
+          }));
+
+        } catch (e) {
+          server.send(JSON.stringify({
+            error: {
+              message: (e as Error).message,
+            }
+          }));
+        }
       });
 
       server.addEventListener('close', () => {
