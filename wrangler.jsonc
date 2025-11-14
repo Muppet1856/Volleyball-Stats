@@ -28,7 +28,6 @@
   "workers_dev": true,
   "preview_urls": true,
   "env": {
-    "": {},
     "prod": {
       "name": "volleyball-stats-prod",
       "vars": {
