@@ -30,5 +30,5 @@
     ]
   },
   "workers_dev": true,
-  "previews_url": true
+  "previews_urls": true
 }
