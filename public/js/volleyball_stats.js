@@ -436,7 +436,7 @@ const apiClient = (() => {
       return matches.filter(match => !match._deleted).map(stripInternalMatch);
     },
 
-    async function getMatch(id, { includeDeleted = false } = {}) {
+    async getMatch(id, { includeDeleted = false } = {}) {
       const rawMatch = await getRawMatch(id);
       if (!rawMatch) return null;
       const match = parseMatchRow(rawMatch);
@@ -456,7 +456,7 @@ const apiClient = (() => {
         }
       }
       return stripped;
-    }
+    },
 
     async createMatch(match) {
       const { body } = prepareMatchForStorage(match);
