@@ -279,6 +279,8 @@ export class MatchState {
           } else if (request.method === "POST" && action === "set-deleted") {
             const body = await request.json();
             return matchApi.setDeleted(storage, body.matchId, body.deleted);
+          } else if (request.method === "GET" && action === "get" && id) {
+            return matchApi.getMatch(storage, id);
           } else if (request.method === "GET") {
             return matchApi.getMatches(storage);
           } else if (request.method === "DELETE" && action === "delete" && id) {

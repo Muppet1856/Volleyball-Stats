@@ -566,6 +566,7 @@ function normalizeRosterArray(roster) {
   });
   return normalizedRoster;
 }
+
     let finalizedSets = {};
     let isSwapped = false;
     let editingPlayerId = null;
@@ -662,6 +663,7 @@ function normalizeRosterArray(roster) {
         }
       });
     }
+
     function formatLegacyPlayerRecord(player) {
       const number = String(player.number ?? '').trim();
       const lastName = String(player.lastName ?? '').trim();
@@ -693,7 +695,6 @@ function normalizeRosterArray(roster) {
       const nameText = [lastName, initial].filter(Boolean).join(' ');
       return [displayNumber, nameText].filter(Boolean).join(' ');
     }
-
 
     function getSortablePlayerNumber(player) {
       const { number, tempNumber } = getPlayerDisplayData(player);
@@ -834,7 +835,6 @@ function normalizeRosterArray(roster) {
       setPlayerSortMode(playerSortMode === 'number' ? 'name' : 'number');
     }
 
-
     async function loadPlayers() {
       try {
         const records = await apiClient.getPlayers();
@@ -843,8 +843,6 @@ function normalizeRosterArray(roster) {
         console.error('Failed to load players', error);
       }
     }
-
-
     
     async function seedDemoPlayersIfEmpty() {
       try {
@@ -870,7 +868,6 @@ function normalizeRosterArray(roster) {
         throw error;
       }
     }
-
 
     function setAutoSaveStatus(message, className = 'text-muted', timeout = 2000) {
       const statusElement = document.getElementById('autoSaveStatus');
@@ -1990,7 +1987,6 @@ function normalizeRosterArray(roster) {
       }
       return false;
     }
-
     
     async function savePlayer(number, lastName, initial, id = null) {
       const payload = {
@@ -2014,8 +2010,6 @@ function normalizeRosterArray(roster) {
       return true;
     }
 
-
-
     function getPlayerFormErrorElement() {
       if (!playerFormErrorElement) {
         playerFormErrorElement = document.getElementById('playerFormError');
@@ -2036,7 +2030,6 @@ function normalizeRosterArray(roster) {
       element.textContent = '';
       element.classList.add('d-none');
     }
-
     
     async function deletePlayer(id) {
       try {
@@ -2050,7 +2043,6 @@ function normalizeRosterArray(roster) {
         alert('Unable to delete player. Please try again.');
       }
     }
-
 
     function getTeamHeaderButton(headerId) {
       const header = document.getElementById(headerId);
@@ -2279,7 +2271,6 @@ function normalizeRosterArray(roster) {
       scheduleAutoSave();
       syncScoreGameModalAfterSwap();
     }
-
     
     async function submitPlayer() {
       const numberInput = document.getElementById('number');
@@ -2383,7 +2374,6 @@ function normalizeRosterArray(roster) {
 
       resetPlayerForm();
     }
-
 
     function updatePlayerList() {
       const list = document.getElementById('playerList');
@@ -3087,7 +3077,6 @@ function normalizeRosterArray(roster) {
 
       return fragment;
     }
-
     
     function updateModalPlayerList() {
       const list = document.getElementById('modalPlayerList');
@@ -3135,7 +3124,6 @@ function normalizeRosterArray(roster) {
       });
       applyJerseyColorToNumbers();
     }
-
 
     function startEditPlayer(player) {
       editingPlayerId = player.id;
@@ -3222,7 +3210,6 @@ function normalizeRosterArray(roster) {
       document.getElementById('resultHome').value = Math.min(homeWins, 3);
       document.getElementById('resultOpp').value = Math.min(oppWins, 3);
     }
-
 
     function getSerializedSetTimeouts(setNumber) {
       const stored = getMatchTimeoutState(setNumber);
@@ -3374,7 +3361,6 @@ function normalizeRosterArray(roster) {
       }
     }
 
-
     async function saveMatch({ showAlert = false } = {}) {
       if (suppressAutoSave) return null;
       persistCurrentSetTimeouts();
@@ -3512,7 +3498,6 @@ function normalizeRosterArray(roster) {
       }
     }
 
-
     function applyTemporaryNumbersFromRoster(roster) {
       if (!Array.isArray(roster)) {
         return;
@@ -3580,8 +3565,6 @@ function normalizeRosterArray(roster) {
       }
       return [];
     }
-
-
 
     async function loadMatchFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -3694,8 +3677,6 @@ function normalizeRosterArray(roster) {
       hasPendingChanges = false;
       suppressAutoSave = false;
     }
-
-
     
     async function populateMatchIndexModal() {
       const modal = document.getElementById('matchIndexModal');
@@ -3758,7 +3739,6 @@ function normalizeRosterArray(roster) {
         matchList.appendChild(errorItem);
       }
     }
-
 
     function closeMatchIndexModal() {
       const modalElement = document.getElementById('matchIndexModal');
