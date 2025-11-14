@@ -1,68 +1,96 @@
-# Volleyball Stats Cloudflare Deployment Guide
+# Volleyball Stats
 
 [![GitHub Release](https://img.shields.io/github/v/release/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/releases) [![GitHub License](https://img.shields.io/github/license/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/blob/main/LICENSE) [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/Muppet1856/Volleyball-Stats)](https://github.com/Muppet1856/Volleyball-Stats/issues)
 
-This repository contains a Cloudflare Worker that serves a static single-page application from the `public/` directory and exposes a JSON API backed by a Cloudflare D1 database for managing volleyball players and matches.
+Volleyball Stats is a Cloudflare Worker that serves a single-page scouting app and provides a JSON API for capturing match, set, and player information. The Worker persists data inside a Durable Object that exposes SQLite storage, so the application can run without an external database while still supporting transactional updates.【F:src/index.ts†L17-L159】【F:src/utils/init.ts†L1-L83】
 
-## Table of contents
-1. [Prerequisites](#prerequisites)
-2. [Deploy from the Cloudflare dashboard](#deploy-from-the-cloudflare-dashboard)
-3. [Provision and connect the D1 database in the dashboard](#provision-and-connect-the-d1-database-in-the-dashboard)
-4. [Run migrations from the dashboard](#run-migrations-from-the-dashboard)
-5. [Optional: Use Wrangler locally](#optional-use-wrangler-locally)
-6. [API surface](#api-surface)
+## Features
+- **Server-rendered static assets.** Requests for non-API routes are served from the `public/` directory through the Worker, allowing the built frontend to run alongside the API on the same origin.【F:src/index.ts†L165-L207】
+- **Durable Object data store.** The `MatchState` Durable Object initializes and maintains the SQLite tables for matches, players, and sets when it is first instantiated, ensuring schema migrations happen automatically at runtime.【F:src/index.ts†L17-L159】【F:src/utils/init.ts†L1-L83】
+- **Comprehensive JSON API.** REST-style endpoints exist for creating, updating, and deleting matches, players, and sets, as well as querying the current configuration for the frontend.【F:src/index.ts†L48-L206】【F:src/api/match.ts†L40-L211】【F:src/api/player.ts†L4-L85】【F:src/api/set.ts†L128-L255】
+- **Configurable home team.** The Worker reads the `HOME_TEAM` variable to brand the UI and API responses without code changes.【F:src/index.ts†L185-L191】【F:wrangler.toml†L9-L16】【F:cloudflare/vars.json†L1-L4】
+
+## Project structure
+| Path | Description |
+| --- | --- |
+| `public/` | Pre-built static assets for the scouting SPA served directly by the Worker.【F:src/index.ts†L175-L183】 |
+| `src/index.ts` | Worker entry point that handles asset delivery, `/api/config`, and routes other API traffic to the Durable Object.【F:src/index.ts†L165-L207】 |
+| `src/api/` | Handlers for match, player, and set CRUD operations executed inside the Durable Object.【F:src/index.ts†L48-L206】【F:src/api/match.ts†L40-L211】【F:src/api/player.ts†L4-L85】【F:src/api/set.ts†L128-L255】 |
+| `src/utils/` | Helper modules for bootstrapping the SQLite schema and returning consistent HTTP responses.【F:src/utils/init.ts†L1-L83】【F:src/utils/responses.ts†L1-L35】 |
+| `cloudflare/vars.json` | Example variable file for dashboard deployments that mirrors the defaults in `wrangler.toml`.【F:cloudflare/vars.json†L1-L4】【F:wrangler.toml†L9-L16】 |
+| `wrangler.toml` | Wrangler configuration defining the Durable Object, asset binding, variables, and migrations.【F:wrangler.toml†L1-L20】 |
 
 ## Prerequisites
+- Cloudflare account with access to Workers and Durable Objects.
+- Node.js 18 or later.
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) 3.0+, installed globally (`npm install -g wrangler`) or run ad-hoc with `npx wrangler`.
 
-- A Cloudflare account with access to Workers and D1.
-- A GitHub account if you plan to deploy via Cloudflare's Git integration.
-- (Optional) Node.js 18+ and npm if you want to work with Wrangler locally.
+## Local development
+1. Clone the repository and install Wrangler if you have not already.
+2. Log in to Cloudflare with `wrangler login`.
+3. Start the Worker locally with Durable Object persistence:
+   ```bash
+   wrangler dev --persist-to=.wrangler/state
+   ```
+   Wrangler binds the static assets, Durable Object class, and variables as defined in `wrangler.toml`, so the API and frontend are available at the printed dev URL.【F:wrangler.toml†L1-L20】【F:src/index.ts†L165-L207】
+4. Seed test data by calling the API (for example, `curl http://127.0.0.1:8787/api/match/create -d '{"opponent":"Sample"}' -H 'content-type: application/json'`).
 
-Everything described below can be completed entirely from the Cloudflare and GitHub web UIs—Wrangler is strictly optional.
+## Deployment
+1. Ensure your Cloudflare account has Durable Objects enabled.
+2. Publish the Worker and apply the SQLite migration for the `MatchState` class:
+   ```bash
+   wrangler deploy --migrations
+   ```
+3. (Optional) Use `cloudflare/vars.json` as a reference for setting dashboard variables if you manage configuration in the Cloudflare UI.【F:cloudflare/vars.json†L1-L4】【F:wrangler.toml†L9-L16】
 
-## Deploy from the Cloudflare dashboard
+## API reference
+All endpoints reside under `/api/` and return JSON unless noted.
 
-1. Push this repository to GitHub (either a public repo or a private repo connected to your Cloudflare account).
-2. In the Cloudflare dashboard, go to **Workers & Pages → Overview → Create application → Pages**.
-3. Choose **Connect to Git** and select the repository containing this project.
-4. When prompted for the framework preset, choose **None**. Configure the following build settings:
-   - **Build command**: leave blank (the project is already built).
-   - **Build output directory**: `public`
-5. Save the settings and allow Cloudflare to create the Pages project. Cloudflare will publish the static assets in `public/` and expose them at the assigned URL.【F:src/worker.js†L1-L19】
+### Configuration
+- `GET /api/config` – Fetches environment-specific settings (currently the configured `HOME_TEAM`).【F:src/index.ts†L185-L191】
 
-## Provision and connect the D1 database in the dashboard
+### Matches
+- `POST /api/match/create` – Create a match row with initial metadata.【F:src/index.ts†L55-L73】【F:src/api/match.ts†L40-L71】
+- `POST /api/match/set-location` – Update the match location.【F:src/index.ts†L55-L62】【F:src/api/match.ts†L74-L84】
+- `POST /api/match/set-date-time` – Update the match date/time string.【F:src/index.ts†L55-L64】【F:src/api/match.ts†L86-L96】
+- `POST /api/match/set-opp-name` – Update the opponent name.【F:src/index.ts†L55-L67】【F:src/api/match.ts†L98-L108】
+- `POST /api/match/set-type` – Update the match type metadata payload.【F:src/index.ts†L55-L70】【F:src/api/match.ts†L110-L120】
+- `POST /api/match/set-result` – Store the win/loss result.【F:src/index.ts†L55-L73】【F:src/api/match.ts†L122-L132】
+- `POST /api/match/set-players` – Persist the list of participating players.【F:src/index.ts†L55-L76】【F:src/api/match.ts†L134-L144】
+- `POST /api/match/set-home-color` – Update the home jersey color metadata.【F:src/index.ts†L55-L78】【F:src/api/match.ts†L158-L168】
+- `POST /api/match/set-opp-color` – Update the opponent jersey color metadata.【F:src/index.ts†L55-L82】【F:src/api/match.ts†L170-L180】
+- `POST /api/match/set-first-server` – Track which team served first.【F:src/index.ts†L55-L85】【F:src/api/match.ts†L182-L192】
+- `POST /api/match/set-deleted` – Toggle the soft-delete flag.【F:src/index.ts†L55-L88】【F:src/api/match.ts†L146-L156】
+- `GET /api/match` – List all matches.【F:src/index.ts†L55-L91】【F:src/api/match.ts†L194-L199】
+- `DELETE /api/match/delete/:id` – Remove a match permanently.【F:src/index.ts†L55-L93】【F:src/api/match.ts†L201-L211】
 
-1. In **Workers & Pages**, open your new Pages project and navigate to **Settings → Functions**.
-2. Enable **Pages Functions**. Cloudflare will deploy the Worker in `src/worker.js`, which serves the static assets and routes API requests.【F:src/worker.js†L1-L35】
-3. Scroll to **KV, Durable Object, and D1 bindings** and click **Add binding → D1 database**.
-4. Select **Create a D1 database** and name it (for example, `volleyball-stats-db`). Cloudflare automatically creates and binds the database to your Pages project.
-5. Set the binding name to `VOLLEYBALL_STATS_DB` so the Worker can reach it.【F:src/api/database.js†L1-L19】
+### Players
+- `POST /api/player/create` – Create a player entry.【F:src/index.ts†L96-L99】【F:src/api/player.ts†L4-L23】
+- `POST /api/player/set-lname` – Update the player’s last name.【F:src/index.ts†L96-L103】【F:src/api/player.ts†L25-L35】
+- `POST /api/player/set-fname` – Update the player’s first-initial field.【F:src/index.ts†L96-L105】【F:src/api/player.ts†L37-L47】
+- `POST /api/player/set-number` – Change the jersey number.【F:src/index.ts†L96-L107】【F:src/api/player.ts†L49-L59】
+- `GET /api/player/get/:id` – Fetch a single player.【F:src/index.ts†L96-L109】【F:src/api/player.ts†L61-L66】
+- `GET /api/player` – List all players.【F:src/index.ts†L96-L111】【F:src/api/player.ts†L68-L73】
+- `DELETE /api/player/delete/:id` – Delete a player.【F:src/index.ts†L96-L114】【F:src/api/player.ts†L75-L85】
 
-## Run migrations from the dashboard
+### Sets
+- `POST /api/set/create` – Create a set for a match with scores and timeouts.【F:src/index.ts†L117-L120】【F:src/api/set.ts†L128-L161】
+- `POST /api/set/set-home-score` – Update the home score for a set.【F:src/index.ts†L117-L123】【F:src/api/set.ts†L164-L173】
+- `POST /api/set/set-opp-score` – Update the opponent score for a set.【F:src/index.ts†L117-L125】【F:src/api/set.ts†L175-L183】
+- `POST /api/set/set-home-timeout` – Toggle a home timeout usage flag.【F:src/index.ts†L117-L128】【F:src/api/set.ts†L186-L197】
+- `POST /api/set/set-opp-timeout` – Toggle an opponent timeout usage flag.【F:src/index.ts†L117-L131】【F:src/api/set.ts†L199-L209】
+- `POST /api/set/set-is-final` – Persist which sets are finalized for a match.【F:src/index.ts†L117-L135】【F:src/api/set.ts†L212-L223】
+- `GET /api/set/get/:id` – Retrieve a single set.【F:src/index.ts†L117-L137】【F:src/api/set.ts†L225-L230】
+- `GET /api/set?matchId=ID` – Retrieve sets for a match (or all sets when omitted).【F:src/index.ts†L117-L142】【F:src/api/set.ts†L232-L243】
+- `DELETE /api/set/delete/:id` – Delete a set.【F:src/index.ts†L117-L144】【F:src/api/set.ts†L245-L255】
 
-1. In the Pages project **Settings → Functions**, open the D1 database you created in the previous step.
-2. Switch to the **Tables** tab and click **Import**.
-3. Upload `migrations/0001_init.sql` to seed the schema. The SQL file creates the tables used by the API endpoints, including the `match_sets` table that stores per-set scores and timeout usage with a cascading relationship to `matches`.【F:migrations/0001_init.sql†L1-L33】
-4. After the import finishes, confirm the tables exist by browsing the schema view.
+## Configuration
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `HOME_TEAM` | Text displayed in `/api/config` and used by the frontend. | `Stoney Creek` |【F:src/index.ts†L185-L191】【F:wrangler.toml†L9-L16】【F:cloudflare/vars.json†L1-L4】
+| `debug` | Enables verbose logging when set to `"true"`. | `true` |【F:src/index.ts†L25-L39】【F:wrangler.toml†L9-L16】
 
-## Optional: Use Wrangler locally
+Set these values either in `wrangler.toml`, the Cloudflare dashboard, or via environment-specific configuration files during deployment.
 
-If you prefer the CLI, you can still install and use Wrangler. Authenticate with `wrangler login`, bind the D1 database in `wrangler.toml`, and run `wrangler dev` or `wrangler deploy` as usual. The Worker expects the `VOLLEYBALL_STATS_DB` binding to point to a database that has run the migrations above.【F:src/api/database.js†L1-L19】
-
-## API surface
-
-The Worker exposes REST-style endpoints for matches and players. All routes return JSON and require the D1 database binding configured above.
-
-- `GET /api/matches` — list matches ordered by date/opponent.【F:src/api/matches.js†L1-L45】
-- `POST /api/matches` — create a match (expects JSON payload).【F:src/api/matches.js†L1-L79】
-- `GET /api/matches/:id` — fetch a single match.【F:src/api/matches.js†L81-L115】
-- `PUT /api/matches/:id` — update a match.【F:src/api/matches.js†L117-L166】
-- `DELETE /api/matches/:id` — remove a match.【F:src/api/matches.js†L168-L191】
-- `GET /api/players` — list players ordered by jersey number and name.【F:src/api/players.js†L1-L36】
-- `POST /api/players` — create a player (number and last name required).【F:src/api/players.js†L38-L75】
-- `PUT /api/players/:id` — update a player.【F:src/api/players.js†L77-L112】
-- `DELETE /api/players/:id` — delete a player.【F:src/api/players.js†L114-L135】
-
-Static assets are served for any non-API path by Cloudflare's asset handler, so the frontend in `public/` receives all other requests.【F:src/worker.js†L1-L19】
-
-With these steps, you can provision the required Cloudflare resources, run the application locally, and publish the Worker with its D1 backing store.
+## License
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
