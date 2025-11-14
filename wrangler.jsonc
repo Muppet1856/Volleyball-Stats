@@ -17,10 +17,6 @@
     "debug": "true",
     "HOME_TEAM": "Stoney Creek"
   },
-  "route": {
-    "pattern": "volleyballscore.app/*",
-    "zone_name": "volleyballscore.app"
-  },
   "durable_objects": {
     "bindings": [
       {
@@ -30,5 +26,38 @@
     ]
   },
   "workers_dev": true,
-  "previews_urls": true
+  "preview_urls": true,
+  "env": {
+    "": {},
+    "prod": {
+      "name": "volleyball-stats-prod",
+      "vars": {
+        "debug": "true",
+        "HOME_TEAM": "Stoney Creek"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "Match-DO",
+            "class_name": "MatchState"
+          }
+        ]
+      }
+    },
+    "dev": {
+      "name": "volleyball-stats-dev",
+      "vars": {
+        "debug": "true",
+        "HOME_TEAM": "Stoney Creek"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "Match-DO",
+            "class_name": "MatchState"
+          }
+        ]
+      }
+    }
+  }
 }
