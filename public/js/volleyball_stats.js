@@ -349,6 +349,11 @@ const apiClient = (() => {
     return rest;
   }
 
+  async function getRawMatch(id) {
+    if (id === undefined || id === null) return null;
+    return await request(`/api/match/get/${id}`);
+  }
+
   async function getRawMatches() {
     const data = await request('/api/match');
     return Array.isArray(data) ? data : [];
@@ -431,10 +436,10 @@ const apiClient = (() => {
       return matches.filter(match => !match._deleted).map(stripInternalMatch);
     },
 
-    async getMatch(id, { includeDeleted = false } = {}) {
-      const matches = await getNormalizedMatches();
-      const match = findMatchById(matches, id);
-      if (!match) return null;
+    async function getMatch(id, { includeDeleted = false } = {}) {
+      const rawMatch = await getRawMatch(id);
+      if (!rawMatch) return null;
+      const match = parseMatchRow(rawMatch);
       if (match._deleted && !includeDeleted) return null;
       const stripped = stripInternalMatch(match) || {};
       const numericId = Number(match.id);
@@ -443,7 +448,7 @@ const apiClient = (() => {
         try {
           const setRows = await this.getMatchSets(numericId);
           const normalizedSets = normalizeMatchSets(setRows);
-          if (normalizedSets && Object.keys(normalizedSets).length > 0) {
+          if (Object.keys(normalizedSets).length > 0) {
             stripped.sets = normalizedSets;
           }
         } catch (error) {
@@ -451,7 +456,7 @@ const apiClient = (() => {
         }
       }
       return stripped;
-    },
+    }
 
     async createMatch(match) {
       const { body } = prepareMatchForStorage(match);
@@ -500,8 +505,7 @@ const apiClient = (() => {
     },
 
     async deleteMatch(id) {
-      const matches = await getNormalizedMatches();
-      const match = findMatchById(matches, id);
+      const match = getRawMatch(id);
       if (!match) return null;
       return await updateMatchInternal(match.id, { ...stripInternalMatch(match), deleted: true });
     }

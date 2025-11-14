@@ -122,9 +122,7 @@ export class MatchState {
                   break;
                 case 'get':
                   if (data.id) {
-                    // Assuming get single match; but matchApi has getMatches for all, no single. Adapt if needed.
-                    // For now, treat as get all if no id
-                    res = await matchApi.getMatches(storage);
+                    res = await matchApi.getMatches(storage, data.id);
                   } else {
                     res = await matchApi.getMatches(storage);
                   }
