@@ -9,6 +9,10 @@
       "MatchState"
       ]
   }],
+  "route": {
+    "pattern": "volleyballscore.app/*",
+    "zone_name": "volleyballscore.app"
+  },
   "assets": {
     "directory": "./public/",
     "binding": "ASSETS"
@@ -28,22 +32,11 @@
   "workers_dev": true,
   "preview_urls": true,
   "env": {
-    "prod": {
-      "name": "volleyball-stats-prod",
-      "vars": {
-        "debug": "true",
-        "HOME_TEAM": "Stoney Creek"
-      },
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "Match-DO",
-            "class_name": "MatchState"
-          }
-        ]
-      }
-    },
     "dev": {
+      "route": {
+        "pattern": "volleyball-stats.zellen.workers.dev/*",
+        "zone_name": "volleyball-stats.zellen.workers.dev"
+      },
       "name": "volleyball-stats-dev",
       "vars": {
         "debug": "true",
