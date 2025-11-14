@@ -148,13 +148,6 @@ export class MatchState {
       return errorResponse("API endpoint not found", 404);  // Updated with responses.ts
     }
 
-    /* ---------- Fallback for testing (optional) ---------- */
-    if (request.method === "GET") {
-      const rows = sql.exec(`SELECT * FROM matches`).toArray();
-      if (this.isDebug) console.log("matches:", JSON.stringify(rows));
-      return jsonResponse(rows);  // Updated with responses.ts
-    }
-
     return errorResponse("Method not allowed", 405);  // Updated with responses.ts
   }
 }
