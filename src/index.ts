@@ -21,11 +21,13 @@ export class MatchState {
   state: DurableObjectState;
   env: Env;
   isDebug: boolean;
+  connections: Set<WebSocket>;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.isDebug = env.debug === "true";
+    this.connections = new Set();
 
     // Init all tables the first time the DO is created
     const sql = this.state.storage.sql;
@@ -59,6 +61,7 @@ export class MatchState {
       const [client, server] = Object.values(webSocketPair);
 
       server.accept();
+      this.connections.add(server);
 
       // Example: Echo + DB tie-in (e.g., query on connect)
       if (this.isDebug) {
@@ -240,7 +243,12 @@ export class MatchState {
       });
 
       server.addEventListener('close', () => {
+        this.connections.delete(server);
         console.log('WS connection closed');
+      });
+
+      server.addEventListener('error', () => {
+        this.connections.delete(server);
       });
 
       return new Response(null, { status: 101, webSocket: client });
