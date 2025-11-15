@@ -7,6 +7,27 @@ const HOME_TEAM_FALLBACK = 'Home Team';
 const HOME_TEAM_TEMPLATE_PATTERN = /\{homeTeam\}/g;
 let homeTeamName = HOME_TEAM_FALLBACK;
 
+const wsTransport = (() => {
+  if (typeof window !== 'undefined' && window.wsTransport) {
+    return window.wsTransport;
+  }
+  if (typeof require === 'function') {
+    try {
+      return require('./ws_bootstrap.js');
+    } catch (error) {
+      console.warn('Unable to load WebSocket transport in non-browser context', error);
+    }
+  }
+  return {
+    sendAtomicUpdate() {
+      return Promise.reject(new Error('WebSocket transport is not available'));
+    },
+    request() {
+      return Promise.reject(new Error('WebSocket transport is not available'));
+    }
+  };
+})();
+
 function getHomeTeamName() {
   return homeTeamName || HOME_TEAM_FALLBACK;
 }
@@ -46,69 +67,94 @@ function updateHomeTeamUI() {
 const atomicUpdateRegistry = new WeakMap();
 let atomicUpdateMarkerId = 0;
 
-function resolveAtomicUpdateClient() {
-  if (typeof window === 'undefined') {
+function getToastContainer() {
+  if (typeof document === 'undefined') {
     return null;
   }
-  const candidates = [
-    window.matchUpdateClient,
-    window.matchUpdatesClient,
-    window.liveMatchClient,
-    window.matchSocketClient,
-    window.matchUpdatesSocket
-  ];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    if (typeof candidate.sendAtomicUpdate === 'function') {
-      return { type: 'atomic', client: candidate };
-    }
-    if (typeof candidate.send === 'function') {
-      return { type: 'send', client: candidate };
-    }
-    if (typeof candidate.dispatch === 'function') {
-      return { type: 'dispatch', client: candidate };
-    }
+  let container = document.getElementById('appToastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'appToastContainer';
+    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+    container.setAttribute('aria-live', 'polite');
+    container.setAttribute('aria-atomic', 'true');
+    document.body.appendChild(container);
   }
-  if (typeof window.sendMatchUpdate === 'function') {
-    return { type: 'call', client: { send: window.sendMatchUpdate } };
+  return container;
+}
+
+function showErrorToast(message) {
+  if (typeof document === 'undefined') {
+    return;
   }
-  return null;
+  const container = getToastContainer();
+  if (!container) {
+    return;
+  }
+  const toastElement = document.createElement('div');
+  toastElement.className = 'toast align-items-center text-bg-danger border-0';
+  toastElement.setAttribute('role', 'alert');
+  toastElement.setAttribute('aria-live', 'assertive');
+  toastElement.setAttribute('aria-atomic', 'true');
+  toastElement.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body">${message}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  `;
+  container.appendChild(toastElement);
+
+  const bootstrapToast = typeof bootstrap !== 'undefined' && bootstrap.Toast
+    ? new bootstrap.Toast(toastElement, { autohide: true, delay: 4000 })
+    : null;
+
+  const removeToast = () => {
+    toastElement.removeEventListener('hidden.bs.toast', removeToast);
+    toastElement.removeEventListener('hidePrevented.bs.toast', removeToast);
+    if (toastElement.parentNode) {
+      toastElement.parentNode.removeChild(toastElement);
+    }
+  };
+
+  toastElement.addEventListener('hidden.bs.toast', removeToast);
+  toastElement.addEventListener('hidePrevented.bs.toast', removeToast);
+
+  if (bootstrapToast) {
+    bootstrapToast.show();
+  } else {
+    toastElement.classList.add('show');
+    setTimeout(removeToast, 4000);
+  }
+}
+
+function notifyAtomicUpdateFailure(resource, action, error) {
+  const reason = error && error.message ? error.message : 'Unknown error';
+  showErrorToast(`Unable to update ${resource}.${action}: ${reason}`);
 }
 
 function sendAtomicUpdateMessage(payload) {
   if (!payload) return;
-  try {
-    const resolved = resolveAtomicUpdateClient();
-    if (!resolved) {
-      return;
-    }
-    if (resolved.type === 'atomic') {
-      resolved.client.sendAtomicUpdate(payload);
-      return;
-    }
-    if (resolved.type === 'dispatch') {
-      resolved.client.dispatch(payload);
-      return;
-    }
-    const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    if (resolved.type === 'send') {
-      resolved.client.send(serialized);
-      return;
-    }
-    if (resolved.type === 'call' && typeof resolved.client.send === 'function') {
-      resolved.client.send(payload);
-    }
-  } catch (error) {
-    console.warn('Failed to dispatch atomic update', error, payload);
+  const { resource, action, data } = payload;
+  if (!resource || !action) {
+    return;
   }
+  if (!wsTransport || typeof wsTransport.sendAtomicUpdate !== 'function') {
+    console.warn('WebSocket transport is unavailable; unable to send atomic update', payload);
+    return;
+  }
+  wsTransport.sendAtomicUpdate(resource, action, data)
+    .catch((error) => {
+      console.warn('Failed to dispatch atomic update', error, payload);
+      notifyAtomicUpdateFailure(resource, action, error);
+    });
 }
 
 function createMatchUpdate(action, data) {
-  return { match: { [action]: data } };
+  return { resource: 'match', action, data };
 }
 
 function createSetUpdate(action, data) {
-  return { set: { [action]: data } };
+  return { resource: 'set', action, data };
 }
 
 function registerAtomicUpdate(selector, buildPayload, options = {}) {
@@ -459,160 +505,11 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 const wsClient = (() => {
-  const pendingQueue = [];
-  let socket = null;
-  let connectionPromise = null;
-
-  function getWebSocketUrl() {
-    if (typeof window === 'undefined' || !window.location) {
-      return 'ws://localhost/ws';
-    }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host || 'localhost';
-    return `${protocol}//${host}/ws`;
-  }
-
-  function flushPending(error) {
-    while (pendingQueue.length > 0) {
-      const entry = pendingQueue.shift();
-      if (entry) {
-        try {
-          entry.reject(error);
-        } catch (rejectError) {
-          console.warn('Failed to reject pending WebSocket request', rejectError);
-        }
-      }
-    }
-  }
-
-  function handleMessage(event) {
-    const rawMessage = typeof event.data === 'string' ? event.data : '';
-    let parsed;
-    try {
-      parsed = rawMessage ? JSON.parse(rawMessage) : null;
-    } catch (error) {
-      if (rawMessage) {
-        console.debug('Ignoring non-JSON WebSocket message', rawMessage);
-      }
-      return;
-    }
-
-    if (!parsed || typeof parsed !== 'object') {
-      return;
-    }
-
-    if (parsed.error) {
-      const pending = pendingQueue.shift();
-      if (pending) {
-        const message = parsed.error?.message || 'WebSocket request failed';
-        pending.reject(new Error(message));
-      }
-      return;
-    }
-
-    const pending = pendingQueue.shift();
-    if (!pending) {
-      return;
-    }
-
-    const status = typeof parsed.status === 'number' ? parsed.status : 200;
-    if (status >= 400) {
-      const bodyText = typeof parsed.body === 'string'
-        ? parsed.body
-        : JSON.stringify(parsed.body ?? {});
-      const errorMessage = `${pending.resource}.${pending.action} failed with status ${status}${bodyText ? `: ${bodyText}` : ''}`;
-      pending.reject(new Error(errorMessage));
-      return;
-    }
-
-    pending.resolve(parsed.body);
-  }
-
-  function attachSocket(ws) {
-    ws.addEventListener('message', handleMessage);
-    ws.addEventListener('close', () => {
-      if (socket === ws) {
-        socket = null;
-        connectionPromise = null;
-      }
-      flushPending(new Error('WebSocket connection closed'));
-    });
-    ws.addEventListener('error', () => {
-      if (socket === ws) {
-        try {
-          ws.close();
-        } catch (closeError) {
-          console.warn('Error closing WebSocket after failure', closeError);
-        }
-        socket = null;
-        connectionPromise = null;
-      }
-      flushPending(new Error('WebSocket connection encountered an error'));
-    });
-  }
-
-  async function ensureConnection() {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      return socket;
-    }
-    if (connectionPromise) {
-      return connectionPromise;
-    }
-
-    connectionPromise = new Promise((resolve, reject) => {
-      if (typeof WebSocket === 'undefined') {
-        connectionPromise = null;
-        reject(new Error('WebSocket API is not available in this environment'));
-        return;
-      }
-      try {
-        const ws = new WebSocket(getWebSocketUrl());
-        socket = ws;
-        attachSocket(ws);
-
-        const cleanup = () => {
-          if (socket === ws) {
-            socket = null;
-          }
-          connectionPromise = null;
-        };
-
-        ws.addEventListener('open', () => {
-          resolve(ws);
-        }, { once: true });
-
-        ws.addEventListener('error', () => {
-          cleanup();
-          reject(new Error('Failed to establish WebSocket connection'));
-        }, { once: true });
-
-        ws.addEventListener('close', () => {
-          cleanup();
-        }, { once: true });
-      } catch (error) {
-        connectionPromise = null;
-        reject(error);
-      }
-    });
-
-    return connectionPromise;
-  }
-
   async function send(resource, action, data = {}) {
-    if (!resource || !action) {
-      throw new Error('Resource and action are required for WebSocket requests');
+    if (!wsTransport || typeof wsTransport.request !== 'function') {
+      throw new Error('WebSocket transport is not available');
     }
-    const ws = await ensureConnection();
-    return new Promise((resolve, reject) => {
-      const payload = { [resource]: { [action]: data || {} } };
-      pendingQueue.push({ resolve, reject, resource, action });
-      try {
-        ws.send(JSON.stringify(payload));
-      } catch (error) {
-        pendingQueue.pop();
-        reject(error);
-      }
-    });
+    return wsTransport.request(resource, action, data);
   }
 
   async function getRawMatch(id) {
