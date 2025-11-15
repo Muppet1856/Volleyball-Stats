@@ -122,7 +122,7 @@ export class MatchState {
                   break;
                 case 'get':
                   if (data.id) {
-                    res = await matchApi.getMatches(storage, data.id);
+                    res = await matchApi.getMatch(storage, data.id);
                   } else {
                     res = await matchApi.getMatches(storage);
                   }
@@ -202,6 +202,16 @@ export class MatchState {
                   break;
                 default:
                   throw new Error(`Unknown action for set: ${action}`);
+              }
+              break;
+
+            case 'config':
+              switch (action) {
+                case 'get':
+                  res = jsonResponse({ homeTeam: this.env.HOME_TEAM || 'Home Team' });
+                  break;
+                default:
+                  throw new Error(`Unknown action for config: ${action}`);
               }
               break;
 
