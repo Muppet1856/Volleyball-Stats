@@ -350,39 +350,42 @@
     });
   }
 
+  function buildResourceEnvelope(resource, action, data) {
+    const envelope = {};
+    envelope[resource] = {};
+    envelope[resource][action] = data || {};
+    return envelope;
+  }
+
   function sendAtomicUpdate(resource, action, data) {
     if (!resource || !action) {
       return Promise.reject(new Error('Resource and action are required for atomic updates'));
     }
-    return enqueueMessage({
-      type: 'updateField',
-      resource,
-      action,
-      payload: data || {}
-    }, {
-      resource,
-      action,
-      retryOnReconnect: true,
-      errorMessage: 'Live update failed',
-      timeoutMessage: 'Timed out waiting for server acknowledgement'
-    });
+    return enqueueMessage(
+      buildResourceEnvelope(resource, action, data),
+      {
+        resource,
+        action,
+        retryOnReconnect: true,
+        errorMessage: 'Live update failed',
+        timeoutMessage: 'Timed out waiting for server acknowledgement'
+      }
+    );
   }
 
   function request(resource, action, data) {
     if (!resource || !action) {
       return Promise.reject(new Error('Resource and action are required for WebSocket requests'));
     }
-    return enqueueMessage({
-      type: 'request',
-      resource,
-      action,
-      payload: data || {}
-    }, {
-      resource,
-      action,
-      retryOnReconnect: false,
-      errorMessage: `${resource}.${action} failed`
-    });
+    return enqueueMessage(
+      buildResourceEnvelope(resource, action, data),
+      {
+        resource,
+        action,
+        retryOnReconnect: false,
+        errorMessage: `${resource}.${action} failed`
+      }
+    );
   }
 
   const transport = {
