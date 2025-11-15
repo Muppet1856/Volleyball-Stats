@@ -7,27 +7,6 @@ const HOME_TEAM_FALLBACK = 'Home Team';
 const HOME_TEAM_TEMPLATE_PATTERN = /\{homeTeam\}/g;
 let homeTeamName = HOME_TEAM_FALLBACK;
 
-const wsTransport = (() => {
-  if (typeof window !== 'undefined' && window.wsTransport) {
-    return window.wsTransport;
-  }
-  if (typeof require === 'function') {
-    try {
-      return require('./ws_bootstrap.js');
-    } catch (error) {
-      console.warn('Unable to load WebSocket transport in non-browser context', error);
-    }
-  }
-  return {
-    sendAtomicUpdate() {
-      return Promise.reject(new Error('WebSocket transport is not available'));
-    },
-    request() {
-      return Promise.reject(new Error('WebSocket transport is not available'));
-    }
-  };
-})();
-
 function getHomeTeamName() {
   return homeTeamName || HOME_TEAM_FALLBACK;
 }
@@ -44,10 +23,13 @@ function applyHomeTeamTemplates(homeName) {
 async function initializeHomeTeam() {
   let configuredName = '';
   try {
-    const data = await wsClient.request('config', 'get');
-    const candidate = typeof data?.homeTeam === 'string' ? data.homeTeam.trim() : '';
-    if (candidate) {
-      configuredName = candidate;
+    const response = await fetch('/api/config', { headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const data = await response.json();
+      const candidate = typeof data?.homeTeam === 'string' ? data.homeTeam.trim() : '';
+      if (candidate) {
+        configuredName = candidate;
+      }
     }
   } catch (error) {
     console.warn('Unable to load home team configuration', error);
@@ -64,461 +46,316 @@ function updateHomeTeamUI() {
   }
 }
 
-const atomicUpdateRegistry = new WeakMap();
-let atomicUpdateMarkerId = 0;
+const apiClient = (() => {
+  const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' };
 
-function getToastContainer() {
-  if (typeof document === 'undefined') {
-    return null;
-  }
-  let container = document.getElementById('appToastContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'appToastContainer';
-    container.className = 'toast-container position-fixed top-0 end-0 p-3';
-    container.setAttribute('aria-live', 'polite');
-    container.setAttribute('aria-atomic', 'true');
-    document.body.appendChild(container);
-  }
-  return container;
-}
-
-function showErrorToast(message) {
-  if (typeof document === 'undefined') {
-    return;
-  }
-  const container = getToastContainer();
-  if (!container) {
-    return;
-  }
-  const toastElement = document.createElement('div');
-  toastElement.className = 'toast align-items-center text-bg-danger border-0';
-  toastElement.setAttribute('role', 'alert');
-  toastElement.setAttribute('aria-live', 'assertive');
-  toastElement.setAttribute('aria-atomic', 'true');
-  toastElement.innerHTML = `
-    <div class="d-flex">
-      <div class="toast-body">${message}</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-    </div>
-  `;
-  container.appendChild(toastElement);
-
-  const bootstrapToast = typeof bootstrap !== 'undefined' && bootstrap.Toast
-    ? new bootstrap.Toast(toastElement, { autohide: true, delay: 4000 })
-    : null;
-
-  const removeToast = () => {
-    toastElement.removeEventListener('hidden.bs.toast', removeToast);
-    toastElement.removeEventListener('hidePrevented.bs.toast', removeToast);
-    if (toastElement.parentNode) {
-      toastElement.parentNode.removeChild(toastElement);
+  function safeJsonParse(value, fallback) {
+    if (typeof value !== 'string') return fallback;
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return fallback;
     }
-  };
-
-  toastElement.addEventListener('hidden.bs.toast', removeToast);
-  toastElement.addEventListener('hidePrevented.bs.toast', removeToast);
-
-  if (bootstrapToast) {
-    bootstrapToast.show();
-  } else {
-    toastElement.classList.add('show');
-    setTimeout(removeToast, 4000);
   }
-}
 
-function notifyAtomicUpdateFailure(resource, action, error) {
-  const reason = error && error.message ? error.message : 'Unknown error';
-  showErrorToast(`Unable to update ${resource}.${action}: ${reason}`);
-}
-
-function sendAtomicUpdateMessage(payload) {
-  if (!payload) return;
-  const { resource, action, data } = payload;
-  if (!resource || !action) {
-    return;
-  }
-  if (!wsTransport || typeof wsTransport.sendAtomicUpdate !== 'function') {
-    console.warn('WebSocket transport is unavailable; unable to send atomic update', payload);
-    return;
-  }
-  wsTransport.sendAtomicUpdate(resource, action, data)
-    .catch((error) => {
-      console.warn('Failed to dispatch atomic update', error, payload);
-      notifyAtomicUpdateFailure(resource, action, error);
-    });
-}
-
-function createMatchUpdate(action, data) {
-  return { resource: 'match', action, data };
-}
-
-function createSetUpdate(action, data) {
-  return { resource: 'set', action, data };
-}
-
-function registerAtomicUpdate(selector, buildPayload, options = {}) {
-  const { events = ['change'], beforeSend, marker } = options;
-  const markerKey = marker || `atomic${atomicUpdateMarkerId += 1}`;
-  const elements = document.querySelectorAll(selector);
-  elements.forEach((element) => {
-    if (!element) return;
-    let markerMap = atomicUpdateRegistry.get(element);
-    if (!markerMap) {
-      markerMap = new Map();
-      atomicUpdateRegistry.set(element, markerMap);
-    }
-    if (markerMap.has(markerKey)) {
-      return;
-    }
-    const handler = (event) => {
-      const targetElement = event.currentTarget || element;
-      if (typeof beforeSend === 'function') {
-        beforeSend(event, targetElement);
-      }
-      const payload = typeof buildPayload === 'function'
-        ? buildPayload(targetElement, event)
-        : null;
-      if (payload) {
-        sendAtomicUpdateMessage(payload);
-      }
+  function normalizePlayerRecord(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      number: String(row.number ?? '').trim(),
+      lastName: String(row.last_name ?? row.lastName ?? '').trim(),
+      initial: String(row.initial ?? '').trim()
     };
-    markerMap.set(markerKey, handler);
-    events.forEach((eventName) => {
-      element.addEventListener(eventName, handler);
-    });
-  });
-}
-
-function getSelectedMatchTypeFlags() {
-  return {
-    tournament: Boolean(document.getElementById('tournament')?.checked),
-    league: Boolean(document.getElementById('league')?.checked),
-    postSeason: Boolean(document.getElementById('postSeason')?.checked),
-    nonLeague: Boolean(document.getElementById('nonLeague')?.checked)
-  };
-}
-
-function getMatchResultValues() {
-  const parseResult = (elementId) => {
-    const element = document.getElementById(elementId);
-    if (!element) return null;
-    const parsed = Number.parseInt(element.value, 10);
-    return Number.isNaN(parsed) ? null : parsed;
-  };
-  return {
-    resultHome: parseResult('resultHome'),
-    resultOpp: parseResult('resultOpp')
-  };
-}
-
-function notifyMatchResultChange() {
-  const { resultHome, resultOpp } = getMatchResultValues();
-  sendAtomicUpdateMessage(createMatchUpdate('set-result', {
-    matchId: currentMatchId,
-    resultHome,
-    resultOpp
-  }));
-}
-
-function safeJsonParse(value, fallback) {
-  if (typeof value !== 'string') return fallback;
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return fallback;
   }
-}
 
-function normalizePlayerRecord(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    number: String(row.number ?? '').trim(),
-    lastName: String(row.last_name ?? row.lastName ?? '').trim(),
-    initial: String(row.initial ?? '').trim()
-  };
-}
+  function serializePlayerInitial(initial) {
+    return String(initial ?? '');
+  }
 
-function serializePlayerInitial(initial) {
-  return String(initial ?? '');
-}
-
-function normalizeMatchFlags(flags = {}) {
-  const defaults = { tournament: false, league: false, postSeason: false, nonLeague: false };
-  return Object.keys(defaults).reduce((acc, key) => {
-    const value = flags[key];
-    acc[key] = Boolean(value);
-    return acc;
-  }, {});
-}
-
-function normalizeFinalizedSets(data) {
-  const normalized = {};
-  if (data && typeof data === 'object') {
-    Object.entries(data).forEach(([key, value]) => {
-      const setNumber = Number(key);
-      if (!Number.isNaN(setNumber)) {
-        normalized[setNumber] = Boolean(value);
+  async function request(path, { method = 'GET', body, headers = {} } = {}) {
+    const init = { method };
+    const baseHeaders = body !== undefined ? JSON_HEADERS : { Accept: 'application/json' };
+    init.headers = { ...baseHeaders, ...headers };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const response = await fetch(path, init);
+    if (!response.ok) {
+      let errorMessage = `${method} ${path} failed with status ${response.status}`;
+      try {
+        const errorText = await response.text();
+        if (errorText) {
+          errorMessage += `: ${errorText}`;
+        }
+      } catch (readError) {
+        // Ignore read errors
       }
-    });
+      throw new Error(errorMessage);
+    }
+    if (response.status === 204) {
+      return null;
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await response.json();
+    }
+    return await response.text();
   }
-  return normalized;
-}
 
-function normalizeMatchSets(sets) {
-  const normalized = {};
-  if (!sets) {
-    return normalized;
+  function normalizeMatchFlags(flags = {}) {
+    const defaults = { tournament: false, league: false, postSeason: false, nonLeague: false };
+    return Object.keys(defaults).reduce((acc, key) => {
+      const value = flags[key];
+      acc[key] = Boolean(value);
+      return acc;
+    }, {});
   }
 
-  const assignSet = (setNumber, data) => {
-    if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) return;
-    const timeouts = data && typeof data === 'object' ? data.timeouts || {} : {};
-    const homeTimeouts = Array.isArray(timeouts.home)
-      ? timeouts.home.map(Boolean)
-      : [Boolean(timeouts.home?.[0]), Boolean(timeouts.home?.[1])];
-    const oppTimeouts = Array.isArray(timeouts.opp)
-      ? timeouts.opp.map(Boolean)
-      : [Boolean(timeouts.opp?.[0]), Boolean(timeouts.opp?.[1])];
-    normalized[setNumber] = {
-      home: normalizeStoredScoreValue(data?.home ?? null),
-      opp: normalizeStoredScoreValue(data?.opp ?? null),
-      timeouts: {
-        home: [homeTimeouts[0] || false, homeTimeouts[1] || false],
-        opp: [oppTimeouts[0] || false, oppTimeouts[1] || false]
-      }
-    };
-  };
-
-  if (Array.isArray(sets)) {
-    sets.forEach((value) => {
-      if (!value || typeof value !== 'object') return;
-      const setNumber = Number(
-        value.setNumber ?? value.set_number ?? value.number ?? value.id ?? value.match_set_id
-      );
-      if (!Number.isInteger(setNumber)) return;
-      const homeScore = value.home ?? value.home_score ?? value.homeScore;
-      const oppScore = value.opp ?? value.opp_score ?? value.oppScore;
-      const homeTimeouts = {
-        home: [value.home_timeout_1, value.home_timeout_2],
-        opp: [value.opp_timeout_1, value.opp_timeout_2]
-      };
-      assignSet(setNumber, {
-        home: homeScore,
-        opp: oppScore,
-        timeouts: {
-          home: homeTimeouts.home.map((entry) => Boolean(Number(entry))),
-          opp: homeTimeouts.opp.map((entry) => Boolean(Number(entry)))
+  function normalizeFinalizedSets(data) {
+    const normalized = {};
+    if (data && typeof data === 'object') {
+      Object.entries(data).forEach(([key, value]) => {
+        const setNumber = Number(key);
+        if (!Number.isNaN(setNumber)) {
+          normalized[setNumber] = Boolean(value);
         }
       });
-    });
+    }
     return normalized;
   }
 
-  if (typeof sets === 'object') {
-    Object.entries(sets).forEach(([key, value]) => {
-      const setNumber = Number(key);
-      if (Number.isNaN(setNumber)) return;
-      const timeouts = value && typeof value === 'object' ? value.timeouts || {} : {};
-      assignSet(setNumber, {
-        home: value?.home ?? null,
-        opp: value?.opp ?? null,
-        timeouts
+  function normalizeMatchSets(sets) {
+    const normalized = {};
+    if (!sets) {
+      return normalized;
+    }
+
+    const assignSet = (setNumber, data) => {
+      if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > 5) return;
+      const timeouts = data && typeof data === 'object' ? data.timeouts || {} : {};
+      const homeTimeouts = Array.isArray(timeouts.home)
+        ? timeouts.home.map(Boolean)
+        : [Boolean(timeouts.home?.[0]), Boolean(timeouts.home?.[1])];
+      const oppTimeouts = Array.isArray(timeouts.opp)
+        ? timeouts.opp.map(Boolean)
+        : [Boolean(timeouts.opp?.[0]), Boolean(timeouts.opp?.[1])];
+      normalized[setNumber] = {
+        home: normalizeStoredScoreValue(data?.home ?? null),
+        opp: normalizeStoredScoreValue(data?.opp ?? null),
+        timeouts: {
+          home: [homeTimeouts[0] || false, homeTimeouts[1] || false],
+          opp: [oppTimeouts[0] || false, oppTimeouts[1] || false]
+        }
+      };
+    };
+
+    if (Array.isArray(sets)) {
+      sets.forEach((value) => {
+        if (!value || typeof value !== 'object') return;
+        const setNumber = Number(
+          value.setNumber ?? value.set_number ?? value.number ?? value.id ?? value.match_set_id
+        );
+        if (!Number.isInteger(setNumber)) return;
+        const homeScore = value.home ?? value.home_score ?? value.homeScore;
+        const oppScore = value.opp ?? value.opp_score ?? value.oppScore;
+        const homeTimeouts = {
+          home: [value.home_timeout_1, value.home_timeout_2],
+          opp: [value.opp_timeout_1, value.opp_timeout_2]
+        };
+        assignSet(setNumber, {
+          home: homeScore,
+          opp: oppScore,
+          timeouts: {
+            home: homeTimeouts.home.map((entry) => Boolean(Number(entry))),
+            opp: homeTimeouts.opp.map((entry) => Boolean(Number(entry)))
+          }
+        });
       });
-    });
+      return normalized;
+    }
+
+    if (typeof sets === 'object') {
+      Object.entries(sets).forEach(([key, value]) => {
+        const setNumber = Number(key);
+        if (Number.isNaN(setNumber)) return;
+        const timeouts = value && typeof value === 'object' ? value.timeouts || {} : {};
+        assignSet(setNumber, {
+          home: value?.home ?? null,
+          opp: value?.opp ?? null,
+          timeouts
+        });
+      });
+    }
+
+    return normalized;
   }
 
-  return normalized;
-}
-
-function parseMatchPlayers(value) {
-  const parsedValue = typeof value === 'string' ? safeJsonParse(value, null) : value;
-  if (Array.isArray(parsedValue)) {
-    return { roster: [], deleted: false, legacyRoster: parsedValue.slice() };
+  function parseMatchPlayers(value) {
+    const parsedValue = typeof value === 'string' ? safeJsonParse(value, null) : value;
+    if (Array.isArray(parsedValue)) {
+      return { roster: [], deleted: false, legacyRoster: parsedValue.slice() };
+    }
+    if (parsedValue && typeof parsedValue === 'object') {
+      const roster = normalizeRosterArray(parsedValue.roster);
+      const legacyRoster = Array.isArray(parsedValue.legacyRoster)
+        ? parsedValue.legacyRoster.slice()
+        : null;
+      return {
+        roster,
+        deleted: Boolean(parsedValue.deleted),
+        legacyRoster
+      };
+    }
+    return { roster: [], deleted: false };
   }
-  if (parsedValue && typeof parsedValue === 'object') {
-    const roster = normalizeRosterArray(parsedValue.roster);
-    const legacyRoster = Array.isArray(parsedValue.legacyRoster)
-      ? parsedValue.legacyRoster.slice()
-      : null;
+
+  function serializeMatchPlayers(match) {
+    const roster = normalizeRosterArray(match?.players);
+    return { roster };
+  }
+
+  function parseMatchMetadata(typesValue, finalizedSetsValue) {
+    let parsed = null;
+    if (typeof typesValue === 'string') {
+      parsed = safeJsonParse(typesValue, null);
+    } else if (typesValue && typeof typesValue === 'object') {
+      parsed = typesValue;
+    }
+
+    let flags = normalizeMatchFlags();
+    let sets = {};
+    let deleted = false;
+    let deletedFlagPresent = false;
+
+    if (parsed && typeof parsed === 'object') {
+      const candidateFlags = parsed.flags && typeof parsed.flags === 'object' ? parsed.flags : parsed;
+      flags = normalizeMatchFlags(candidateFlags);
+      if (parsed.sets && typeof parsed.sets === 'object') {
+        sets = parsed.sets;
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
+        deleted = Boolean(parsed.deleted);
+        deletedFlagPresent = true;
+      }
+    } else if (parsed !== null) {
+      flags = normalizeMatchFlags(parsed);
+    }
+
+    let finalizedSets = {};
+    if (typeof finalizedSetsValue === 'string') {
+      const parsedColumn = safeJsonParse(finalizedSetsValue, null);
+      if (parsedColumn && typeof parsedColumn === 'object') {
+        finalizedSets = parsedColumn;
+      }
+    } else if (finalizedSetsValue && typeof finalizedSetsValue === 'object') {
+      finalizedSets = finalizedSetsValue;
+    }
+
+    if (Object.keys(finalizedSets).length === 0 && parsed && typeof parsed === 'object') {
+      const legacyFinalized = parsed.finalizedSets;
+      if (legacyFinalized && typeof legacyFinalized === 'object') {
+        finalizedSets = legacyFinalized;
+      }
+    }
+
     return {
-      roster,
-      deleted: Boolean(parsedValue.deleted),
-      legacyRoster
+      flags,
+      sets,
+      finalizedSets: normalizeFinalizedSets(finalizedSets),
+      deleted,
+      deletedFlagPresent
     };
   }
-  return { roster: [], deleted: false };
-}
 
-function serializeMatchPlayers(match) {
-  const roster = normalizeRosterArray(match?.players);
-  return { roster };
-}
-
-function parseMatchMetadata(typesValue, finalizedSetsValue) {
-  let parsed = null;
-  if (typeof typesValue === 'string') {
-    parsed = safeJsonParse(typesValue, null);
-  } else if (typesValue && typeof typesValue === 'object') {
-    parsed = typesValue;
+  function serializeMatchMetadata(match) {
+    const flags = normalizeMatchFlags(match?.types || {});
+    return { ...flags };
   }
 
-  let flags = normalizeMatchFlags();
-  let sets = {};
-  let deleted = false;
-  let deletedFlagPresent = false;
-
-  if (parsed && typeof parsed === 'object') {
-    const candidateFlags = parsed.flags && typeof parsed.flags === 'object' ? parsed.flags : parsed;
-    flags = normalizeMatchFlags(candidateFlags);
-    if (parsed.sets && typeof parsed.sets === 'object') {
-      sets = parsed.sets;
-    }
-    if (Object.prototype.hasOwnProperty.call(parsed, 'deleted')) {
-      deleted = Boolean(parsed.deleted);
-      deletedFlagPresent = true;
-    }
-  } else if (parsed !== null) {
-    flags = normalizeMatchFlags(parsed);
+  function normalizeResultValue(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
   }
 
-  let finalizedSets = {};
-  if (typeof finalizedSetsValue === 'string') {
-    const parsedColumn = safeJsonParse(finalizedSetsValue, null);
-    if (parsedColumn && typeof parsedColumn === 'object') {
-      finalizedSets = parsedColumn;
-    }
-  } else if (finalizedSetsValue && typeof finalizedSetsValue === 'object') {
-    finalizedSets = finalizedSetsValue;
+  function prepareMatchForStorage(match) {
+    const metadata = serializeMatchMetadata(match);
+    const deleted = Boolean(match?.deleted);
+    const playersPayload = serializeMatchPlayers(match);
+    const finalizedSetsPayload = normalizeFinalizedSets(match?.finalizedSets);
+    const body = {
+      date: match?.date || null,
+      location: match?.location || null,
+      types: JSON.stringify(metadata),
+      opponent: match?.opponent || null,
+      jersey_color_home: match?.jerseyColorHome || null,
+      jersey_color_opp: match?.jerseyColorOpp || null,
+      result_home: normalizeResultValue(match?.resultHome),
+      result_opp: normalizeResultValue(match?.resultOpp),
+      first_server: match?.firstServer || null,
+      players: JSON.stringify(playersPayload),
+      finalized_sets: JSON.stringify(finalizedSetsPayload || {}),
+      deleted
+    };
+    return { body, metadata, playersPayload };
   }
 
-  if (Object.keys(finalizedSets).length === 0 && parsed && typeof parsed === 'object') {
-    const legacyFinalized = parsed.finalizedSets;
-    if (legacyFinalized && typeof legacyFinalized === 'object') {
-      finalizedSets = legacyFinalized;
+  function parseMatchRow(row) {
+    const id = Number(row.id);
+    const metadata = parseMatchMetadata(row.types, row.finalized_sets);
+    const playersPayload = parseMatchPlayers(row.players);
+    const hasMetadataDeleted = Boolean(metadata.deletedFlagPresent);
+    const metadataDeleted = Boolean(metadata.deleted);
+    const legacyDeleted = Boolean(playersPayload.deleted);
+    const columnHasDeleted = Object.prototype.hasOwnProperty.call(row, 'deleted');
+    let deleted = null;
+    if (columnHasDeleted) {
+      const value = row.deleted;
+      if (typeof value === 'string') {
+        deleted = value === '1' || value.toLowerCase() === 'true';
+      } else if (typeof value === 'number') {
+        deleted = value !== 0;
+      } else if (typeof value === 'boolean') {
+        deleted = value;
+      } else if (value == null) {
+        deleted = false;
+      }
     }
+    if (deleted === null) {
+      deleted = hasMetadataDeleted ? metadataDeleted : legacyDeleted;
+    }
+    return {
+      id: Number.isNaN(id) ? row.id : id,
+      date: row.date ?? '',
+      location: row.location ?? '',
+      types: metadata.flags,
+      opponent: row.opponent ?? '',
+      jerseyColorHome: row.jersey_color_home ?? '',
+      jerseyColorOpp: row.jersey_color_opp ?? '',
+      resultHome: row.result_home != null ? Number(row.result_home) : null,
+      resultOpp: row.result_opp != null ? Number(row.result_opp) : null,
+      firstServer: row.first_server ?? '',
+      players: playersPayload.roster,
+      legacyPlayers: playersPayload.legacyRoster || null,
+      sets: normalizeMatchSets(metadata.sets),
+      finalizedSets: metadata.finalizedSets,
+      _deleted: Boolean(deleted)
+    };
   }
 
-  return {
-    flags,
-    sets,
-    finalizedSets: normalizeFinalizedSets(finalizedSets),
-    deleted,
-    deletedFlagPresent
-  };
-}
-
-function serializeMatchMetadata(match) {
-  const flags = normalizeMatchFlags(match?.types || {});
-  return { ...flags };
-}
-
-function normalizeResultValue(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function prepareMatchForStorage(match) {
-  const metadata = serializeMatchMetadata(match);
-  const deleted = Boolean(match?.deleted);
-  const playersPayload = serializeMatchPlayers(match);
-  const finalizedSetsPayload = normalizeFinalizedSets(match?.finalizedSets);
-  const body = {
-    date: match?.date || null,
-    location: match?.location || null,
-    types: JSON.stringify(metadata),
-    opponent: match?.opponent || null,
-    jersey_color_home: match?.jerseyColorHome || null,
-    jersey_color_opp: match?.jerseyColorOpp || null,
-    result_home: normalizeResultValue(match?.resultHome),
-    result_opp: normalizeResultValue(match?.resultOpp),
-    first_server: match?.firstServer || null,
-    players: JSON.stringify(playersPayload),
-    finalized_sets: JSON.stringify(finalizedSetsPayload || {}),
-    deleted
-  };
-  return { body, metadata, playersPayload };
-}
-
-function parseMatchRow(row) {
-  const id = Number(row.id);
-  const metadata = parseMatchMetadata(row.types, row.finalized_sets);
-  const playersPayload = parseMatchPlayers(row.players);
-  const hasMetadataDeleted = Boolean(metadata.deletedFlagPresent);
-  const metadataDeleted = Boolean(metadata.deleted);
-  const legacyDeleted = Boolean(playersPayload.deleted);
-  const columnHasDeleted = Object.prototype.hasOwnProperty.call(row, 'deleted');
-  let deleted = null;
-  if (columnHasDeleted) {
-    const value = row.deleted;
-    if (typeof value === 'string') {
-      deleted = value === '1' || value.toLowerCase() === 'true';
-    } else if (typeof value === 'number') {
-      deleted = value !== 0;
-    } else if (typeof value === 'boolean') {
-      deleted = value;
-    } else if (value == null) {
-      deleted = false;
-    }
-  }
-  if (deleted === null) {
-    deleted = hasMetadataDeleted ? metadataDeleted : legacyDeleted;
-  }
-  return {
-    id: Number.isNaN(id) ? row.id : id,
-    date: row.date ?? '',
-    location: row.location ?? '',
-    types: metadata.flags,
-    opponent: row.opponent ?? '',
-    jerseyColorHome: row.jersey_color_home ?? '',
-    jerseyColorOpp: row.jersey_color_opp ?? '',
-    resultHome: row.result_home != null ? Number(row.result_home) : null,
-    resultOpp: row.result_opp != null ? Number(row.result_opp) : null,
-    firstServer: row.first_server ?? '',
-    players: playersPayload.roster,
-    legacyPlayers: playersPayload.legacyRoster || null,
-    sets: normalizeMatchSets(metadata.sets),
-    finalizedSets: metadata.finalizedSets,
-    _deleted: Boolean(deleted)
-  };
-}
-
-function stripInternalMatch(match) {
-  if (!match) return null;
-  const { _deleted, ...rest } = match;
-  return rest;
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    __test__: {
-      parseMatchPlayers,
-      serializeMatchPlayers,
-      parseMatchMetadata,
-      serializeMatchMetadata,
-      parseMatchRow,
-      prepareMatchForStorage
-    }
-  };
-}
-
-const wsClient = (() => {
-  async function send(resource, action, data = {}) {
-    if (!wsTransport || typeof wsTransport.request !== 'function') {
-      throw new Error('WebSocket transport is not available');
-    }
-    return wsTransport.request(resource, action, data);
+  function stripInternalMatch(match) {
+    if (!match) return null;
+    const { _deleted, ...rest } = match;
+    return rest;
   }
 
   async function getRawMatch(id) {
     if (id === undefined || id === null) return null;
-    return await send('match', 'get', { id });
+    return await request(`/api/match/get/${id}`);
   }
 
   async function getRawMatches() {
-    const data = await send('match', 'get', {});
+    const data = await request('/api/match');
     return Array.isArray(data) ? data : [];
   }
 
@@ -529,24 +366,46 @@ const wsClient = (() => {
 
   async function updateMatchInternal(id, match) {
     const { body } = prepareMatchForStorage(match);
-    await send('match', 'set-date-time', { matchId: id, date: body.date });
-    await send('match', 'set-location', { matchId: id, location: body.location });
-    await send('match', 'set-type', { matchId: id, types: body.types });
-    await send('match', 'set-opp-name', { matchId: id, opponent: body.opponent });
-    await send('match', 'set-result', { matchId: id, resultHome: body.result_home, resultOpp: body.result_opp });
-    await send('match', 'set-players', { matchId: id, players: body.players });
-    await send('match', 'set-home-color', { matchId: id, jerseyColorHome: body.jersey_color_home });
-    await send('match', 'set-opp-color', { matchId: id, jerseyColorOpp: body.jersey_color_opp });
-    await send('match', 'set-first-server', { matchId: id, firstServer: body.first_server });
-    await send('match', 'set-deleted', { matchId: id, deleted: body.deleted });
+    await request('/api/match/set-date-time', { method: 'POST', body: { matchId: id, date: body.date } });
+    await request('/api/match/set-location', { method: 'POST', body: { matchId: id, location: body.location } });
+    await request('/api/match/set-type', { method: 'POST', body: { matchId: id, types: body.types } });
+    await request('/api/match/set-opp-name', { method: 'POST', body: { matchId: id, opponent: body.opponent } });
+    await request('/api/match/set-result', { method: 'POST', body: { matchId: id, resultHome: body.result_home, resultOpp: body.result_opp } });
+    await request('/api/match/set-players', { method: 'POST', body: { matchId: id, players: body.players } });
+    await request('/api/match/set-home-color', { method: 'POST', body: { matchId: id, jerseyColorHome: body.jersey_color_home } });
+    await request('/api/match/set-opp-color', { method: 'POST', body: { matchId: id, jerseyColorOpp: body.jersey_color_opp } });
+    await request('/api/match/set-first-server', { method: 'POST', body: { matchId: id, firstServer: body.first_server } });
+    await request('/api/match/set-deleted', { method: 'POST', body: { matchId: id, deleted: body.deleted } });
     return { id };
   }
 
-  return {
-    request: send,
+  function findMatchById(matches, id) {
+    const numericId = Number(id);
+    return matches.find(match => {
+      const matchId = Number(match.id);
+      if (!Number.isNaN(numericId) && !Number.isNaN(matchId)) {
+        return matchId === numericId;
+      }
+      return match.id === id;
+    });
+  }
 
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      __test__: {
+        parseMatchPlayers,
+        serializeMatchPlayers,
+        parseMatchMetadata,
+        serializeMatchMetadata,
+        parseMatchRow,
+        prepareMatchForStorage
+      }
+    };
+  }
+
+  return {
     async getPlayers() {
-      const rows = await send('player', 'get', {});
+      const rows = await request('/api/player');
       const normalized = Array.isArray(rows) ? rows.map(normalizePlayerRecord).filter(Boolean) : [];
       return normalized;
     },
@@ -557,18 +416,18 @@ const wsClient = (() => {
         last_name: String(player.lastName ?? '').trim(),
         initial: serializePlayerInitial(player.initial ?? '')
       };
-      return await send('player', 'create', payload);
+      return await request('/api/player/create', { method: 'POST', body: payload });
     },
 
     async updatePlayer(id, player) {
-      await send('player', 'set-number', { playerId: id, number: String(player.number ?? '').trim() });
-      await send('player', 'set-lname', { playerId: id, lastName: String(player.lastName ?? '').trim() });
-      await send('player', 'set-fname', { playerId: id, initial: serializePlayerInitial(player.initial ?? '') });
+      await request('/api/player/set-number', { method: 'POST', body: { playerId: id, number: String(player.number ?? '').trim() } });
+      await request('/api/player/set-lname', { method: 'POST', body: { playerId: id, lastName: String(player.lastName ?? '').trim() } });
+      await request('/api/player/set-fname', { method: 'POST', body: { playerId: id, initial: serializePlayerInitial(player.initial ?? '') } });
       return { id };
     },
 
     async deletePlayer(id) {
-      await send('player', 'delete', { id });
+      await request(`/api/player/delete/${id}`, { method: 'DELETE' });
       return { id };
     },
 
@@ -601,7 +460,7 @@ const wsClient = (() => {
 
     async createMatch(match) {
       const { body } = prepareMatchForStorage(match);
-      return await send('match', 'create', body);
+      return await request('/api/match/create', { method: 'POST', body });
     },
 
     async updateMatch(id, match) {
@@ -614,39 +473,39 @@ const wsClient = (() => {
 
     async getMatchSets(matchId) {
       if (matchId === undefined || matchId === null) return [];
-      const response = await send('set', 'get', { matchId });
+      const response = await request(`/api/set?matchId=${matchId}`);
       return Array.isArray(response) ? response : [];
     },
 
     async createSet(payload) {
-      return await send('set', 'create', payload);
+      return await request('/api/set/create', { method: 'POST', body: payload });
     },
 
     async updateSetScore(setId, team, score) {
       if (team === 'home') {
-        return await send('set', 'set-home-score', { setId, homeScore: score });
+        return await request('/api/set/set-home-score', { method: 'POST', body: { setId, homeScore: score } });
       }
-      return await send('set', 'set-opp-score', { setId, oppScore: score });
+      return await request('/api/set/set-opp-score', { method: 'POST', body: { setId, oppScore: score } });
     },
 
     async updateSetTimeout(setId, team, timeoutNumber, value) {
       const payload = { setId, timeoutNumber, value };
       if (team === 'home') {
-        return await send('set', 'set-home-timeout', payload);
+        return await request('/api/set/set-home-timeout', { method: 'POST', body: payload });
       }
-      return await send('set', 'set-opp-timeout', payload);
+      return await request('/api/set/set-opp-timeout', { method: 'POST', body: payload });
     },
 
     async deleteSet(setId) {
-      return await send('set', 'delete', { id: setId });
+      return await request(`/api/set/delete/${setId}`, { method: 'DELETE' });
     },
 
     async updateFinalizedSets(matchId, finalizedSets) {
-      return await send('set', 'set-is-final', { matchId, finalizedSets });
+      return await request('/api/set/set-is-final', { method: 'POST', body: { matchId, finalizedSets } });
     },
 
     async deleteMatch(id) {
-      const match = await getRawMatch(id);
+      const match = getRawMatch(id);
       if (!match) return null;
       return await updateMatchInternal(match.id, { ...stripInternalMatch(match), deleted: true });
     }
@@ -659,67 +518,6 @@ let playerSortMode = 'number';
 const temporaryPlayerNumbers = new Map();
 let pendingTemporaryPlayer = null;
 let playerFormErrorElement = null;
-
-function getCurrentRosterSelections() {
-  const rosterSelections = [];
-  const seenRosterIds = new Set();
-  document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
-    if (!cb.checked) return;
-    const playerId = normalizePlayerId(cb.dataset.playerId ?? cb.value);
-    if (playerId === null || seenRosterIds.has(playerId)) {
-      return;
-    }
-    seenRosterIds.add(playerId);
-    const rosterEntry = { playerId };
-    if (temporaryPlayerNumbers.has(playerId)) {
-      const tempValue = temporaryPlayerNumbers.get(playerId);
-      if (tempValue !== null && tempValue !== undefined) {
-        const tempString = String(tempValue).trim();
-        if (tempString) {
-          rosterEntry.tempNumber = tempString;
-        }
-      }
-    }
-    rosterSelections.push(rosterEntry);
-  });
-  return normalizeRosterArray(rosterSelections);
-}
-
-function serializeRosterSelections() {
-  try {
-    return JSON.stringify(getCurrentRosterSelections());
-  } catch (error) {
-    console.warn('Unable to serialize roster selections', error);
-    return '[]';
-  }
-}
-
-function createRosterUpdatePayload() {
-  return createMatchUpdate('set-players', {
-    matchId: currentMatchId,
-    players: serializeRosterSelections()
-  });
-}
-
-function dispatchRosterUpdate() {
-  sendAtomicUpdateMessage(createRosterUpdatePayload());
-}
-
-function buildTempNumberUpdatePayload(element) {
-  if (!element) return createRosterUpdatePayload();
-  const playerId = normalizePlayerId(element.dataset.playerId);
-  if (playerId === null) {
-    return null;
-  }
-  const rawValue = element.value;
-  const normalized = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
-  if (normalized) {
-    temporaryPlayerNumbers.set(playerId, normalized);
-  } else {
-    temporaryPlayerNumbers.delete(playerId);
-  }
-  return createRosterUpdatePayload();
-}
 
 function normalizePlayerId(value) {
   if (value === null || value === undefined) {
@@ -777,7 +575,11 @@ let finalizedSets = {};
 let isSwapped = false;
 let editingPlayerId = null;
 let loadedMatchPlayers = [];
+let autoSaveTimeout = null;
+let autoSaveStatusTimeout = null;
+let suppressAutoSave = true;
 let currentMatchId = null;
+let hasPendingChanges = false;
 let openJerseySelectInstance = null;
 let scoreGameModalInstance = null;
 let jerseyConflictModalInstance = null;
@@ -834,59 +636,6 @@ const FINALIZE_POPOVER_CONFIG = {
 const SCORE_FINALIZED_BACKGROUND_BLEND = 0.5;
 const SCORE_FINALIZED_TEXT_BLEND = 0.35;
 const SCORE_FINALIZED_GRAY_COLOR = { r: 173, g: 181, b: 189, a: 1 };
-
-function getSetIdentifiers(setNumber) {
-  const record = getMatchSetRecord(setNumber);
-  return {
-    matchId: currentMatchId,
-    setNumber,
-    setId: record ? record.id : null
-  };
-}
-
-function notifySetScoreChange(setNumber) {
-  const { homeInput, oppInput } = getSetScoreInputs(setNumber);
-  if (homeInput) {
-    const homeScore = parseScoreValue(homeInput.value);
-    sendAtomicUpdateMessage(createSetUpdate('set-home-score', {
-      ...getSetIdentifiers(setNumber),
-      homeScore
-    }));
-  }
-  if (oppInput) {
-    const oppScore = parseScoreValue(oppInput.value);
-    sendAtomicUpdateMessage(createSetUpdate('set-opp-score', {
-      ...getSetIdentifiers(setNumber),
-      oppScore
-    }));
-  }
-}
-
-function notifySetTimeoutChange(setNumber, team, index, value) {
-  if (!Number.isInteger(index)) return;
-  const action = team === 'opp' ? 'set-opp-timeout' : 'set-home-timeout';
-  sendAtomicUpdateMessage(createSetUpdate(action, {
-    ...getSetIdentifiers(setNumber),
-    timeoutNumber: index + 1,
-    value: value ? 1 : 0
-  }));
-}
-
-function getFinalizedSetsPayload() {
-  try {
-    return JSON.stringify({ ...finalizedSets });
-  } catch (error) {
-    console.warn('Unable to serialize finalized sets', error);
-    return '{}';
-  }
-}
-
-function notifyFinalizedSetsChange() {
-  sendAtomicUpdateMessage(createSetUpdate('set-is-final', {
-    matchId: currentMatchId,
-    finalizedSets: getFinalizedSetsPayload()
-  }));
-}
 
 function getScoreGameModalDialog() {
   const modalElement = document.getElementById('scoreGameModal');
@@ -1092,7 +841,7 @@ function togglePlayerSortMode() {
 
 async function loadPlayers() {
   try {
-    const records = await wsClient.getPlayers();
+    const records = await apiClient.getPlayers();
     setPlayerRecords(Array.isArray(records) ? records.slice() : []);
   } catch (error) {
     console.error('Failed to load players', error);
@@ -1101,7 +850,7 @@ async function loadPlayers() {
 
 async function seedDemoPlayersIfEmpty() {
   try {
-    const existing = await wsClient.getPlayers();
+    const existing = await apiClient.getPlayers();
     if (Array.isArray(existing) && existing.length > 0) {
       return false;
     }
@@ -1115,7 +864,7 @@ async function seedDemoPlayersIfEmpty() {
       { number: 12, lastName: 'Garcia', initial: 'T' }
     ];
     for (const player of demoPlayers) {
-      await wsClient.createPlayer(player);
+      await apiClient.createPlayer(player);
     }
     return true;
   } catch (error) {
@@ -1124,11 +873,38 @@ async function seedDemoPlayersIfEmpty() {
   }
 }
 
-function showMatchStatusMessage(message) {
-  const statusElement = document.getElementById('matchStatusMessage');
+function setAutoSaveStatus(message, className = 'text-muted', timeout = 2000) {
+  const statusElement = document.getElementById('autoSaveStatus');
   if (!statusElement) return;
-  statusElement.textContent = message || '';
+  statusElement.textContent = message;
+  statusElement.className = message ? className : 'text-muted';
   statusElement.classList.toggle('d-none', !message);
+  if (autoSaveStatusTimeout) clearTimeout(autoSaveStatusTimeout);
+  if (timeout) {
+    autoSaveStatusTimeout = setTimeout(() => {
+      statusElement.textContent = '';
+      statusElement.className = 'text-muted';
+      statusElement.classList.add('d-none');
+      autoSaveStatusTimeout = null;
+    }, timeout);
+  } else {
+    autoSaveStatusTimeout = null;
+  }
+}
+
+function scheduleAutoSave() {
+  if (suppressAutoSave) return;
+  hasPendingChanges = true;
+  if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+  setAutoSaveStatus('Saving…', 'text-warning', null);
+  autoSaveTimeout = setTimeout(async () => {
+    autoSaveTimeout = null;
+    try {
+      await saveMatch({ showAlert: false });
+    } catch (error) {
+      // Errors handled within saveMatch
+    }
+  }, 500);
 }
 
 function maybeRecalculateFinalResult(target) {
@@ -2062,10 +1838,8 @@ function handleTimeoutSelection(team, index, event) {
     }
     scoreGameState.timeouts[team][index] = false;
     updateTimeoutUI(team);
-    if (scoreGameState.setNumber) {
-      notifySetTimeoutChange(scoreGameState.setNumber, team, index, false);
-    }
     persistCurrentSetTimeouts();
+    scheduleAutoSave();
     return;
   }
 
@@ -2077,10 +1851,8 @@ function handleTimeoutSelection(team, index, event) {
   scoreGameState.activeTimeout[team] = index;
   startTimeoutTimer(team);
   updateTimeoutUI(team);
-  if (scoreGameState.setNumber) {
-    notifySetTimeoutChange(scoreGameState.setNumber, team, index, true);
-  }
   persistCurrentSetTimeouts();
+  scheduleAutoSave();
 }
 
 function resetTeamTimeouts(team, { skipPersist = false } = {}) {
@@ -2168,6 +1940,7 @@ function applyScoreModalToInputs({ triggerSave = true } = {}) {
   const { finalStateChanged } = updateFinalizeButtonState(setNumber);
   if (triggerSave) {
     calculateResult();
+    scheduleAutoSave();
   } else if (finalStateChanged) {
     calculateResult();
   }
@@ -2184,7 +1957,6 @@ function adjustScoreModal(team, delta) {
   scoreGameState[key] = newValue;
   updateScoreModalDisplay();
   applyScoreModalToInputs();
-  notifySetScoreChange(setNumber);
 }
 
 function openScoreGameModal(setNumber) {
@@ -2228,9 +2000,9 @@ async function savePlayer(number, lastName, initial, id = null) {
   };
   try {
     if (id !== null) {
-      await wsClient.updatePlayer(id, payload);
+      await apiClient.updatePlayer(id, payload);
     } else {
-      await wsClient.createPlayer(payload);
+      await apiClient.createPlayer(payload);
     }
     await loadPlayers();
     return true;
@@ -2265,7 +2037,7 @@ function clearPlayerFormError() {
 
 async function deletePlayer(id) {
   try {
-    await wsClient.deletePlayer(id);
+    await apiClient.deletePlayer(id);
     if (editingPlayerId === id) {
       resetPlayerForm();
     }
@@ -2494,13 +2266,13 @@ function swapScores() {
     document.getElementById(`set${i}Home`).value = oppScore;
     document.getElementById(`set${i}Opp`).value = homeScore;
   }
-  SET_NUMBERS.forEach(notifySetScoreChange);
   updateAllFinalizeButtonStates();
   updateSetHeaders(opponentName, isSwapped); // Update headers after swap
   refreshAllTeamHeaderButtons();
   if (Object.keys(finalizedSets).length > 0) {
     calculateResult();
   }
+  scheduleAutoSave();
   syncScoreGameModalAfterSwap();
 }
 
@@ -2641,14 +2413,6 @@ function updatePlayerList() {
     list.appendChild(div);
   });
   applyJerseyColorToNumbers();
-  registerAtomicUpdate('#playerList input[type="checkbox"]', () => createRosterUpdatePayload(), {
-    events: ['change'],
-    marker: 'rosterCheckboxUpdate'
-  });
-  registerAtomicUpdate('#playerList [data-temp-number-input]', (element) => buildTempNumberUpdatePayload(element), {
-    events: ['input', 'change', 'blur'],
-    marker: 'rosterTempNumberUpdate'
-  });
 }
 
 const JERSEY_SWATCH_SVG_PATH = 'M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z';
@@ -3425,7 +3189,7 @@ function finalizeSet(setNumber) {
   }
   updateFinalizeButtonState(setNumber);
   calculateResult();
-  notifyFinalizedSetsChange();
+  scheduleAutoSave();
 }
 
 function calculateResult() {
@@ -3449,7 +3213,6 @@ function calculateResult() {
   }
   document.getElementById('resultHome').value = Math.min(homeWins, 3);
   document.getElementById('resultOpp').value = Math.min(oppWins, 3);
-  notifyMatchResultChange();
 }
 
 function getSerializedSetTimeouts(setNumber) {
@@ -3507,7 +3270,7 @@ async function applySetEdits(matchId, desiredStates) {
     if (!hasData) {
       if (existing) {
         try {
-          await wsClient.deleteSet(existing.id);
+          await apiClient.deleteSet(existing.id);
         } catch (error) {
           console.error(`Failed to delete set ${setNumber}`, error);
           throw error;
@@ -3519,7 +3282,7 @@ async function applySetEdits(matchId, desiredStates) {
 
     if (!existing) {
       try {
-        const response = await wsClient.createSet({
+        const response = await apiClient.createSet({
           match_id: matchId,
           set_number: setNumber,
           home_score: desired.homeScore,
@@ -3555,10 +3318,10 @@ async function applySetEdits(matchId, desiredStates) {
 
       if (homeScoreChanged) {
         if (!setIsFinalized) {
-          await wsClient.updateSetScore(existing.id, 'home', desired.homeScore);
+          await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
         } else {
           try {
-            await wsClient.updateSetScore(existing.id, 'home', desired.homeScore);
+            await apiClient.updateSetScore(existing.id, 'home', desired.homeScore);
           } catch (scoreError) {
             console.warn(`Unable to update finalized set ${setNumber} home score`, scoreError);
           }
@@ -3568,10 +3331,10 @@ async function applySetEdits(matchId, desiredStates) {
 
       if (oppScoreChanged) {
         if (!setIsFinalized) {
-          await wsClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+          await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
         } else {
           try {
-            await wsClient.updateSetScore(existing.id, 'opp', desired.oppScore);
+            await apiClient.updateSetScore(existing.id, 'opp', desired.oppScore);
           } catch (scoreError) {
             console.warn(`Unable to update finalized set ${setNumber} opp score`, scoreError);
           }
@@ -3582,7 +3345,7 @@ async function applySetEdits(matchId, desiredStates) {
         const value = desired.timeouts.home[index];
         const desiredBool = Boolean(value);
         if (Boolean(existing.timeouts.home[index]) !== desiredBool) {
-          await wsClient.updateSetTimeout(existing.id, 'home', index + 1, desiredBool ? 1 : 0);
+          await apiClient.updateSetTimeout(existing.id, 'home', index + 1, desiredBool ? 1 : 0);
           existing.timeouts.home[index] = desiredBool;
         }
       }
@@ -3590,7 +3353,7 @@ async function applySetEdits(matchId, desiredStates) {
         const value = desired.timeouts.opp[index];
         const desiredBool = Boolean(value);
         if (Boolean(existing.timeouts.opp[index]) !== desiredBool) {
-          await wsClient.updateSetTimeout(existing.id, 'opp', index + 1, desiredBool ? 1 : 0);
+          await apiClient.updateSetTimeout(existing.id, 'opp', index + 1, desiredBool ? 1 : 0);
           existing.timeouts.opp[index] = desiredBool;
         }
       }
@@ -3603,11 +3366,12 @@ async function applySetEdits(matchId, desiredStates) {
 }
 
 async function saveMatch({ showAlert = false } = {}) {
+  if (suppressAutoSave) return null;
   persistCurrentSetTimeouts();
   const form = document.getElementById('matchForm');
   if (form && !form.checkValidity()) {
     form.classList.add('was-validated');
-    showMatchStatusMessage('Please correct the highlighted fields before saving.');
+    setAutoSaveStatus('Unable to save due to validation errors.', 'text-danger', 4000);
     return null;
   }
   const parseResultValue = (elementId) => {
@@ -3616,7 +3380,26 @@ async function saveMatch({ showAlert = false } = {}) {
     const value = parseInt(element.value, 10);
     return Number.isNaN(value) ? null : value;
   };
-  const normalizedRosterSelections = getCurrentRosterSelections();
+  const rosterSelections = [];
+  const seenRosterIds = new Set();
+  document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
+    if (!cb.checked) return;
+    const playerId = normalizePlayerId(cb.dataset.playerId ?? cb.value);
+    if (playerId === null || seenRosterIds.has(playerId)) {
+      return;
+    }
+    seenRosterIds.add(playerId);
+    const rosterEntry = { playerId };
+    const tempValue = temporaryPlayerNumbers.get(playerId);
+    if (tempValue !== null && tempValue !== undefined) {
+      const tempString = String(tempValue).trim();
+      if (tempString) {
+        rosterEntry.tempNumber = tempString;
+      }
+    }
+    rosterSelections.push(rosterEntry);
+  });
+  const normalizedRosterSelections = normalizeRosterArray(rosterSelections);
 
   const match = {
     date: document.getElementById('date').value,
@@ -3664,14 +3447,14 @@ async function saveMatch({ showAlert = false } = {}) {
     finalizedSets: { ...finalizedSets },
     deleted: false
   };
-  const { body } = wsClient.prepareMatchPayload(match);
+  const { body } = apiClient.prepareMatchPayload(match);
   const setStates = collectSetFormState();
   const matchId = currentMatchId;
   loadedMatchPlayers = normalizedRosterSelections.map(entry => ({ ...entry }));
   try {
     const response = matchId !== null
-      ? await wsClient.updateMatch(matchId, match)
-      : await wsClient.createMatch(match);
+      ? await apiClient.updateMatch(matchId, match)
+      : await apiClient.createMatch(match);
     const savedId = response?.id ?? matchId ?? null;
     if (savedId !== null) {
       if (currentMatchId !== savedId) {
@@ -3680,13 +3463,14 @@ async function saveMatch({ showAlert = false } = {}) {
         window.history.replaceState(null, '', newUrl);
       }
       await applySetEdits(savedId, setStates);
-      await wsClient.updateFinalizedSets(savedId, body.finalized_sets);
+      await apiClient.updateFinalizedSets(savedId, body.finalized_sets);
     }
+    hasPendingChanges = false;
     if (showAlert) {
       const url = `${window.location.href.split('?')[0]}${savedId ? `?matchId=${savedId}` : ''}`;
       alert(`Match ${matchId !== null ? 'updated' : 'saved'}! View it at: ${url}`);
     } else {
-      showMatchStatusMessage('Changes submitted. Awaiting confirmation…');
+      setAutoSaveStatus('All changes saved.', 'text-success');
     }
     populateMatchIndexModal();
     return savedId;
@@ -3695,7 +3479,7 @@ async function saveMatch({ showAlert = false } = {}) {
     if (showAlert) {
       alert('Unable to save match. Please try again.');
     } else {
-      showMatchStatusMessage('Saving failed. Please try again.');
+      setAutoSaveStatus('Error saving changes.', 'text-danger', 4000);
     }
     throw error;
   }
@@ -3704,7 +3488,7 @@ async function saveMatch({ showAlert = false } = {}) {
 async function deleteMatch(matchId) {
   if (!confirm('Delete this match?')) return;
   try {
-    await wsClient.deleteMatch(matchId);
+    await apiClient.deleteMatch(matchId);
     const urlParams = new URLSearchParams(window.location.search);
     const currentMatchIdParam = urlParams.get('matchId');
     if (currentMatchIdParam && parseInt(currentMatchIdParam, 10) === matchId) {
@@ -3789,11 +3573,20 @@ function extractRosterFromMatch(match) {
 async function loadMatchFromUrl() {
   const urlParams = new URLSearchParams(window.location.search);
   const matchId = urlParams.get('matchId');
+  suppressAutoSave = true;
   isSwapped = false;
   const existingOpponentInput = document.getElementById('opponent');
   if (existingOpponentInput) {
     const currentOpponent = existingOpponentInput.value.trim() || 'Opponent';
     updateSetHeaders(currentOpponent, isSwapped);
+  }
+  if (autoSaveTimeout) {
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = null;
+  }
+  if (autoSaveStatusTimeout) {
+    clearTimeout(autoSaveStatusTimeout);
+    autoSaveStatusTimeout = null;
   }
   const form = document.getElementById('matchForm');
   if (form) {
@@ -3811,7 +3604,7 @@ async function loadMatchFromUrl() {
   resetMatchSetRecords();
   if (matchId) {
     try {
-      const match = await wsClient.getMatch(matchId);
+      const match = await apiClient.getMatch(matchId);
       if (match) {
         currentMatchId = match.id;
         const roster = extractRosterFromMatch(match);
@@ -3835,7 +3628,7 @@ async function loadMatchFromUrl() {
         const storedFirstServer = match.firstServer || '';
         updateOpponentName();
         setFirstServerSelection(storedFirstServer);
-        const setRows = match.id ? await wsClient.getMatchSets(match.id) : [];
+        const setRows = match.id ? await apiClient.getMatchSets(match.id) : [];
         const setsFromRows = primeMatchSetRecords(setRows);
         const combinedSets = Object.keys(setsFromRows).length > 0 ? setsFromRows : match.sets;
         for (let i = 1; i <= 5; i++) {
@@ -3872,7 +3665,7 @@ async function loadMatchFromUrl() {
       }
     } catch (error) {
       console.error('Failed to load match', error);
-      showMatchStatusMessage('Unable to load match data.');
+      setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
       currentMatchId = null;
       loadedMatchPlayers = [];
       finalizedSets = {};
@@ -3885,7 +3678,8 @@ async function loadMatchFromUrl() {
     resetFinalizeButtons();
   }
   setPlayerRecords(playerRecords);
-  showMatchStatusMessage('');
+  hasPendingChanges = false;
+  suppressAutoSave = false;
 }
 
 async function populateMatchIndexModal() {
@@ -3893,7 +3687,7 @@ async function populateMatchIndexModal() {
   const matchList = document.getElementById('matchList');
   matchList.innerHTML = '';
   try {
-    const matches = await wsClient.listMatches();
+    const matches = await apiClient.listMatches();
     const sortedMatches = Array.isArray(matches)
       ? matches.slice().sort((a, b) => {
           const dateA = a.date ? new Date(a.date) : new Date(0);
@@ -3960,6 +3754,16 @@ function closeMatchIndexModal() {
 }
 
 function startNewMatch() {
+  if (hasPendingChanges && !confirm('Start a new match? Unsaved changes will be lost.')) return;
+  suppressAutoSave = true;
+  if (autoSaveTimeout) {
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = null;
+  }
+  if (autoSaveStatusTimeout) {
+    clearTimeout(autoSaveStatusTimeout);
+    autoSaveStatusTimeout = null;
+  }
   currentMatchId = null;
   loadedMatchPlayers = [];
   finalizedSets = {};
@@ -3980,85 +3784,6 @@ function startNewMatch() {
     if (finalizeButton) finalizeButton.classList.remove('finalized-btn');
   }
   updateAllFinalizeButtonStates();
-
-  registerAtomicUpdate('#date', (element) => createMatchUpdate('set-date-time', {
-    matchId: currentMatchId,
-    date: element.value || null
-  }), { events: ['change', 'blur'], marker: 'matchDateUpdate' });
-
-  registerAtomicUpdate('#location', (element) => {
-    const trimmed = element.value.trim();
-    return createMatchUpdate('set-location', {
-      matchId: currentMatchId,
-      location: trimmed || null
-    });
-  }, { events: ['input', 'change', 'blur'], marker: 'matchLocationUpdate' });
-
-  registerAtomicUpdate('input[name="gameType"]', () => createMatchUpdate('set-type', {
-    matchId: currentMatchId,
-    types: JSON.stringify(getSelectedMatchTypeFlags())
-  }), { events: ['change'], marker: 'matchTypeUpdate' });
-
-  registerAtomicUpdate('#opponent', (element) => {
-    const trimmed = element.value.trim();
-    return createMatchUpdate('set-opp-name', {
-      matchId: currentMatchId,
-      opponent: trimmed || 'Opponent'
-    });
-  }, {
-    events: ['input', 'change', 'blur'],
-    marker: 'opponentNameUpdate',
-    beforeSend: () => {
-      updateOpponentName();
-    }
-  });
-
-  registerAtomicUpdate('#jerseyColorHome', (element) => createMatchUpdate('set-home-color', {
-    matchId: currentMatchId,
-    jerseyColorHome: element.value
-  }), { events: ['change'], marker: 'jerseyHomeUpdate' });
-
-  registerAtomicUpdate('#jerseyColorOpp', (element) => createMatchUpdate('set-opp-color', {
-    matchId: currentMatchId,
-    jerseyColorOpp: element.value
-  }), { events: ['change'], marker: 'jerseyOppUpdate' });
-
-  registerAtomicUpdate('#resultHome, #resultOpp', () => createMatchUpdate('set-result', {
-    matchId: currentMatchId,
-    ...getMatchResultValues()
-  }), { events: ['change'], marker: 'matchResultUpdate' });
-
-  registerAtomicUpdate('#firstServer', (element) => createMatchUpdate('set-first-server', {
-    matchId: currentMatchId,
-    firstServer: element.value
-  }), { events: ['change'], marker: 'firstServerUpdate' });
-
-  registerAtomicUpdate('#playerList [data-temp-number-input]', (element) => buildTempNumberUpdatePayload(element), {
-    events: ['input', 'change', 'blur'],
-    marker: 'rootTempNumberUpdate'
-  });
-
-  SET_NUMBERS.forEach((setNumber) => {
-    ['Home', 'Opp'].forEach((suffix) => {
-      const selector = `#set${setNumber}${suffix}`;
-      registerAtomicUpdate(selector, () => null, {
-        events: ['input', 'change', 'blur'],
-        marker: `set${setNumber}${suffix}Update`,
-        beforeSend: (event, element) => {
-          if (element) {
-            maybeRecalculateFinalResult(element);
-            const match = element.id && element.id.match(/^set(\d+)(Home|Opp)$/);
-            if (match) {
-              const parsedSet = parseInt(match[1], 10);
-              if (!Number.isNaN(parsedSet)) {
-                notifySetScoreChange(parsedSet);
-              }
-            }
-          }
-        }
-      });
-    });
-  });
 
   document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
     cb.checked = false;
@@ -4085,7 +3810,10 @@ function startNewMatch() {
   refreshJerseySelectDisplays();
   ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
   applyJerseyColorToNumbers();
-  showMatchStatusMessage('Ready for a new match.');
+  setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
+
+  hasPendingChanges = false;
+  suppressAutoSave = false;
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
@@ -4102,6 +3830,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const opponentInput = document.getElementById('opponent');
   opponentInput.addEventListener('input', () => {
     updateOpponentName();
+    scheduleAutoSave();
   });
   playerFormErrorElement = document.getElementById('playerFormError');
   const playerModalElement = document.getElementById('playerModal');
@@ -4153,6 +3882,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       setPlayerSortMode(event.target.value);
     });
     modalSortSelect.value = playerSortMode;
+  }
+  const autoSaveTargets = document.querySelector('.container');
+  if (autoSaveTargets) {
+    autoSaveTargets.addEventListener('input', (event) => {
+      if (event.target.closest('#playerModal')) return;
+      maybeRecalculateFinalResult(event.target);
+      scheduleAutoSave();
+    });
+    autoSaveTargets.addEventListener('change', (event) => {
+      if (event.target.closest('#playerModal')) return;
+      maybeRecalculateFinalResult(event.target);
+      scheduleAutoSave();
+    });
   }
   const matchIndexModal = document.getElementById('matchIndexModal');
   if (matchIndexModal) {
