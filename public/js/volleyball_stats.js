@@ -575,11 +575,7 @@ let finalizedSets = {};
 let isSwapped = false;
 let editingPlayerId = null;
 let loadedMatchPlayers = [];
-let autoSaveTimeout = null;
-let autoSaveStatusTimeout = null;
-let suppressAutoSave = true;
 let currentMatchId = null;
-let hasPendingChanges = false;
 let openJerseySelectInstance = null;
 let scoreGameModalInstance = null;
 let jerseyConflictModalInstance = null;
@@ -873,38 +869,11 @@ async function seedDemoPlayersIfEmpty() {
   }
 }
 
-function setAutoSaveStatus(message, className = 'text-muted', timeout = 2000) {
-  const statusElement = document.getElementById('autoSaveStatus');
+function showMatchStatusMessage(message) {
+  const statusElement = document.getElementById('matchStatusMessage');
   if (!statusElement) return;
-  statusElement.textContent = message;
-  statusElement.className = message ? className : 'text-muted';
+  statusElement.textContent = message || '';
   statusElement.classList.toggle('d-none', !message);
-  if (autoSaveStatusTimeout) clearTimeout(autoSaveStatusTimeout);
-  if (timeout) {
-    autoSaveStatusTimeout = setTimeout(() => {
-      statusElement.textContent = '';
-      statusElement.className = 'text-muted';
-      statusElement.classList.add('d-none');
-      autoSaveStatusTimeout = null;
-    }, timeout);
-  } else {
-    autoSaveStatusTimeout = null;
-  }
-}
-
-function scheduleAutoSave() {
-  if (suppressAutoSave) return;
-  hasPendingChanges = true;
-  if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
-  setAutoSaveStatus('Saving…', 'text-warning', null);
-  autoSaveTimeout = setTimeout(async () => {
-    autoSaveTimeout = null;
-    try {
-      await saveMatch({ showAlert: false });
-    } catch (error) {
-      // Errors handled within saveMatch
-    }
-  }, 500);
 }
 
 function maybeRecalculateFinalResult(target) {
@@ -1839,7 +1808,6 @@ function handleTimeoutSelection(team, index, event) {
     scoreGameState.timeouts[team][index] = false;
     updateTimeoutUI(team);
     persistCurrentSetTimeouts();
-    scheduleAutoSave();
     return;
   }
 
@@ -1852,7 +1820,6 @@ function handleTimeoutSelection(team, index, event) {
   startTimeoutTimer(team);
   updateTimeoutUI(team);
   persistCurrentSetTimeouts();
-  scheduleAutoSave();
 }
 
 function resetTeamTimeouts(team, { skipPersist = false } = {}) {
@@ -1940,7 +1907,6 @@ function applyScoreModalToInputs({ triggerSave = true } = {}) {
   const { finalStateChanged } = updateFinalizeButtonState(setNumber);
   if (triggerSave) {
     calculateResult();
-    scheduleAutoSave();
   } else if (finalStateChanged) {
     calculateResult();
   }
@@ -2272,7 +2238,6 @@ function swapScores() {
   if (Object.keys(finalizedSets).length > 0) {
     calculateResult();
   }
-  scheduleAutoSave();
   syncScoreGameModalAfterSwap();
 }
 
@@ -3189,7 +3154,6 @@ function finalizeSet(setNumber) {
   }
   updateFinalizeButtonState(setNumber);
   calculateResult();
-  scheduleAutoSave();
 }
 
 function calculateResult() {
@@ -3366,12 +3330,11 @@ async function applySetEdits(matchId, desiredStates) {
 }
 
 async function saveMatch({ showAlert = false } = {}) {
-  if (suppressAutoSave) return null;
   persistCurrentSetTimeouts();
   const form = document.getElementById('matchForm');
   if (form && !form.checkValidity()) {
     form.classList.add('was-validated');
-    setAutoSaveStatus('Unable to save due to validation errors.', 'text-danger', 4000);
+    showMatchStatusMessage('Please correct the highlighted fields before saving.');
     return null;
   }
   const parseResultValue = (elementId) => {
@@ -3465,12 +3428,11 @@ async function saveMatch({ showAlert = false } = {}) {
       await applySetEdits(savedId, setStates);
       await apiClient.updateFinalizedSets(savedId, body.finalized_sets);
     }
-    hasPendingChanges = false;
     if (showAlert) {
       const url = `${window.location.href.split('?')[0]}${savedId ? `?matchId=${savedId}` : ''}`;
       alert(`Match ${matchId !== null ? 'updated' : 'saved'}! View it at: ${url}`);
     } else {
-      setAutoSaveStatus('All changes saved.', 'text-success');
+      showMatchStatusMessage('Changes submitted. Awaiting confirmation…');
     }
     populateMatchIndexModal();
     return savedId;
@@ -3479,7 +3441,7 @@ async function saveMatch({ showAlert = false } = {}) {
     if (showAlert) {
       alert('Unable to save match. Please try again.');
     } else {
-      setAutoSaveStatus('Error saving changes.', 'text-danger', 4000);
+      showMatchStatusMessage('Saving failed. Please try again.');
     }
     throw error;
   }
@@ -3573,20 +3535,11 @@ function extractRosterFromMatch(match) {
 async function loadMatchFromUrl() {
   const urlParams = new URLSearchParams(window.location.search);
   const matchId = urlParams.get('matchId');
-  suppressAutoSave = true;
   isSwapped = false;
   const existingOpponentInput = document.getElementById('opponent');
   if (existingOpponentInput) {
     const currentOpponent = existingOpponentInput.value.trim() || 'Opponent';
     updateSetHeaders(currentOpponent, isSwapped);
-  }
-  if (autoSaveTimeout) {
-    clearTimeout(autoSaveTimeout);
-    autoSaveTimeout = null;
-  }
-  if (autoSaveStatusTimeout) {
-    clearTimeout(autoSaveStatusTimeout);
-    autoSaveStatusTimeout = null;
   }
   const form = document.getElementById('matchForm');
   if (form) {
@@ -3665,7 +3618,7 @@ async function loadMatchFromUrl() {
       }
     } catch (error) {
       console.error('Failed to load match', error);
-      setAutoSaveStatus('Unable to load match data.', 'text-danger', 4000);
+      showMatchStatusMessage('Unable to load match data.');
       currentMatchId = null;
       loadedMatchPlayers = [];
       finalizedSets = {};
@@ -3678,8 +3631,7 @@ async function loadMatchFromUrl() {
     resetFinalizeButtons();
   }
   setPlayerRecords(playerRecords);
-  hasPendingChanges = false;
-  suppressAutoSave = false;
+  showMatchStatusMessage('');
 }
 
 async function populateMatchIndexModal() {
@@ -3754,16 +3706,6 @@ function closeMatchIndexModal() {
 }
 
 function startNewMatch() {
-  if (hasPendingChanges && !confirm('Start a new match? Unsaved changes will be lost.')) return;
-  suppressAutoSave = true;
-  if (autoSaveTimeout) {
-    clearTimeout(autoSaveTimeout);
-    autoSaveTimeout = null;
-  }
-  if (autoSaveStatusTimeout) {
-    clearTimeout(autoSaveStatusTimeout);
-    autoSaveStatusTimeout = null;
-  }
   currentMatchId = null;
   loadedMatchPlayers = [];
   finalizedSets = {};
@@ -3810,10 +3752,7 @@ function startNewMatch() {
   refreshJerseySelectDisplays();
   ensureDistinctJerseyColors(document.getElementById('jerseyColorHome'), { showModal: false });
   applyJerseyColorToNumbers();
-  setAutoSaveStatus('Ready for a new match.', 'text-info', 3000);
-
-  hasPendingChanges = false;
-  suppressAutoSave = false;
+  showMatchStatusMessage('Ready for a new match.');
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
@@ -3830,7 +3769,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   const opponentInput = document.getElementById('opponent');
   opponentInput.addEventListener('input', () => {
     updateOpponentName();
-    scheduleAutoSave();
   });
   playerFormErrorElement = document.getElementById('playerFormError');
   const playerModalElement = document.getElementById('playerModal');
@@ -3883,17 +3821,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     modalSortSelect.value = playerSortMode;
   }
-  const autoSaveTargets = document.querySelector('.container');
-  if (autoSaveTargets) {
-    autoSaveTargets.addEventListener('input', (event) => {
+  const matchFormContainer = document.querySelector('.container');
+  if (matchFormContainer) {
+    matchFormContainer.addEventListener('input', (event) => {
       if (event.target.closest('#playerModal')) return;
       maybeRecalculateFinalResult(event.target);
-      scheduleAutoSave();
     });
-    autoSaveTargets.addEventListener('change', (event) => {
+    matchFormContainer.addEventListener('change', (event) => {
       if (event.target.closest('#playerModal')) return;
       maybeRecalculateFinalResult(event.target);
-      scheduleAutoSave();
     });
   }
   const matchIndexModal = document.getElementById('matchIndexModal');
