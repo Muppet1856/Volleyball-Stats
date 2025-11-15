@@ -46,6 +46,138 @@ function updateHomeTeamUI() {
   }
 }
 
+const atomicUpdateRegistry = new WeakMap();
+let atomicUpdateMarkerId = 0;
+
+function resolveAtomicUpdateClient() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const candidates = [
+    window.matchUpdateClient,
+    window.matchUpdatesClient,
+    window.liveMatchClient,
+    window.matchSocketClient,
+    window.matchUpdatesSocket
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (typeof candidate.sendAtomicUpdate === 'function') {
+      return { type: 'atomic', client: candidate };
+    }
+    if (typeof candidate.send === 'function') {
+      return { type: 'send', client: candidate };
+    }
+    if (typeof candidate.dispatch === 'function') {
+      return { type: 'dispatch', client: candidate };
+    }
+  }
+  if (typeof window.sendMatchUpdate === 'function') {
+    return { type: 'call', client: { send: window.sendMatchUpdate } };
+  }
+  return null;
+}
+
+function sendAtomicUpdateMessage(payload) {
+  if (!payload) return;
+  try {
+    const resolved = resolveAtomicUpdateClient();
+    if (!resolved) {
+      return;
+    }
+    if (resolved.type === 'atomic') {
+      resolved.client.sendAtomicUpdate(payload);
+      return;
+    }
+    if (resolved.type === 'dispatch') {
+      resolved.client.dispatch(payload);
+      return;
+    }
+    const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    if (resolved.type === 'send') {
+      resolved.client.send(serialized);
+      return;
+    }
+    if (resolved.type === 'call' && typeof resolved.client.send === 'function') {
+      resolved.client.send(payload);
+    }
+  } catch (error) {
+    console.warn('Failed to dispatch atomic update', error, payload);
+  }
+}
+
+function createMatchUpdate(action, data) {
+  return { match: { [action]: data } };
+}
+
+function createSetUpdate(action, data) {
+  return { set: { [action]: data } };
+}
+
+function registerAtomicUpdate(selector, buildPayload, options = {}) {
+  const { events = ['change'], beforeSend, marker } = options;
+  const markerKey = marker || `atomic${atomicUpdateMarkerId += 1}`;
+  const elements = document.querySelectorAll(selector);
+  elements.forEach((element) => {
+    if (!element) return;
+    let markerMap = atomicUpdateRegistry.get(element);
+    if (!markerMap) {
+      markerMap = new Map();
+      atomicUpdateRegistry.set(element, markerMap);
+    }
+    if (markerMap.has(markerKey)) {
+      return;
+    }
+    const handler = (event) => {
+      const targetElement = event.currentTarget || element;
+      if (typeof beforeSend === 'function') {
+        beforeSend(event, targetElement);
+      }
+      const payload = typeof buildPayload === 'function'
+        ? buildPayload(targetElement, event)
+        : null;
+      if (payload) {
+        sendAtomicUpdateMessage(payload);
+      }
+    };
+    markerMap.set(markerKey, handler);
+    events.forEach((eventName) => {
+      element.addEventListener(eventName, handler);
+    });
+  });
+}
+
+function getSelectedMatchTypeFlags() {
+  return {
+    tournament: Boolean(document.getElementById('tournament')?.checked),
+    league: Boolean(document.getElementById('league')?.checked),
+    postSeason: Boolean(document.getElementById('postSeason')?.checked),
+    nonLeague: Boolean(document.getElementById('nonLeague')?.checked)
+  };
+}
+
+function getMatchResultValues() {
+  const parseResult = (elementId) => {
+    const element = document.getElementById(elementId);
+    if (!element) return null;
+    const parsed = Number.parseInt(element.value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+  return {
+    resultHome: parseResult('resultHome'),
+    resultOpp: parseResult('resultOpp')
+  };
+}
+
+function notifyMatchResultChange() {
+  const { resultHome, resultOpp } = getMatchResultValues();
+  sendAtomicUpdateMessage(createMatchUpdate('set-result', {
+    matchId: currentMatchId,
+    resultHome,
+    resultOpp
+  }));
+}
+
 const apiClient = (() => {
   const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/json' };
 
@@ -519,6 +651,67 @@ const temporaryPlayerNumbers = new Map();
 let pendingTemporaryPlayer = null;
 let playerFormErrorElement = null;
 
+function getCurrentRosterSelections() {
+  const rosterSelections = [];
+  const seenRosterIds = new Set();
+  document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
+    if (!cb.checked) return;
+    const playerId = normalizePlayerId(cb.dataset.playerId ?? cb.value);
+    if (playerId === null || seenRosterIds.has(playerId)) {
+      return;
+    }
+    seenRosterIds.add(playerId);
+    const rosterEntry = { playerId };
+    if (temporaryPlayerNumbers.has(playerId)) {
+      const tempValue = temporaryPlayerNumbers.get(playerId);
+      if (tempValue !== null && tempValue !== undefined) {
+        const tempString = String(tempValue).trim();
+        if (tempString) {
+          rosterEntry.tempNumber = tempString;
+        }
+      }
+    }
+    rosterSelections.push(rosterEntry);
+  });
+  return normalizeRosterArray(rosterSelections);
+}
+
+function serializeRosterSelections() {
+  try {
+    return JSON.stringify(getCurrentRosterSelections());
+  } catch (error) {
+    console.warn('Unable to serialize roster selections', error);
+    return '[]';
+  }
+}
+
+function createRosterUpdatePayload() {
+  return createMatchUpdate('set-players', {
+    matchId: currentMatchId,
+    players: serializeRosterSelections()
+  });
+}
+
+function dispatchRosterUpdate() {
+  sendAtomicUpdateMessage(createRosterUpdatePayload());
+}
+
+function buildTempNumberUpdatePayload(element) {
+  if (!element) return createRosterUpdatePayload();
+  const playerId = normalizePlayerId(element.dataset.playerId);
+  if (playerId === null) {
+    return null;
+  }
+  const rawValue = element.value;
+  const normalized = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+  if (normalized) {
+    temporaryPlayerNumbers.set(playerId, normalized);
+  } else {
+    temporaryPlayerNumbers.delete(playerId);
+  }
+  return createRosterUpdatePayload();
+}
+
 function normalizePlayerId(value) {
   if (value === null || value === undefined) {
     return null;
@@ -632,6 +825,59 @@ const FINALIZE_POPOVER_CONFIG = {
 const SCORE_FINALIZED_BACKGROUND_BLEND = 0.5;
 const SCORE_FINALIZED_TEXT_BLEND = 0.35;
 const SCORE_FINALIZED_GRAY_COLOR = { r: 173, g: 181, b: 189, a: 1 };
+
+function getSetIdentifiers(setNumber) {
+  const record = getMatchSetRecord(setNumber);
+  return {
+    matchId: currentMatchId,
+    setNumber,
+    setId: record ? record.id : null
+  };
+}
+
+function notifySetScoreChange(setNumber) {
+  const { homeInput, oppInput } = getSetScoreInputs(setNumber);
+  if (homeInput) {
+    const homeScore = parseScoreValue(homeInput.value);
+    sendAtomicUpdateMessage(createSetUpdate('set-home-score', {
+      ...getSetIdentifiers(setNumber),
+      homeScore
+    }));
+  }
+  if (oppInput) {
+    const oppScore = parseScoreValue(oppInput.value);
+    sendAtomicUpdateMessage(createSetUpdate('set-opp-score', {
+      ...getSetIdentifiers(setNumber),
+      oppScore
+    }));
+  }
+}
+
+function notifySetTimeoutChange(setNumber, team, index, value) {
+  if (!Number.isInteger(index)) return;
+  const action = team === 'opp' ? 'set-opp-timeout' : 'set-home-timeout';
+  sendAtomicUpdateMessage(createSetUpdate(action, {
+    ...getSetIdentifiers(setNumber),
+    timeoutNumber: index + 1,
+    value: value ? 1 : 0
+  }));
+}
+
+function getFinalizedSetsPayload() {
+  try {
+    return JSON.stringify({ ...finalizedSets });
+  } catch (error) {
+    console.warn('Unable to serialize finalized sets', error);
+    return '{}';
+  }
+}
+
+function notifyFinalizedSetsChange() {
+  sendAtomicUpdateMessage(createSetUpdate('set-is-final', {
+    matchId: currentMatchId,
+    finalizedSets: getFinalizedSetsPayload()
+  }));
+}
 
 function getScoreGameModalDialog() {
   const modalElement = document.getElementById('scoreGameModal');
@@ -1807,6 +2053,9 @@ function handleTimeoutSelection(team, index, event) {
     }
     scoreGameState.timeouts[team][index] = false;
     updateTimeoutUI(team);
+    if (scoreGameState.setNumber) {
+      notifySetTimeoutChange(scoreGameState.setNumber, team, index, false);
+    }
     persistCurrentSetTimeouts();
     return;
   }
@@ -1819,6 +2068,9 @@ function handleTimeoutSelection(team, index, event) {
   scoreGameState.activeTimeout[team] = index;
   startTimeoutTimer(team);
   updateTimeoutUI(team);
+  if (scoreGameState.setNumber) {
+    notifySetTimeoutChange(scoreGameState.setNumber, team, index, true);
+  }
   persistCurrentSetTimeouts();
 }
 
@@ -1923,6 +2175,7 @@ function adjustScoreModal(team, delta) {
   scoreGameState[key] = newValue;
   updateScoreModalDisplay();
   applyScoreModalToInputs();
+  notifySetScoreChange(setNumber);
 }
 
 function openScoreGameModal(setNumber) {
@@ -2232,6 +2485,7 @@ function swapScores() {
     document.getElementById(`set${i}Home`).value = oppScore;
     document.getElementById(`set${i}Opp`).value = homeScore;
   }
+  SET_NUMBERS.forEach(notifySetScoreChange);
   updateAllFinalizeButtonStates();
   updateSetHeaders(opponentName, isSwapped); // Update headers after swap
   refreshAllTeamHeaderButtons();
@@ -2378,6 +2632,14 @@ function updatePlayerList() {
     list.appendChild(div);
   });
   applyJerseyColorToNumbers();
+  registerAtomicUpdate('#playerList input[type="checkbox"]', () => createRosterUpdatePayload(), {
+    events: ['change'],
+    marker: 'rosterCheckboxUpdate'
+  });
+  registerAtomicUpdate('#playerList [data-temp-number-input]', (element) => buildTempNumberUpdatePayload(element), {
+    events: ['input', 'change', 'blur'],
+    marker: 'rosterTempNumberUpdate'
+  });
 }
 
 const JERSEY_SWATCH_SVG_PATH = 'M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z';
@@ -3154,6 +3416,7 @@ function finalizeSet(setNumber) {
   }
   updateFinalizeButtonState(setNumber);
   calculateResult();
+  notifyFinalizedSetsChange();
 }
 
 function calculateResult() {
@@ -3177,6 +3440,7 @@ function calculateResult() {
   }
   document.getElementById('resultHome').value = Math.min(homeWins, 3);
   document.getElementById('resultOpp').value = Math.min(oppWins, 3);
+  notifyMatchResultChange();
 }
 
 function getSerializedSetTimeouts(setNumber) {
@@ -3343,26 +3607,7 @@ async function saveMatch({ showAlert = false } = {}) {
     const value = parseInt(element.value, 10);
     return Number.isNaN(value) ? null : value;
   };
-  const rosterSelections = [];
-  const seenRosterIds = new Set();
-  document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
-    if (!cb.checked) return;
-    const playerId = normalizePlayerId(cb.dataset.playerId ?? cb.value);
-    if (playerId === null || seenRosterIds.has(playerId)) {
-      return;
-    }
-    seenRosterIds.add(playerId);
-    const rosterEntry = { playerId };
-    const tempValue = temporaryPlayerNumbers.get(playerId);
-    if (tempValue !== null && tempValue !== undefined) {
-      const tempString = String(tempValue).trim();
-      if (tempString) {
-        rosterEntry.tempNumber = tempString;
-      }
-    }
-    rosterSelections.push(rosterEntry);
-  });
-  const normalizedRosterSelections = normalizeRosterArray(rosterSelections);
+  const normalizedRosterSelections = getCurrentRosterSelections();
 
   const match = {
     date: document.getElementById('date').value,
@@ -3727,6 +3972,85 @@ function startNewMatch() {
   }
   updateAllFinalizeButtonStates();
 
+  registerAtomicUpdate('#date', (element) => createMatchUpdate('set-date-time', {
+    matchId: currentMatchId,
+    date: element.value || null
+  }), { events: ['change', 'blur'], marker: 'matchDateUpdate' });
+
+  registerAtomicUpdate('#location', (element) => {
+    const trimmed = element.value.trim();
+    return createMatchUpdate('set-location', {
+      matchId: currentMatchId,
+      location: trimmed || null
+    });
+  }, { events: ['input', 'change', 'blur'], marker: 'matchLocationUpdate' });
+
+  registerAtomicUpdate('input[name="gameType"]', () => createMatchUpdate('set-type', {
+    matchId: currentMatchId,
+    types: JSON.stringify(getSelectedMatchTypeFlags())
+  }), { events: ['change'], marker: 'matchTypeUpdate' });
+
+  registerAtomicUpdate('#opponent', (element) => {
+    const trimmed = element.value.trim();
+    return createMatchUpdate('set-opp-name', {
+      matchId: currentMatchId,
+      opponent: trimmed || 'Opponent'
+    });
+  }, {
+    events: ['input', 'change', 'blur'],
+    marker: 'opponentNameUpdate',
+    beforeSend: () => {
+      updateOpponentName();
+    }
+  });
+
+  registerAtomicUpdate('#jerseyColorHome', (element) => createMatchUpdate('set-home-color', {
+    matchId: currentMatchId,
+    jerseyColorHome: element.value
+  }), { events: ['change'], marker: 'jerseyHomeUpdate' });
+
+  registerAtomicUpdate('#jerseyColorOpp', (element) => createMatchUpdate('set-opp-color', {
+    matchId: currentMatchId,
+    jerseyColorOpp: element.value
+  }), { events: ['change'], marker: 'jerseyOppUpdate' });
+
+  registerAtomicUpdate('#resultHome, #resultOpp', () => createMatchUpdate('set-result', {
+    matchId: currentMatchId,
+    ...getMatchResultValues()
+  }), { events: ['change'], marker: 'matchResultUpdate' });
+
+  registerAtomicUpdate('#firstServer', (element) => createMatchUpdate('set-first-server', {
+    matchId: currentMatchId,
+    firstServer: element.value
+  }), { events: ['change'], marker: 'firstServerUpdate' });
+
+  registerAtomicUpdate('#playerList [data-temp-number-input]', (element) => buildTempNumberUpdatePayload(element), {
+    events: ['input', 'change', 'blur'],
+    marker: 'rootTempNumberUpdate'
+  });
+
+  SET_NUMBERS.forEach((setNumber) => {
+    ['Home', 'Opp'].forEach((suffix) => {
+      const selector = `#set${setNumber}${suffix}`;
+      registerAtomicUpdate(selector, () => null, {
+        events: ['input', 'change', 'blur'],
+        marker: `set${setNumber}${suffix}Update`,
+        beforeSend: (event, element) => {
+          if (element) {
+            maybeRecalculateFinalResult(element);
+            const match = element.id && element.id.match(/^set(\d+)(Home|Opp)$/);
+            if (match) {
+              const parsedSet = parseInt(match[1], 10);
+              if (!Number.isNaN(parsedSet)) {
+                notifySetScoreChange(parsedSet);
+              }
+            }
+          }
+        }
+      });
+    });
+  });
+
   document.querySelectorAll('#playerList input[type="checkbox"]').forEach(cb => {
     cb.checked = false;
   });
@@ -3820,17 +4144,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       setPlayerSortMode(event.target.value);
     });
     modalSortSelect.value = playerSortMode;
-  }
-  const matchFormContainer = document.querySelector('.container');
-  if (matchFormContainer) {
-    matchFormContainer.addEventListener('input', (event) => {
-      if (event.target.closest('#playerModal')) return;
-      maybeRecalculateFinalResult(event.target);
-    });
-    matchFormContainer.addEventListener('change', (event) => {
-      if (event.target.closest('#playerModal')) return;
-      maybeRecalculateFinalResult(event.target);
-    });
   }
   const matchIndexModal = document.getElementById('matchIndexModal');
   if (matchIndexModal) {
