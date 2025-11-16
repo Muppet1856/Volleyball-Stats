@@ -21,6 +21,7 @@ export class MatchState {
   state: DurableObjectState;
   env: Env;
   isDebug: boolean;
+  private connections: Set<WebSocket> = new Set();  // Fallback for local dev (if state.webSockets undefined)
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -56,182 +57,19 @@ export class MatchState {
       }
 
       const webSocketPair = new WebSocketPair();
-      const [client, server] = Object.values(webSocketPair);
+      const [client, server] = Object.values(webSocketPair) as [WebSocket, WebSocket];
 
-      server.accept();
+      // Use hibernation for efficient multi-client support (production); fallback Set for local
+      this.state.acceptWebSocket(server);
+      this.connections.add(server);  // Always add to Set for local compatibility
+
+      if (this.isDebug) console.log(`New WS accepted. Total attached: ${this.state.webSockets?.length ?? this.connections.size}`);
 
       // Example: Echo + DB tie-in (e.g., query on connect)
       if (this.isDebug) {
         const cursor = sql.exec('SELECT COUNT(*) FROM matches');
         server.send(`Debug: ${cursor.next().value['COUNT(*)']} matches in DB`);
       }
-
-      server.addEventListener('message', async (event) => {
-        try {
-          const payload = JSON.parse(event.data as string);
-          const resource = Object.keys(payload)[0];
-          if (!resource) throw new Error('Invalid payload: missing resource');
-
-          const actionObj = payload[resource];
-          const action = Object.keys(actionObj)[0];
-          if (!action) throw new Error('Invalid payload: missing action');
-
-          const data = actionObj[action] || {};
-
-          let res: Response;
-
-          switch (resource) {
-            case 'match':
-              switch (action) {
-                case 'create':
-                  // Mock Request for create
-                  const mockReq = {
-                    json: async () => data,
-                  } as Request;
-                  res = await matchApi.createMatch(storage, mockReq);
-                  break;
-                case 'set-location':
-                  res = await matchApi.setLocation(storage, data.matchId, data.location);
-                  break;
-                case 'set-date-time':
-                  res = await matchApi.setDateTime(storage, data.matchId, data.date);
-                  break;
-                case 'set-opp-name':
-                  res = await matchApi.setOppName(storage, data.matchId, data.opponent);
-                  break;
-                case 'set-type':
-                  res = await matchApi.setType(storage, data.matchId, data.types);
-                  break;
-                case 'set-result':
-                  res = await matchApi.setResult(storage, data.matchId, data.resultHome, data.resultOpp);
-                  break;
-                case 'set-players':
-                  res = await matchApi.setPlayers(storage, data.matchId, data.players);
-                  break;
-                case 'set-home-color':
-                  res = await matchApi.setHomeColor(storage, data.matchId, data.jerseyColorHome);
-                  break;
-                case 'set-opp-color':
-                  res = await matchApi.setOppColor(storage, data.matchId, data.jerseyColorOpp);
-                  break;
-                case 'set-first-server':
-                  res = await matchApi.setFirstServer(storage, data.matchId, data.firstServer);
-                  break;
-                case 'set-deleted':
-                  res = await matchApi.setDeleted(storage, data.matchId, data.deleted);
-                  break;
-                case 'get':
-                  if (data.id) {
-                    res = await matchApi.getMatch(storage, data.id);
-                  } else {
-                    res = await matchApi.getMatches(storage);
-                  }
-                  break;
-                case 'delete':
-                  res = await matchApi.deleteMatch(storage, data.id);
-                  break;
-                default:
-                  throw new Error(`Unknown action for match: ${action}`);
-              }
-              break;
-
-            case 'player':
-              switch (action) {
-                case 'create':
-                  const mockReq = {
-                    json: async () => data,
-                  } as Request;
-                  res = await playerApi.createPlayer(storage, mockReq);
-                  break;
-                case 'set-lname':
-                  res = await playerApi.setPlayerLName(storage, data.playerId, data.lastName);
-                  break;
-                case 'set-fname':
-                  res = await playerApi.setPlayerFName(storage, data.playerId, data.initial);
-                  break;
-                case 'set-number':
-                  res = await playerApi.setPlayerNumber(storage, data.playerId, data.number);
-                  break;
-                case 'get':
-                  if (data.id) {
-                    res = await playerApi.getPlayer(storage, data.id);
-                  } else {
-                    res = await playerApi.getPlayers(storage);
-                  }
-                  break;
-                case 'delete':
-                  res = await playerApi.deletePlayer(storage, data.id);
-                  break;
-                default:
-                  throw new Error(`Unknown action for player: ${action}`);
-              }
-              break;
-
-            case 'set':
-              switch (action) {
-                case 'create':
-                  const mockReq = {
-                    json: async () => data,
-                  } as Request;
-                  res = await setApi.createSet(storage, mockReq);
-                  break;
-                case 'set-home-score':
-                  res = await setApi.setHomeScore(storage, data.setId, data.homeScore);
-                  break;
-                case 'set-opp-score':
-                  res = await setApi.setOppScore(storage, data.setId, data.oppScore);
-                  break;
-                case 'set-home-timeout':
-                  res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value);
-                  break;
-                case 'set-opp-timeout':
-                  res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value);
-                  break;
-                case 'set-is-final':
-                  res = await setApi.setIsFinal(storage, data.matchId, data.finalizedSets);
-                  break;
-                case 'get':
-                  if (data.id) {
-                    res = await setApi.getSet(storage, data.id);
-                  } else {
-                    res = await setApi.getSets(storage, data.matchId);
-                  }
-                  break;
-                case 'delete':
-                  res = await setApi.deleteSet(storage, data.id);
-                  break;
-                default:
-                  throw new Error(`Unknown action for set: ${action}`);
-              }
-              break;
-
-            default:
-              throw new Error(`Unknown resource: ${resource}`);
-          }
-
-          // Prepare response to send over WS
-          const responseBody = res.headers.get('Content-Type')?.includes('json')
-            ? await res.json()
-            : await res.text();
-          server.send(JSON.stringify({
-            resource,
-            action,
-            status: res.status,
-            body: responseBody,
-          }));
-
-        } catch (e) {
-          server.send(JSON.stringify({
-            error: {
-              message: (e as Error).message,
-            }
-          }));
-        }
-      });
-
-      server.addEventListener('close', () => {
-        console.log('WS connection closed');
-      });
 
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -342,6 +180,265 @@ export class MatchState {
     }
 
     return errorResponse("Method not allowed", 405);  // Updated with responses.ts
+  }
+
+  // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    const storage = this.state.storage;
+    try {
+      const payload = JSON.parse(message as string);
+      const resource = Object.keys(payload)[0];
+      if (!resource) throw new Error('Invalid payload: missing resource');
+
+      const actionObj = payload[resource];
+      const action = Object.keys(actionObj)[0];
+      if (!action) throw new Error('Invalid payload: missing action');
+
+      const data = actionObj[action] || {};
+
+      let res: Response;
+
+      switch (resource) {
+        case 'match':
+          switch (action) {
+            case 'create':
+              // Mock Request for create
+              const mockReq = {
+                json: async () => data,
+              } as Request;
+              res = await matchApi.createMatch(storage, mockReq);
+              break;
+            case 'set-location':
+              res = await matchApi.setLocation(storage, data.matchId, data.location);
+              break;
+            case 'set-date-time':
+              res = await matchApi.setDateTime(storage, data.matchId, data.date);
+              break;
+            case 'set-opp-name':
+              res = await matchApi.setOppName(storage, data.matchId, data.opponent);
+              break;
+            case 'set-type':
+              res = await matchApi.setType(storage, data.matchId, data.types);
+              break;
+            case 'set-result':
+              res = await matchApi.setResult(storage, data.matchId, data.resultHome, data.resultOpp);
+              break;
+            case 'set-players':
+              res = await matchApi.setPlayers(storage, data.matchId, data.players);
+              break;
+            case 'set-home-color':
+              res = await matchApi.setHomeColor(storage, data.matchId, data.jerseyColorHome);
+              break;
+            case 'set-opp-color':
+              res = await matchApi.setOppColor(storage, data.matchId, data.jerseyColorOpp);
+              break;
+            case 'set-first-server':
+              res = await matchApi.setFirstServer(storage, data.matchId, data.firstServer);
+              break;
+            case 'set-deleted':
+              res = await matchApi.setDeleted(storage, data.matchId, data.deleted);
+              break;
+            case 'get':
+              if (data.matchId) {
+                res = await matchApi.getMatch(storage, data.matchId);
+              } else {
+                res = await matchApi.getMatches(storage);
+              }
+              break;
+            case 'delete':
+              res = await matchApi.deleteMatch(storage, data.id);
+              break;
+            default:
+              throw new Error(`Unknown action for match: ${action}`);
+          }
+          break;
+
+        case 'player':
+          switch (action) {
+            case 'create':
+              const mockReq = {
+                json: async () => data,
+              } as Request;
+              res = await playerApi.createPlayer(storage, mockReq);
+              break;
+            case 'set-lname':
+              res = await playerApi.setPlayerLName(storage, data.playerId, data.lastName);
+              break;
+            case 'set-fname':
+              res = await playerApi.setPlayerFName(storage, data.playerId, data.initial);
+              break;
+            case 'set-number':
+              res = await playerApi.setPlayerNumber(storage, data.playerId, data.number);
+              break;
+            case 'get':
+              if (data.id) {
+                res = await playerApi.getPlayer(storage, data.id);
+              } else {
+                res = await playerApi.getPlayers(storage);
+              }
+              break;
+            case 'delete':
+              res = await playerApi.deletePlayer(storage, data.id);
+              break;
+            default:
+              throw new Error(`Unknown action for player: ${action}`);
+          }
+          break;
+
+        case 'set':
+          switch (action) {
+            case 'create':
+              const mockReq = {
+                json: async () => data,
+              } as Request;
+              res = await setApi.createSet(storage, mockReq);
+              break;
+            case 'set-home-score':
+              res = await setApi.setHomeScore(storage, data.setId, data.homeScore);
+              break;
+            case 'set-opp-score':
+              res = await setApi.setOppScore(storage, data.setId, data.oppScore);
+              break;
+            case 'set-home-timeout':
+              res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value);
+              break;
+            case 'set-opp-timeout':
+              res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value);
+              break;
+            case 'set-is-final':
+              res = await setApi.setIsFinal(storage, data.matchId, data.finalizedSets);
+              break;
+            case 'get':
+              if (data.id) {
+                res = await setApi.getSet(storage, data.id);
+              } else {
+                res = await setApi.getSets(storage, data.matchId);
+              }
+              break;
+            case 'delete':
+              res = await setApi.deleteSet(storage, data.id);
+              break;
+            default:
+              throw new Error(`Unknown action for set: ${action}`);
+          }
+          break;
+
+        default:
+          throw new Error(`Unknown resource: ${resource}`);
+      }
+
+      // Prepare response to send over WS to sender
+      let body: any;
+      const contentType = res.headers.get('Content-Type');
+      if (contentType?.includes('json')) {
+        body = await res.json();
+      } else {
+        body = await res.text();
+      }
+      ws.send(JSON.stringify({
+        resource,
+        action,
+        status: res.status,
+        body,
+      }));
+
+      // If successful write action, broadcast update/delete to other clients
+      if (res.status < 300 && action !== 'get') {
+        const id = this.getIdFromData(resource, action, data, body);
+        if (this.isDebug) console.log(`Write success (status ${res.status}). ID for broadcast: ${id}`);
+        if (id || (resource === 'set' && action === 'set-is-final' && data.matchId)) {
+          let broadcastMsg: string;
+
+          if (action === 'delete') {
+            broadcastMsg = JSON.stringify({ type: 'delete', resource, id });
+          } else if (resource === 'set' && action === 'set-is-final') {
+            // Special: Broadcast all sets for the match
+            const setsRes = await setApi.getSets(storage, data.matchId);
+            const setsData = await setsRes.json();
+            broadcastMsg = JSON.stringify({ type: 'update', resource: 'sets', matchId: data.matchId, data: setsData });
+          } else {
+            // Standard: Broadcast updated entity
+            const updated = await this.getUpdated(resource, id!);
+            broadcastMsg = JSON.stringify({ type: 'update', resource, id, data: updated });
+          }
+          if (this.isDebug) console.log(`Broadcast message prepared: ${broadcastMsg.substring(0, 100)}...`);
+
+          this.broadcast(broadcastMsg, ws);  // Exclude sender
+        } else if (this.isDebug) {
+          console.log('No ID found - skipping broadcast');
+        }
+      } else if (this.isDebug) {
+        console.log(`No broadcast: status=${res.status}, action=${action}`);
+      }
+
+    } catch (e) {
+      ws.send(JSON.stringify({
+        error: {
+          message: (e as Error).message,
+        }
+      }));
+      if (this.isDebug) console.error(e);
+    }
+  }
+
+  // Clean up closed connections
+  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+    this.connections.delete(ws);
+    if (this.isDebug) console.log(`WS closed: ${code} - ${reason}. Total attached now: ${this.state.webSockets?.length ?? this.connections.size}`);
+  }
+
+  // Handle errors (optional, but cleans up)
+  async webSocketError(ws: WebSocket, error: any) {
+    this.connections.delete(ws);
+    if (this.isDebug) console.error(`WS error: ${error}. Total attached now: ${this.state.webSockets?.length ?? this.connections.size}`);
+  }
+
+  // Helper: Extract ID from data or body
+  private getIdFromData(resource: string, action: string, data: any, body: any): number | undefined {
+    if (action === 'create' && body.id) {
+      return body.id;
+    }
+    switch (resource) {
+      case 'match':
+        return data.matchId || data.id;
+      case 'player':
+        return data.playerId || data.id;
+      case 'set':
+        return data.setId || data.id;
+      default:
+        return undefined;
+    }
+  }
+
+  // Helper: Fetch updated entity (atomic read after write)
+  private async getUpdated(resource: string, id: number): Promise<any> {
+    const storage = this.state.storage;
+    switch (resource) {
+      case 'match':
+        const matchRes = await matchApi.getMatch(storage, id);
+        return await matchRes.json();
+      case 'player':
+        const playerRes = await playerApi.getPlayer(storage, id);
+        return await playerRes.json();
+      case 'set':
+        const setRes = await setApi.getSet(storage, id);
+        return await setRes.json();
+      default:
+        throw new Error(`No getUpdated for resource: ${resource}`);
+    }
+  }
+
+  // Helper: Broadcast to all attached WS except exclude (e.g., sender)
+  private broadcast(message: string, exclude?: WebSocket) {
+    const wsList = this.state.webSockets ?? Array.from(this.connections);
+    let sentCount = 0;
+    for (const conn of wsList) {
+      if (conn !== exclude) {
+        conn.send(message);
+        sentCount++;
+      }
+    }
+    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${wsList.length})`);
   }
 }
 
