@@ -21,7 +21,6 @@ export class MatchState {
   state: DurableObjectState;
   env: Env;
   isDebug: boolean;
-  private connections: Set<WebSocket> = new Set();  // Fallback for local dev (if state.webSockets undefined)
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -42,37 +41,8 @@ export class MatchState {
 
   async fetch(request: Request): Promise<Response> {
     const storage = this.state.storage;
-    const sql = storage.sql;
     const url = new URL(request.url);
     const path = url.pathname;
-
-    /* ---------- WebSocket handling (e.g., for live updates) ---------- */
-    if (path.startsWith('/ws')) {
-      const upgradeHeader = request.headers.get('Upgrade');
-
-      if (upgradeHeader !== 'websocket') {
-        // Redirect non-WS traffic away from /ws (e.g., HTTP/HTTPS GETs)
-        url.pathname = '/';  // Or '/docs' or external URL
-        return Response.redirect(url.toString(), 302);  // Temporary redirect
-      }
-
-      const webSocketPair = new WebSocketPair();
-      const [client, server] = Object.values(webSocketPair) as [WebSocket, WebSocket];
-
-      // Use hibernation for efficient multi-client support (production); fallback Set for local
-      this.state.acceptWebSocket(server);
-      this.connections.add(server);  // Always add to Set for local compatibility
-
-      if (this.isDebug) console.log(`New WS accepted. Total attached: ${this.state.webSockets?.length ?? this.connections.size}`);
-
-      // Example: Echo + DB tie-in (e.g., query on connect)
-      if (this.isDebug) {
-        const cursor = sql.exec('SELECT COUNT(*) FROM matches');
-        server.send(`Debug: ${cursor.next().value['COUNT(*)']} matches in DB`);
-      }
-
-      return new Response(null, { status: 101, webSocket: client });
-    }
 
     /* ---------- /api/* routing ---------- */
     if (path.startsWith("/api/")) {
@@ -383,14 +353,12 @@ export class MatchState {
 
   // Clean up closed connections
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    this.connections.delete(ws);
-    if (this.isDebug) console.log(`WS closed: ${code} - ${reason}. Total attached now: ${this.state.webSockets?.length ?? this.connections.size}`);
+    if (this.isDebug) console.log(`WS closed: ${code} - ${reason}. Total attached now: ${this.state.webSockets?.length ?? 0}`);
   }
 
   // Handle errors (optional, but cleans up)
   async webSocketError(ws: WebSocket, error: any) {
-    this.connections.delete(ws);
-    if (this.isDebug) console.error(`WS error: ${error}. Total attached now: ${this.state.webSockets?.length ?? this.connections.size}`);
+    if (this.isDebug) console.error(`WS error: ${error}. Total attached now: ${this.state.webSockets?.length ?? 0}`);
   }
 
   // Helper: Extract ID from data or body
@@ -430,15 +398,14 @@ export class MatchState {
 
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
   private broadcast(message: string, exclude?: WebSocket) {
-    const wsList = this.state.webSockets ?? Array.from(this.connections);
     let sentCount = 0;
-    for (const conn of wsList) {
+    for (const conn of this.state.webSockets || []) {
       if (conn !== exclude) {
         conn.send(message);
         sentCount++;
       }
     }
-    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${wsList.length})`);
+    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${this.state.webSockets?.length ?? 0})`);
   }
 }
 
@@ -474,8 +441,33 @@ export default {
       return jsonResponse({ homeTeam });
     }
 
-    /* 4. Route other API requests to the Durable Object (singleton instance) */
-    if (path.startsWith("/api/") || path.startsWith("/ws")) {
+    /* 4. WebSocket upgrade for /ws */
+    if (path.startsWith("/ws")) {
+      const upgradeHeader = request.headers.get('Upgrade');
+      if (upgradeHeader !== 'websocket') {
+        return errorResponse("Expected WebSocket", 400);
+      }
+
+      const webSocketPair = new WebSocketPair();
+      const [client, server] = Object.values(webSocketPair) as [WebSocket, WebSocket];
+
+      // Get the DO stub
+      const doBindingName = findDurableObjectBinding(env);
+      if (!doBindingName) {
+        return errorResponse("Durable Object binding not found in env", 500);
+      }
+
+      const doId = (env as any)[doBindingName].idFromName("global");
+      const doStub = (env as any)[doBindingName].get(doId);
+
+      // Attach server to DO for hibernation and events
+      doStub.acceptWebSocket(server);
+
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    /* 5. Route /api/* to the Durable Object */
+    if (path.startsWith("/api/")) {
       const doBindingName = findDurableObjectBinding(env);
       if (!doBindingName) {
         return errorResponse("Durable Object binding not found in env", 500);
@@ -490,7 +482,7 @@ export default {
       }
     }
 
-    /* 5. Fallback for unhandled paths */
+    /* 6. Fallback for unhandled paths */
     return new Response("Not Found", { status: 404 });
   },
 };
