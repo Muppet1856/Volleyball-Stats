@@ -162,8 +162,19 @@ export class MatchState {
 
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    console.log(`Received WS message: ${message instanceof ArrayBuffer ? '[ArrayBuffer]' : message}`);
     const storage = this.state.storage;
     try {
+      // Handle potential ArrayBuffer (safe for text/binary; Miniflare might send text as buffer)
+      let msgStr: string;
+      if (message instanceof ArrayBuffer) {
+        msgStr = new TextDecoder().decode(message);
+      } else {
+        msgStr = message;
+      }
+      console.log(`Parsed message string: ${msgStr}`);
+      const payload = JSON.parse(msgStr);
+      console.log(`Payload: ${JSON.stringify(payload)}`);
       const payload = JSON.parse(message as string);
       const resource = Object.keys(payload)[0];
       if (!resource) throw new Error('Invalid payload: missing resource');
@@ -304,7 +315,6 @@ export class MatchState {
         default:
           throw new Error(`Unknown resource: ${resource}`);
       }
-
       // Prepare response to send over WS to sender
       let body: any;
       const contentType = res.headers.get('Content-Type');
@@ -319,6 +329,8 @@ export class MatchState {
         status: res.status,
         body,
       }));
+
+      console.log(`Response status: ${res.status}`);
 
       // If successful write action, broadcast update/delete to other clients
       if (res.status < 300 && action !== 'get') {
@@ -349,7 +361,10 @@ export class MatchState {
         console.log(`No broadcast: status=${res.status}, action=${action}`);
       }
 
+      console.log('Sent response to client');
+
     } catch (e) {
+      console.error(`WS message error: ${e.message}`);
       ws.send(JSON.stringify({
         error: {
           message: (e as Error).message,
