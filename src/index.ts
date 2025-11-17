@@ -39,18 +39,34 @@ export class MatchState {
     }
   }
 
-  async webSocketOpen(ws: WebSocket) {
-    if (this.isDebug) {
-      const sql = this.state.storage.sql;
-      const cursor = sql.exec('SELECT COUNT(*) FROM matches');
-      ws.send(`Debug: ${cursor.next().value['COUNT(*)']} matches in DB`);
-    }
-  }
-
   async fetch(request: Request): Promise<Response> {
     const storage = this.state.storage;
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // Handle WebSocket upgrades for /ws inside the DO
+    if (path.startsWith("/ws")) {
+      const upgradeHeader = request.headers.get("Upgrade");
+      if (upgradeHeader !== "websocket") {
+        return new Response("Expected Upgrade: websocket", { status: 426 });
+      }
+
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+      // Accept the WebSocket (enables hibernation)
+      this.state.acceptWebSocket(server);
+
+      // Send initial debug message if enabled
+      if (this.isDebug) {
+        const sql = this.state.storage.sql;
+        const cursor = sql.exec('SELECT COUNT(*) FROM matches');
+        const count = cursor.next().value['COUNT(*)'];
+        server.send(`Debug: ${count} matches in DB`);
+      }
+
+      return new Response(null, { status: 101, webSocket: client });
+    }
 
     /* ---------- /api/* routing ---------- */
     if (path.startsWith("/api/")) {
@@ -174,8 +190,8 @@ export class MatchState {
       }
       console.log(`Parsed message string: ${msgStr}`);
       const payload = JSON.parse(msgStr);
-      console.log(`Payload: ${JSON.stringify(payload)}`);
-      const payload = JSON.parse(message as string);
+      // console.log(`Payload: ${JSON.stringify(payload)}`);
+      // const payload = JSON.parse(message as string);
       const resource = Object.keys(payload)[0];
       if (!resource) throw new Error('Invalid payload: missing resource');
 
@@ -376,12 +392,12 @@ export class MatchState {
 
   // Clean up closed connections
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    if (this.isDebug) console.log(`WS closed: ${code} - ${reason}. Total attached now: ${this.state.webSockets?.length ?? 0}`);
+    if (this.isDebug) console.log(`WS closed: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
   }
 
   // Handle errors (optional, but cleans up)
   async webSocketError(ws: WebSocket, error: any) {
-    if (this.isDebug) console.error(`WS error: ${error}. Total attached now: ${this.state.webSockets?.length ?? 0}`);
+    if (this.isDebug) console.error(`WS error: ${error}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
   }
 
   // Helper: Extract ID from data or body
@@ -422,13 +438,13 @@ export class MatchState {
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
   private broadcast(message: string, exclude?: WebSocket) {
     let sentCount = 0;
-    for (const conn of this.state.webSockets || []) {
+    for (const conn of this.state.getWebSockets() || []) {
       if (conn !== exclude) {
         conn.send(message);
         sentCount++;
       }
     }
-    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${this.state.webSockets?.length ?? 0})`);
+    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${this.state.getWebSockets()?.length ?? 0})`);
   }
 }
 
@@ -464,37 +480,16 @@ export default {
       return jsonResponse({ homeTeam });
     }
 
-    /* 4. Handle WebSocket upgrades for /ws */
-    if (path.startsWith("/ws")) {
-      if (request.headers.get("Upgrade") !== "websocket") {
-        return new Response("Expected Upgrade: websocket", { status: 426 });
-      }
-
-      const pair = new WebSocketPair();
-      const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
-
-      const doBindingName = findDurableObjectBinding(env);
-      if (!doBindingName) {
-        return new Response("Durable Object binding not found", { status: 500 });
-      }
-
-      const doId = (env as any)[doBindingName].idFromName("global");
-      const doStub = (env as any)[doBindingName].get(doId);
-
-      doStub.acceptWebSocket(server);
-
-      return new Response(null, { status: 101, webSocket: client });
+    const doBindingName = findDurableObjectBinding(env);
+    if (!doBindingName) {
+      return errorResponse("Durable Object binding not found in env", 500);
     }
 
-    /* 5. Route /api/* to the Durable Object */
-    if (path.startsWith("/api/")) {
-      const doBindingName = findDurableObjectBinding(env);
-      if (!doBindingName) {
-        return errorResponse("Durable Object binding not found in env", 500);
-      }
+    const doId = (env as any)[doBindingName].idFromName("global");
+    const doStub = (env as any)[doBindingName].get(doId);
 
-      const doId = (env as any)[doBindingName].idFromName("global");
-      const doStub = (env as any)[doBindingName].get(doId);
+    /* 4. Route /ws and /api/* to the Durable Object's fetch */
+    if (path.startsWith("/ws") || path.startsWith("/api/")) {
       try {
         return await doStub.fetch(request);
       } catch (e) {
@@ -502,7 +497,7 @@ export default {
       }
     }
 
-    /* 6. Fallback for unhandled paths */
+    /* 5. Fallback for unhandled paths */
     return new Response("Not Found", { status: 404 });
   },
 };
