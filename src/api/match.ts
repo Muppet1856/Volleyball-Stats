@@ -198,6 +198,20 @@ export async function getMatches(storage: any): Promise<Response> {
   return jsonResponse(matchRows);
 }
 
+export async function getMatch(storage: any, matchId: number): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    const cursor = sql.exec(`SELECT * FROM matches WHERE id = ?`, matchId);
+    const matchRow = cursor.toArray()[0] || null;
+    if (!matchRow) {
+      return errorResponse("Match not found", 404);
+    }
+    return jsonResponse(matchRow);
+  } catch (error) {
+    return errorResponse("Error fetching match: " + (error as Error).message, 500);
+  }
+}
+
 export async function deleteMatch(storage: any, matchId: number): Promise<Response> {
   const sql = storage.sql;
   try {
