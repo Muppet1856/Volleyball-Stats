@@ -39,8 +39,12 @@ export class MatchState {
     }
   }
 
-  acceptWebSocket(ws: WebSocket) {
-    this.state.acceptWebSocket(ws);
+  async webSocketOpen(ws: WebSocket) {
+    if (this.isDebug) {
+      const sql = this.state.storage.sql;
+      const cursor = sql.exec('SELECT COUNT(*) FROM matches');
+      ws.send(`Debug: ${cursor.next().value['COUNT(*)']} matches in DB`);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
