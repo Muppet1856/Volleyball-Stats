@@ -1,8 +1,4 @@
 // public/js/volleyball_stats.js
-var gk_isXlsx = false;
-var gk_xlsxFileLookup = {};
-var gk_fileData = {};
-
 const HOME_TEAM_FALLBACK = 'Home Team';
 const HOME_TEAM_TEMPLATE_PATTERN = /\{homeTeam\}/g;
 let homeTeamName = HOME_TEAM_FALLBACK;
@@ -505,9 +501,8 @@ const apiClient = (() => {
     },
 
     async deleteMatch(id) {
-      const match = getRawMatch(id);
-      if (!match) return null;
-      return await updateMatchInternal(match.id, { ...stripInternalMatch(match), deleted: true });
+      await request(`/api/match/delete/${id}`, { method: 'DELETE' });
+      return { id };
     }
   };
 })();
@@ -1933,6 +1928,15 @@ function updateScoreModalLabels() {
 function applyScoreModalToInputs({ triggerSave = true } = {}) {
   const { setNumber } = scoreGameState;
   if (!setNumber) return;
+  const homeScore = scoreGameState.home;
+  const oppScore = scoreGameState.opp;
+  const homeMissing = homeScore === null && oppScore !== null;
+  const oppMissing = oppScore === null && homeScore !== null;
+  if (homeMissing) {
+    scoreGameState.home = 0;
+  } else if (oppMissing) {
+    scoreGameState.opp = 0;
+  }
   const homeInput = document.getElementById(`set${setNumber}Home`);
   const oppInput = document.getElementById(`set${setNumber}Opp`);
   if (homeInput) homeInput.value = formatScoreInputValue(scoreGameState.home);
