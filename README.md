@@ -92,5 +92,13 @@ All endpoints reside under `/api/` and return JSON unless noted.
 
 Set these values either in `wrangler.toml`, the Cloudflare dashboard, or via environment-specific configuration files during deployment.
 
+## Manual QA
+Follow these steps to verify that the score modal zero-fills the opposing side when only one score is edited for an empty set:
+
+1. Start the Worker locally with `wrangler dev --persist-to=.wrangler/state` and open the scouting UI.
+2. Click the score cell for an empty set (both home and opponent blank) to open the modal.
+3. Increase the score for only one team using the modal controls.
+4. Close the modal and observe the grid—the untouched side of the set now reads `0`, matching the modal logic.
+
 ## License
 Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.

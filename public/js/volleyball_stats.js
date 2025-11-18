@@ -1928,6 +1928,15 @@ function updateScoreModalLabels() {
 function applyScoreModalToInputs({ triggerSave = true } = {}) {
   const { setNumber } = scoreGameState;
   if (!setNumber) return;
+  const homeScore = scoreGameState.home;
+  const oppScore = scoreGameState.opp;
+  const homeMissing = homeScore === null && oppScore !== null;
+  const oppMissing = oppScore === null && homeScore !== null;
+  if (homeMissing) {
+    scoreGameState.home = 0;
+  } else if (oppMissing) {
+    scoreGameState.opp = 0;
+  }
   const homeInput = document.getElementById(`set${setNumber}Home`);
   const oppInput = document.getElementById(`set${setNumber}Opp`);
   if (homeInput) homeInput.value = formatScoreInputValue(scoreGameState.home);
