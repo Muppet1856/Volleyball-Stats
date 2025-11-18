@@ -54,14 +54,19 @@ export class MatchState {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
-      // Accept the WebSocket (enables hibernation)
-      this.state.acceptWebSocket(server);
+      // Generate unique client ID
+      const clientId = Math.random().toString(36).slice(2);
+      if (this.isDebug) console.log(`New client connected: ${clientId}`);
 
-      // Send initial debug message if enabled
+      // Accept the WebSocket with clientId as tag
+      this.state.acceptWebSocket(server, [clientId]);
+
+      // Send debug message if enabled (no initial data dump)
       if (this.isDebug) {
         const sql = this.state.storage.sql;
         const cursor = sql.exec('SELECT COUNT(*) FROM matches');
         const count = cursor.next().value['COUNT(*)'];
+        if (this.isDebug) console.log(`Sending debug count to client ${clientId}: ${count} matches`);
         server.send(`Debug: ${count} matches in DB`);
       }
 
@@ -178,7 +183,9 @@ export class MatchState {
 
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    console.log(`Received WS message: ${message instanceof ArrayBuffer ? '[ArrayBuffer]' : message}`);
+    const tags = this.state.getTags(ws);
+    const clientId = tags.length > 0 ? tags[0] : 'undefined';
+    if (this.isDebug) console.log(`Received WS message from client ${clientId}: ${message instanceof ArrayBuffer ? '[ArrayBuffer]' : message}`);
     const storage = this.state.storage;
     try {
       // Handle potential ArrayBuffer (safe for text/binary; Miniflare might send text as buffer)
@@ -188,10 +195,8 @@ export class MatchState {
       } else {
         msgStr = message;
       }
-      console.log(`Parsed message string: ${msgStr}`);
+      if (this.isDebug) console.log(`Parsed message string from client ${clientId}: ${msgStr}`);
       const payload = JSON.parse(msgStr);
-      // console.log(`Payload: ${JSON.stringify(payload)}`);
-      // const payload = JSON.parse(message as string);
       const resource = Object.keys(payload)[0];
       if (!resource) throw new Error('Invalid payload: missing resource');
 
@@ -202,6 +207,7 @@ export class MatchState {
       const data = actionObj[action] || {};
 
       let res: Response;
+      let matchId: number | undefined;
 
       switch (resource) {
         case 'match':
@@ -212,46 +218,59 @@ export class MatchState {
                 json: async () => data,
               } as Request;
               res = await matchApi.createMatch(storage, mockReq);
+              matchId = (await res.clone().json()).id;
               break;
             case 'set-location':
               res = await matchApi.setLocation(storage, data.matchId, data.location);
+              matchId = data.matchId;
               break;
             case 'set-date-time':
               res = await matchApi.setDateTime(storage, data.matchId, data.date);
+              matchId = data.matchId;
               break;
             case 'set-opp-name':
               res = await matchApi.setOppName(storage, data.matchId, data.opponent);
+              matchId = data.matchId;
               break;
             case 'set-type':
               res = await matchApi.setType(storage, data.matchId, data.types);
+              matchId = data.matchId;
               break;
             case 'set-result':
               res = await matchApi.setResult(storage, data.matchId, data.resultHome, data.resultOpp);
+              matchId = data.matchId;
               break;
             case 'set-players':
               res = await matchApi.setPlayers(storage, data.matchId, data.players);
+              matchId = data.matchId;
               break;
             case 'set-home-color':
               res = await matchApi.setHomeColor(storage, data.matchId, data.jerseyColorHome);
+              matchId = data.matchId;
               break;
             case 'set-opp-color':
               res = await matchApi.setOppColor(storage, data.matchId, data.jerseyColorOpp);
+              matchId = data.matchId;
               break;
             case 'set-first-server':
               res = await matchApi.setFirstServer(storage, data.matchId, data.firstServer);
+              matchId = data.matchId;
               break;
             case 'set-deleted':
               res = await matchApi.setDeleted(storage, data.matchId, data.deleted);
+              matchId = data.matchId;
               break;
             case 'get':
               if (data.matchId) {
                 res = await matchApi.getMatch(storage, data.matchId);
+                matchId = data.matchId;
               } else {
                 res = await matchApi.getMatches(storage);
               }
               break;
             case 'delete':
               res = await matchApi.deleteMatch(storage, data.id);
+              matchId = data.id;
               break;
             default:
               throw new Error(`Unknown action for match: ${action}`);
@@ -297,21 +316,27 @@ export class MatchState {
                 json: async () => data,
               } as Request;
               res = await setApi.createSet(storage, mockReq);
+              matchId = data.matchId; // Assume provided; fallback if needed
               break;
             case 'set-home-score':
               res = await setApi.setHomeScore(storage, data.setId, data.homeScore);
+              matchId = data.matchId;
               break;
             case 'set-opp-score':
               res = await setApi.setOppScore(storage, data.setId, data.oppScore);
+              matchId = data.matchId;
               break;
             case 'set-home-timeout':
               res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value);
+              matchId = data.matchId;
               break;
             case 'set-opp-timeout':
               res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value);
+              matchId = data.matchId;
               break;
             case 'set-is-final':
               res = await setApi.setIsFinal(storage, data.matchId, data.finalizedSets);
+              matchId = data.matchId;
               break;
             case 'get':
               if (data.id) {
@@ -322,9 +347,16 @@ export class MatchState {
               break;
             case 'delete':
               res = await setApi.deleteSet(storage, data.id);
+              matchId = data.matchId;
               break;
             default:
               throw new Error(`Unknown action for set: ${action}`);
+          }
+          if (!matchId && data.setId) {
+            // Fallback fetch if not provided
+            const setRes = await setApi.getSet(storage, data.setId);
+            const setData = await setRes.json();
+            matchId = setData.match_id;
           }
           break;
 
@@ -339,48 +371,50 @@ export class MatchState {
       } else {
         body = await res.text();
       }
-      ws.send(JSON.stringify({
+      const responseMsg = JSON.stringify({
         resource,
         action,
         status: res.status,
         body,
-      }));
+      });
+      if (this.isDebug) console.log(`Sending response to client ${clientId}: ${responseMsg.substring(0, 100)}...`);
+      ws.send(responseMsg);
 
       console.log(`Response status: ${res.status}`);
 
       // If successful write action, broadcast update/delete to other clients
       if (res.status < 300 && action !== 'get') {
         const id = this.getIdFromData(resource, action, data, body);
-        if (this.isDebug) console.log(`Write success (status ${res.status}). ID for broadcast: ${id}`);
-        if (id || (resource === 'set' && action === 'set-is-final' && data.matchId)) {
+        if (this.isDebug) console.log(`Write success (status ${res.status}) from client ${clientId}. ID for broadcast: ${id}, matchId: ${matchId}`);
+        if (id || (resource === 'set' && action === 'set-is-final' && matchId)) {
           let broadcastMsg: string;
 
           if (action === 'delete') {
-            broadcastMsg = JSON.stringify({ type: 'delete', resource, id });
+            broadcastMsg = JSON.stringify({ type: 'delete', resource, id, matchId });
           } else if (resource === 'set' && action === 'set-is-final') {
             // Special: Broadcast all sets for the match
-            const setsRes = await setApi.getSets(storage, data.matchId);
+            const setsRes = await setApi.getSets(storage, matchId!);
             const setsData = await setsRes.json();
-            broadcastMsg = JSON.stringify({ type: 'update', resource: 'sets', matchId: data.matchId, data: setsData });
+            broadcastMsg = JSON.stringify({ type: 'update', resource: 'sets', matchId, data: setsData });
           } else {
             // Standard: Broadcast updated entity
             const updated = await this.getUpdated(resource, id!);
-            broadcastMsg = JSON.stringify({ type: 'update', resource, id, data: updated });
+            broadcastMsg = JSON.stringify({ type: 'update', resource, id, matchId, data: updated });
           }
-          if (this.isDebug) console.log(`Broadcast message prepared: ${broadcastMsg.substring(0, 100)}...`);
+          if (this.isDebug) console.log(`Broadcast message prepared from client ${clientId}: ${broadcastMsg.substring(0, 100)}...`);
 
           this.broadcast(broadcastMsg, ws);  // Exclude sender
         } else if (this.isDebug) {
-          console.log('No ID found - skipping broadcast');
+          console.log(`No ID found - skipping broadcast for client ${clientId}`);
         }
       } else if (this.isDebug) {
-        console.log(`No broadcast: status=${res.status}, action=${action}`);
+        console.log(`No broadcast: status=${res.status}, action=${action} for client ${clientId}`);
       }
 
-      console.log('Sent response to client');
+      if (this.isDebug) console.log(`Sent response to client ${clientId}`);
 
     } catch (e) {
-      console.error(`WS message error: ${e.message}`);
+      console.error(`WS message error for client ${clientId}: ${e.message}`);
       ws.send(JSON.stringify({
         error: {
           message: (e as Error).message,
@@ -392,12 +426,16 @@ export class MatchState {
 
   // Clean up closed connections
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    if (this.isDebug) console.log(`WS closed: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
+    const tags = this.state.getTags(ws);
+    const clientId = tags.length > 0 ? tags[0] : 'undefined';
+    if (this.isDebug) console.log(`WS closed for client ${clientId}: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0 - 1}`);
   }
 
   // Handle errors (optional, but cleans up)
   async webSocketError(ws: WebSocket, error: any) {
-    if (this.isDebug) console.error(`WS error: ${error}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
+    const tags = this.state.getTags(ws);
+    const clientId = tags.length > 0 ? tags[0] : 'undefined';
+    if (this.isDebug) console.error(`WS error for client ${clientId}: ${error}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
   }
 
   // Helper: Extract ID from data or body
@@ -438,13 +476,19 @@ export class MatchState {
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
   private broadcast(message: string, exclude?: WebSocket) {
     let sentCount = 0;
+    const total = this.state.getWebSockets()?.length ?? 0;
     for (const conn of this.state.getWebSockets() || []) {
-      if (conn !== exclude) {
-        conn.send(message);
-        sentCount++;
+      const tags = this.state.getTags(conn);
+      const connId = tags.length > 0 ? tags[0] : 'undefined';
+      if (conn === exclude) {
+        if (this.isDebug) console.log(`Excluding sender client ${connId} from broadcast`);
+        continue;
       }
+      if (this.isDebug) console.log(`Broadcasting to client ${connId}`);
+      conn.send(message);
+      sentCount++;
     }
-    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${this.state.getWebSockets()?.length ?? 0})`);
+    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${total})`);
   }
 }
 
