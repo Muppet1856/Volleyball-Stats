@@ -68,6 +68,7 @@ export class MatchState {
         const count = cursor.next().value['COUNT(*)'];
         if (this.isDebug) console.log(`Sending debug count to client ${clientId}: ${count} matches`);
         server.send(`Debug: ${count} matches in DB`);
+        server.send(`Debug: New client connected: ${clientId}`);
       }
 
       return new Response(null, { status: 101, webSocket: client });
