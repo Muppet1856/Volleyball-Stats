@@ -7,6 +7,15 @@ const defaultTeamColorMap = {
   opp: 'bg-danger',
 };
 
+const swappedTeamColorMap = {
+  home: 'bg-danger',
+  opp: 'bg-primary',
+};
+
+export function getTimeoutTeamColorMap(isSwapped = state.isTimeoutColorSwapped) {
+  return isSwapped ? swappedTeamColorMap : defaultTeamColorMap;
+}
+
 function applyTimeoutColorClass(bar, team, teamColorMap = defaultTeamColorMap) {
   if (!bar || !team) return;
 
@@ -45,7 +54,7 @@ export function resetTimeoutCountdown() {
   }
 }
 
-export function applyTimeoutTeamColor(team, teamColorMap) {
+export function applyTimeoutTeamColor(team, teamColorMap = getTimeoutTeamColorMap()) {
   const bar = document.getElementById("scoreGameTimeoutSrStatus");
   applyTimeoutColorClass(bar, team, teamColorMap);
 }
@@ -53,6 +62,8 @@ export function applyTimeoutTeamColor(team, teamColorMap) {
 export function startTimeoutCountdown(team, remaining = 60, teamColorMap) {
   if (!team) return;
   let currentRemaining = remaining;
+
+  const colorMap = teamColorMap || getTimeoutTeamColorMap();
 
   const container = document.getElementById("timeoutContainer");
   const bar = document.getElementById("scoreGameTimeoutSrStatus");
@@ -63,7 +74,7 @@ export function startTimeoutCountdown(team, remaining = 60, teamColorMap) {
   // Show container when starting
   container.style.display = "block";
 
-  applyTimeoutColorClass(bar, team, teamColorMap);
+  applyTimeoutColorClass(bar, team, colorMap);
 
   // Set initial bar
   const pct = (currentRemaining / 60) * 100;

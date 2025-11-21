@@ -1,8 +1,9 @@
 // swap.js
-import { applyTimeoutTeamColor } from './timeOut.js';
+import { applyTimeoutTeamColor, getTimeoutTeamColorMap } from './timeOut.js';
 import { state } from '../state.js';
 export function mainSwap(config) {
   state.isDisplaySwapped = !state.isDisplaySwapped;
+  state.isTimeoutColorSwapped = state.isDisplaySwapped;
   swapColumnsGeneric(config);
   swapModal();
 }
@@ -179,7 +180,7 @@ function swapModal() {
   const container = document.getElementById('timeoutContainer');
   const activeBox = document.querySelector('.timeout-box.active');
   if (container && container.style.display !== 'none' && activeBox) {
-    applyTimeoutTeamColor(activeBox.dataset.team);
+    applyTimeoutTeamColor(activeBox.dataset.team, getTimeoutTeamColorMap());
   }
 
   // If timeout display text is visible, swap team names in it
