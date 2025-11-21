@@ -196,9 +196,10 @@ timeoutBoxes.forEach((box) => {
       // Stop timeout
       box.setAttribute('aria-pressed', 'false');
       box.classList.remove('active');
+      box.classList.remove('used');
       if (timeoutDisplay) timeoutDisplay.textContent = '';
       resetTimeoutCountdown();
-      box.setAttribute('aria-label', `${teamName} timeout used`);
+      box.setAttribute('aria-label', `${teamName} timeout available`);
     } else {
       // Check if available (not all used)
       const teamBoxes = document.querySelectorAll(`.timeout-box[data-team="${team}"]`);
