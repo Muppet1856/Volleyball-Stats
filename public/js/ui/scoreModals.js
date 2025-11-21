@@ -1,5 +1,5 @@
 // Updated ui/scoreModals.js (full replacement with per-set persistence)
-import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js';
+import { startTimeoutCountdown, resetTimeoutCountdown, getTimeoutTeamColorMap } from './timeOut.js';
 import { state } from '../state.js'; // Add this import
 
 const invertTeam = (team) => team === 'home' ? 'opp' : 'home';
@@ -148,7 +148,7 @@ function loadTimeoutStates(setNumber) {
       box.classList.add('active');
       const teamName = displayTeam === 'home' ? 'Home Team' : 'Opponent';
       if (timeoutDisplay) timeoutDisplay.textContent = `Timeout: ${teamName}`;
-      startTimeoutCountdown(setState.activeTeam, setState.remaining);
+      startTimeoutCountdown(setState.activeTeam, setState.remaining, getTimeoutTeamColorMap());
     } else {
       setState.activeTeam = null;
       setState.activeIndex = null;
@@ -226,7 +226,7 @@ timeoutBoxes.forEach((box) => {
       box.setAttribute('aria-pressed', 'true');
       box.classList.add('active');
       box.classList.add('used');
-      startTimeoutCountdown(team);
+      startTimeoutCountdown(team, 60, getTimeoutTeamColorMap());
       box.setAttribute('aria-label', `${teamName} timeout used`);
     }
 

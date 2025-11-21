@@ -7,6 +7,7 @@ export const state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',
   isDisplaySwapped: false,
+  isTimeoutColorSwapped: false,
   currentSet: 1,
   scores: [0, 0],
   timeouts: {
