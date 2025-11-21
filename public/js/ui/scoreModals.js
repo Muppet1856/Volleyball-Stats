@@ -2,6 +2,10 @@
 import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js';
 import { state } from '../state.js'; // Add this import
 
+const invertTeam = (team) => team === 'home' ? 'opp' : 'home';
+const domTeamToStateTeam = (domTeam) => state.isDisplaySwapped ? invertTeam(domTeam) : domTeam;
+const stateTeamToDomTeam = (stateTeam) => state.isDisplaySwapped ? invertTeam(stateTeam) : stateTeam;
+
 // Function to pad scores to two digits
 function padScore(score) {
   return String(score).padStart(2, '0');
@@ -114,7 +118,8 @@ function loadTimeoutStates(setNumber) {
   const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
 
   homeBoxes.forEach((box, index) => {
-    const isUsed = setState.used.home[index];
+    const stateTeam = domTeamToStateTeam('home');
+    const isUsed = setState.used[stateTeam][index];
     box.classList.toggle('used', isUsed);
     box.setAttribute('aria-pressed', 'false');
     box.classList.remove('active');
@@ -122,7 +127,8 @@ function loadTimeoutStates(setNumber) {
   });
 
   oppBoxes.forEach((box, index) => {
-    const isUsed = setState.used.opp[index];
+    const stateTeam = domTeamToStateTeam('opp');
+    const isUsed = setState.used[stateTeam][index];
     box.classList.toggle('used', isUsed);
     box.setAttribute('aria-pressed', 'false');
     box.classList.remove('active');
@@ -134,14 +140,18 @@ function loadTimeoutStates(setNumber) {
 
   // Resume active timeout if applicable
   if (setState.activeTeam && setState.remaining > 0) {
-    const teamBoxes = setState.activeTeam === 'home' ? homeBoxes : oppBoxes;
-    const box = teamBoxes[setState.activeIndex];
+    const displayTeam = stateTeamToDomTeam(setState.activeTeam);
+    const teamBoxes = displayTeam === 'home' ? homeBoxes : oppBoxes;
+    const box = typeof setState.activeIndex === 'number' ? teamBoxes[setState.activeIndex] : undefined;
     if (box) {
       box.setAttribute('aria-pressed', 'true');
       box.classList.add('active');
-      const teamName = setState.activeTeam === 'home' ? 'Home Team' : 'Opponent';
+      const teamName = displayTeam === 'home' ? 'Home Team' : 'Opponent';
       if (timeoutDisplay) timeoutDisplay.textContent = `Timeout: ${teamName}`;
       startTimeoutCountdown(setState.activeTeam, setState.remaining);
+    } else {
+      setState.activeTeam = null;
+      setState.activeIndex = null;
     }
   }
 }
@@ -153,17 +163,21 @@ function saveTimeoutStates(setNumber) {
   const oppBoxes = document.querySelectorAll('.timeout-box[data-team="opp"]');
 
   homeBoxes.forEach((box, index) => {
-    setState.used.home[index] = box.classList.contains('used');
+    const stateTeam = domTeamToStateTeam('home');
+    setState.used[stateTeam][index] = box.classList.contains('used');
   });
 
   oppBoxes.forEach((box, index) => {
-    setState.used.opp[index] = box.classList.contains('used');
+    const stateTeam = domTeamToStateTeam('opp');
+    setState.used[stateTeam][index] = box.classList.contains('used');
   });
 
   const activeBox = document.querySelector('.timeout-box.active');
   if (activeBox) {
-    setState.activeTeam = activeBox.dataset.team;
-    const teamBoxes = document.querySelectorAll(`.timeout-box[data-team="${setState.activeTeam}"]`);
+    const domTeam = activeBox.dataset.team;
+    const stateTeam = domTeamToStateTeam(domTeam);
+    const teamBoxes = document.querySelectorAll(`.timeout-box[data-team="${domTeam}"]`);
+    setState.activeTeam = stateTeam;
     setState.activeIndex = Array.from(teamBoxes).indexOf(activeBox);
   } else {
     setState.activeTeam = null;
