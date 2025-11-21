@@ -1,6 +1,8 @@
 // swap.js
 import { applyTimeoutTeamColor } from './timeOut.js';
+import { state } from '../state.js';
 export function mainSwap(config) {
+  state.isDisplaySwapped = !state.isDisplaySwapped;
   swapColumnsGeneric(config);
   swapModal();
 }
