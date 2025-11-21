@@ -2,6 +2,24 @@
 import { state } from '../state.js'; // Add this import if needed for save, but since called from scoreModals, optional
 
 let countdownInterval = null;
+const defaultTeamColorMap = {
+  home: 'bg-primary',
+  opp: 'bg-danger',
+};
+
+function applyTimeoutColorClass(bar, team, teamColorMap = defaultTeamColorMap) {
+  if (!bar || !team) return;
+
+  const colorsToRemove = new Set(Object.values(defaultTeamColorMap));
+  Object.values(teamColorMap || {}).forEach(colorClass => colorsToRemove.add(colorClass));
+
+  bar.classList.remove(...colorsToRemove);
+
+  const colorClass = (teamColorMap && teamColorMap[team]) || defaultTeamColorMap[team];
+  if (colorClass) {
+    bar.classList.add(colorClass);
+  }
+}
 
 export function resetTimeoutCountdown() {
   const container = document.getElementById("timeoutContainer");
@@ -27,7 +45,13 @@ export function resetTimeoutCountdown() {
   }
 }
 
-export function startTimeoutCountdown(isLeft, remaining = 60) {
+export function applyTimeoutTeamColor(team, teamColorMap) {
+  const bar = document.getElementById("scoreGameTimeoutSrStatus");
+  applyTimeoutColorClass(bar, team, teamColorMap);
+}
+
+export function startTimeoutCountdown(team, remaining = 60, teamColorMap) {
+  if (!team) return;
   let currentRemaining = remaining;
 
   const container = document.getElementById("timeoutContainer");
@@ -39,9 +63,7 @@ export function startTimeoutCountdown(isLeft, remaining = 60) {
   // Show container when starting
   container.style.display = "block";
 
-  // Color by side
-  bar.classList.remove("bg-primary", "bg-danger");
-  bar.classList.add(isLeft ? "bg-primary" : "bg-danger");
+  applyTimeoutColorClass(bar, team, teamColorMap);
 
   // Set initial bar
   const pct = (currentRemaining / 60) * 100;

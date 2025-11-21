@@ -141,8 +141,7 @@ function loadTimeoutStates(setNumber) {
       box.classList.add('active');
       const teamName = setState.activeTeam === 'home' ? 'Home Team' : 'Opponent';
       if (timeoutDisplay) timeoutDisplay.textContent = `Timeout: ${teamName}`;
-      const isLeft = box.closest('.left-timeout') !== null;
-      startTimeoutCountdown(isLeft, setState.remaining);
+      startTimeoutCountdown(setState.activeTeam, setState.remaining);
     }
   }
 }
@@ -213,8 +212,7 @@ timeoutBoxes.forEach((box) => {
       box.setAttribute('aria-pressed', 'true');
       box.classList.add('active');
       box.classList.add('used');
-      const isLeft = box.closest('.left-timeout') !== null;
-      startTimeoutCountdown(isLeft);
+      startTimeoutCountdown(team);
       box.setAttribute('aria-label', `${teamName} timeout used`);
     }
 

@@ -1,4 +1,5 @@
 // swap.js
+import { applyTimeoutTeamColor } from './timeOut.js';
 export function mainSwap(config) {
   swapColumnsGeneric(config);
   swapModal();
@@ -172,17 +173,11 @@ function swapModal() {
     }
   }
 
-  // If a timeout countdown is running, flip its color (blue <-> red)
-  const bar = document.getElementById('scoreGameTimeoutSrStatus');
+  // If a timeout countdown is running, recompute its color based on the active team
   const container = document.getElementById('timeoutContainer');
-  if (bar && container && container.style.display !== 'none') {
-    if (bar.classList.contains('bg-primary')) {
-      bar.classList.remove('bg-primary');
-      bar.classList.add('bg-danger');
-    } else if (bar.classList.contains('bg-danger')) {
-      bar.classList.remove('bg-danger');
-      bar.classList.add('bg-primary');
-    }
+  const activeBox = document.querySelector('.timeout-box.active');
+  if (container && container.style.display !== 'none' && activeBox) {
+    applyTimeoutTeamColor(activeBox.dataset.team);
   }
 
   // If timeout display text is visible, swap team names in it
