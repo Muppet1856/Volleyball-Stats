@@ -2,9 +2,11 @@
 import { startTimeoutCountdown, resetTimeoutCountdown, getTimeoutTeamColorMap } from './timeOut.js';
 import { state } from '../state.js'; // Add this import
 
-const invertTeam = (team) => team === 'home' ? 'opp' : 'home';
-const domTeamToStateTeam = (domTeam) => state.isDisplaySwapped ? invertTeam(domTeam) : domTeam;
-const stateTeamToDomTeam = (stateTeam) => state.isDisplaySwapped ? invertTeam(stateTeam) : stateTeam;
+// The swap modal already flips `data-team` values on the timeout controls, so we
+// keep the state aligned to whatever `data-team` is set to rather than
+// inverting based on `state.isDisplaySwapped`.
+const domTeamToStateTeam = (domTeam) => domTeam;
+const stateTeamToDomTeam = (stateTeam) => stateTeam;
 
 // Function to pad scores to two digits
 function padScore(score) {
