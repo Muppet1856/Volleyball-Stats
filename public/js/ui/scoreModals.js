@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // Updated ui/scoreModals.js (full replacement with per-set persistence)
 import { startTimeoutCountdown, resetTimeoutCountdown, getTimeoutTeamColorMap } from './timeOut.js';
 import { state } from '../state.js'; // Add this import
@@ -8,6 +9,11 @@ import { state } from '../state.js'; // Add this import
 const domTeamToStateTeam = (domTeam) => domTeam;
 const stateTeamToDomTeam = (stateTeam) => stateTeam;
 
+=======
+// ui/scoreModals.js
+import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js'; // Adjust path if needed
+import { state, updateState } from '../state.js';  // Add this import
+>>>>>>> Stashed changes
 // Function to pad scores to two digits
 function padScore(score) {
   return String(score).padStart(2, '0');
@@ -97,6 +103,14 @@ function handleScoreChange(event) {
 
   // Optional: Trigger input event for any bound listeners (e.g., validation or auto-save)
   input.dispatchEvent(new Event('input', { bubbles: true }));
+  // Add: Sync to state (no UI change here)
+  updateState({
+    sets: {
+      [setNumber]: {
+        scores: { [team]: score }
+      }
+    }
+  });
 }
 
 // Attach event listeners to score zones

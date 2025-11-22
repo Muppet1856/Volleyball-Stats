@@ -1,5 +1,12 @@
+<<<<<<< Updated upstream
 // Updated timeOut.js (full replacement with remaining param and auto-unpress on end)
 import { state } from '../state.js'; // Add this import if needed for save, but since called from scoreModals, optional
+=======
+// timeOut.js
+import { state, updateState } from '../state.js';  // Add this import
+let countdownInterval = null;
+let currentActiveButton = null;
+>>>>>>> Stashed changes
 
 let countdownInterval = null;
 const defaultTeamColorMap = {

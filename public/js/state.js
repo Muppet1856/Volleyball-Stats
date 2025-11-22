@@ -1,11 +1,8 @@
 // state.js
-const TIMEOUT_COUNT = 2;
-const TIMEOUT_DURATION_SECONDS = 60;
-const SET_NUMBERS = [1, 2, 3, 4, 5];
-const matchSetRecords = new Map();
-export const state = {
+export let state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',
+<<<<<<< Updated upstream
   isDisplaySwapped: false,
   isTimeoutColorSwapped: false,
   currentSet: 1,
@@ -53,3 +50,42 @@ export function updateAllDisplays() {
   if (homeHeader) homeHeader.textContent = home;
   if (oppHeader)  oppHeader.textContent = opp;
 }
+=======
+  matchWins: { home: 0, opp: 0 },
+  sets: {
+    1: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
+    2: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
+    3: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
+    4: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
+    5: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
+  },
+};
+
+// Mutate target in-place with source values (deep merge)
+function deepMerge(target, source) {
+  if (typeof source !== 'object' || source === null) return target;
+
+  for (const key in source) {
+    if (source.hasOwnProperty(key)) {
+      if (typeof source[key] === 'object' && source[key] !== null) {
+        if (!target[key] || typeof target[key] !== 'object') {
+          target[key] = Array.isArray(source[key]) ? [] : {};
+        }
+        deepMerge(target[key], source[key]);
+      } else {
+        target[key] = source[key];
+      }
+    }
+  }
+  return target;
+}
+
+export function updateState(partialState) {
+  deepMerge(state, partialState);
+  // Optional: console.log('Updated state:', state) for debugging
+}
+
+// Expose for console debugging (keep this)
+window.state = state;
+window.updateState = updateState;
+>>>>>>> Stashed changes
