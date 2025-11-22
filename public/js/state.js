@@ -2,7 +2,6 @@
 export let state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',
-<<<<<<< Updated upstream
   isDisplaySwapped: false,
   isTimeoutColorSwapped: false,
   currentSet: 1,
