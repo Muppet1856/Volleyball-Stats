@@ -642,12 +642,12 @@ body.score-modal-open {
   text-align: center;
 }
 
-.score-modal .timeout-container.left-timeout {
+.score-modal .timeout-container[data-team="home"] {
   background: linear-gradient(135deg, #0b5ed7, #0d6efd);
   color: #fff;
 }
 
-.score-modal .timeout-container.right-timeout {
+.score-modal .timeout-container[data-team="opp"] {
   background: linear-gradient(135deg, #c82333, #dc3545);
   color: #fff;
 }
@@ -720,12 +720,12 @@ body.score-modal-open {
   transform: translateY(0);
 }
 
-.score-modal .timeout-timer-display.left-timeout {
+.score-modal .timeout-timer-display[data-team="home"] {
   background: linear-gradient(135deg, rgba(13, 110, 253, 0.95), rgba(11, 94, 215, 0.95));
   color: #fff;
 }
 
-.score-modal .timeout-timer-display.right-timeout {
+.score-modal .timeout-timer-display[data-team="opp"] {
   background: linear-gradient(135deg, rgba(220, 53, 69, 0.95), rgba(200, 35, 51, 0.95));
   color: #fff;
 }
@@ -740,60 +740,60 @@ body.score-modal-open {
   font-size: clamp(1.5rem, 4vw, 2rem);
 }
 
-.score-modal .timeout-container.left-timeout .timeout-box {
+.score-modal .timeout-container[data-team="home"] .timeout-box {
   background-color: #0d6efd;
   border-color: rgba(255, 255, 255, 0.9);
   color: #fff;
 }
 
-.score-modal .timeout-container.right-timeout .timeout-box {
+.score-modal .timeout-container[data-team="opp"] .timeout-box {
   background-color: #dc3545;
   border-color: rgba(255, 255, 255, 0.9);
   color: #fff;
 }
 
-.score-modal .timeout-container.left-timeout .timeout-box:hover,
-.score-modal .timeout-container.left-timeout .timeout-box:focus-visible {
+.score-modal .timeout-container[data-team="home"] .timeout-box:hover,
+.score-modal .timeout-container[data-team="home"] .timeout-box:focus-visible {
   background-color: #0b5ed7;
   color: #fff;
 }
 
-.score-modal .timeout-container.right-timeout .timeout-box:hover,
-.score-modal .timeout-container.right-timeout .timeout-box:focus-visible {
+.score-modal .timeout-container[data-team="opp"] .timeout-box:hover,
+.score-modal .timeout-container[data-team="opp"] .timeout-box:focus-visible {
   background-color: #bb2d3b;
   color: #fff;
 }
 
-.score-modal .timeout-container.left-timeout .timeout-box.used {
+.score-modal .timeout-container[data-team="home"] .timeout-box.used {
   background-color: #fff;
   color: #0d6efd;
   border-color: rgba(13, 110, 253, 0.85);
 }
 
-.score-modal .timeout-container.right-timeout .timeout-box.used {
+.score-modal .timeout-container[data-team="opp"] .timeout-box.used {
   background-color: #fff;
   color: #dc3545;
   border-color: rgba(220, 53, 69, 0.85);
 }
 
-.score-modal .timeout-container.left-timeout .timeout-box.used:hover,
-.score-modal .timeout-container.left-timeout .timeout-box.used:focus-visible {
+.score-modal .timeout-container[data-team="home"] .timeout-box.used:hover,
+.score-modal .timeout-container[data-team="home"] .timeout-box.used:focus-visible {
   background-color: #fff;
   color: #0b5ed7;
   border-color: #0b5ed7;
 }
 
-.score-modal .timeout-container.right-timeout .timeout-box.used:hover,
-.score-modal .timeout-container.right-timeout .timeout-box.used:focus-visible {
+.score-modal .timeout-container[data-team="opp"] .timeout-box.used:hover,
+.score-modal .timeout-container[data-team="opp"] .timeout-box.used:focus-visible {
   background-color: #fff;
   color: #bb2d3b;
   border-color: #bb2d3b;
 }
 
-.score-modal .timeout-container.left-timeout .timeout-box.active {
+.score-modal .timeout-container[data-team="home"] .timeout-box.active {
   box-shadow: 0 0.75rem 1.5rem rgba(13, 110, 253, 0.3);
 }
 
-.score-modal .timeout-container.right-timeout .timeout-box.active {
+.score-modal .timeout-container[data-team="opp"] .timeout-box.active {
   box-shadow: 0 0.75rem 1.5rem rgba(220, 53, 69, 0.3);
 }
