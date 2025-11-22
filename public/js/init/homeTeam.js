@@ -1,6 +1,4 @@
 // init.js
-import { updateState } from '../state.js';
-
 export async function initializeHomeTeam() {
   const HOME_TEAM_FALLBACK = 'Home Team';
   const pattern = /\{homeTeam\}/g;

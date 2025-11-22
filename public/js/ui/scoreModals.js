@@ -1,36 +1,21 @@
-<<<<<<< Updated upstream
-// Updated ui/scoreModals.js (full replacement with per-set persistence)
-import { startTimeoutCountdown, resetTimeoutCountdown, getTimeoutTeamColorMap } from './timeOut.js';
-import { state } from '../state.js'; // Add this import
-
-// The swap modal already flips `data-team` values on the timeout controls, so we
-// keep the state aligned to whatever `data-team` is set to rather than
-// inverting based on `state.isDisplaySwapped`.
-const domTeamToStateTeam = (domTeam) => domTeam;
-const stateTeamToDomTeam = (stateTeam) => stateTeam;
-
-=======
-// ui/scoreModals.js
-import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js'; // Adjust path if needed
+// ui/scoreModals.js (updated)
 import { state, updateState } from '../state.js';  // Add this import
->>>>>>> Stashed changes
-// Function to pad scores to two digits
+import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js';
+
 function padScore(score) {
   return String(score).padStart(2, '0');
 }
 
-// Handle modal show event to load scores from the calling set
 const scoreGameModal = document.getElementById('scoreGameModal');
 if (scoreGameModal) {
   scoreGameModal.addEventListener('show.bs.modal', (event) => {
-    const button = event.relatedTarget; // The button that triggered the modal
+    const button = event.relatedTarget;
     const setNumber = button.getAttribute('data-set');
     if (!setNumber) return;
 
-    // Store the current set on the modal for later reference
     scoreGameModal.dataset.currentSet = setNumber;
 
-    // Load scores from the table inputs
+    // Keep loading scores from DOM (table inputs)
     const homeInput = document.getElementById(`set${setNumber}Home`);
     const oppInput = document.getElementById(`set${setNumber}Opp`);
     const homeDisplay = document.getElementById('scoreGameHomeDisplay');
@@ -41,39 +26,20 @@ if (scoreGameModal) {
       oppDisplay.textContent = padScore(oppInput.value || 0);
     }
 
-    loadTimeoutStates(setNumber);
-  });
-
-  scoreGameModal.addEventListener('hidden.bs.modal', () => {
-    const setNumber = scoreGameModal.dataset.currentSet;
-    if (setNumber) {
-      const setState = state.setTimeoutStates[setNumber];
-      const bar = document.getElementById('scoreGameTimeoutSrStatus');
-      const currentRemaining = parseInt(bar?.getAttribute('aria-valuenow') || '0', 10);
-      setState.remaining = currentRemaining;
-
-      if (currentRemaining <= 0) {
-        setState.activeTeam = null;
-        setState.activeIndex = null;
-      }
-
-      saveTimeoutStates(setNumber); // Save used and active
-    }
-
-    // Clean up UI
-    const boxes = document.querySelectorAll('.timeout-box');
-    boxes.forEach(box => {
-      box.setAttribute('aria-pressed', 'false');
-      box.classList.remove('active');
-    });
+    // Remove window.setTimeouts init (migrated to timeOut.js)
+    // Load timeouts UI from state (minimal init; see timeOut.js for details)
 
     const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
-    if (timeoutDisplay) timeoutDisplay.textContent = '';
+    if (timeoutDisplay) {
+      timeoutDisplay.textContent = '';
+    }
+  });
+
+  scoreGameModal.addEventListener('hide.bs.modal', () => {
     resetTimeoutCountdown();
   });
 }
 
-// Handle score changes via increment/decrement zones
 function handleScoreChange(event) {
   const zone = event.currentTarget;
   const team = zone.dataset.team;
@@ -98,11 +64,11 @@ function handleScoreChange(event) {
     score -= 1;
   }
 
+  // Keep direct UI updates
   display.textContent = padScore(score);
   input.value = score;
-
-  // Optional: Trigger input event for any bound listeners (e.g., validation or auto-save)
   input.dispatchEvent(new Event('input', { bubbles: true }));
+
   // Add: Sync to state (no UI change here)
   updateState({
     sets: {
@@ -113,11 +79,10 @@ function handleScoreChange(event) {
   });
 }
 
-// Attach event listeners to score zones
+// Attach event listeners (unchanged)
 const scoreZones = document.querySelectorAll('.score-zone');
 scoreZones.forEach((zone) => {
   zone.addEventListener('click', handleScoreChange);
-  // Optional: Add keydown for accessibility (e.g., Enter/Space to trigger)
   zone.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -125,134 +90,3 @@ scoreZones.forEach((zone) => {
     }
   });
 });
-
-// Function to load timeout states for a set
-function loadTimeoutStates(setNumber) {
-  const setState = state.setTimeoutStates[setNumber];
-  const homeBoxes = document.querySelectorAll('.timeout-box[data-team="home"]');
-  const oppBoxes = document.querySelectorAll('.timeout-box[data-team="opp"]');
-  const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
-
-  homeBoxes.forEach((box, index) => {
-    const stateTeam = domTeamToStateTeam('home');
-    const isUsed = setState.used[stateTeam][index];
-    box.classList.toggle('used', isUsed);
-    box.setAttribute('aria-pressed', 'false');
-    box.classList.remove('active');
-    box.setAttribute('aria-label', `Home Team ${isUsed ? 'timeout used' : 'timeout available'}`);
-  });
-
-  oppBoxes.forEach((box, index) => {
-    const stateTeam = domTeamToStateTeam('opp');
-    const isUsed = setState.used[stateTeam][index];
-    box.classList.toggle('used', isUsed);
-    box.setAttribute('aria-pressed', 'false');
-    box.classList.remove('active');
-    box.setAttribute('aria-label', `Opponent ${isUsed ? 'timeout used' : 'timeout available'}`);
-  });
-
-  if (timeoutDisplay) timeoutDisplay.textContent = '';
-  resetTimeoutCountdown();
-
-  // Resume active timeout if applicable
-  if (setState.activeTeam && setState.remaining > 0) {
-    const displayTeam = stateTeamToDomTeam(setState.activeTeam);
-    const teamBoxes = displayTeam === 'home' ? homeBoxes : oppBoxes;
-    const box = typeof setState.activeIndex === 'number' ? teamBoxes[setState.activeIndex] : undefined;
-    if (box) {
-      box.setAttribute('aria-pressed', 'true');
-      box.classList.add('active');
-      const teamName = displayTeam === 'home' ? 'Home Team' : 'Opponent';
-      if (timeoutDisplay) timeoutDisplay.textContent = `Timeout: ${teamName}`;
-      startTimeoutCountdown(setState.activeTeam, setState.remaining, getTimeoutTeamColorMap());
-    } else {
-      setState.activeTeam = null;
-      setState.activeIndex = null;
-    }
-  }
-}
-
-// Function to save timeout states for a set
-function saveTimeoutStates(setNumber) {
-  const setState = state.setTimeoutStates[setNumber];
-  const homeBoxes = document.querySelectorAll('.timeout-box[data-team="home"]');
-  const oppBoxes = document.querySelectorAll('.timeout-box[data-team="opp"]');
-
-  homeBoxes.forEach((box, index) => {
-    const stateTeam = domTeamToStateTeam('home');
-    setState.used[stateTeam][index] = box.classList.contains('used');
-  });
-
-  oppBoxes.forEach((box, index) => {
-    const stateTeam = domTeamToStateTeam('opp');
-    setState.used[stateTeam][index] = box.classList.contains('used');
-  });
-
-  const activeBox = document.querySelector('.timeout-box.active');
-  if (activeBox) {
-    const domTeam = activeBox.dataset.team;
-    const stateTeam = domTeamToStateTeam(domTeam);
-    const teamBoxes = document.querySelectorAll(`.timeout-box[data-team="${domTeam}"]`);
-    setState.activeTeam = stateTeam;
-    setState.activeIndex = Array.from(teamBoxes).indexOf(activeBox);
-  } else {
-    setState.activeTeam = null;
-    setState.activeIndex = null;
-  }
-
-  // TODO: Trigger auto-save to Cloudflare DO if needed (e.g., debounce and PATCH to Worker endpoint for atomic update)
-}
-
-// Optional: Basic timeout handling (toggle pressed state)
-const timeoutBoxes = document.querySelectorAll('.timeout-box');
-timeoutBoxes.forEach((box) => {
-  box.addEventListener('click', () => {
-    const isPressed = box.getAttribute('aria-pressed') === 'true';
-    const team = box.dataset.team;
-    const teamName = team === 'home' ? 'Home Team' : 'Opponent';
-    const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
-
-    // Ensure only one timeout active: unpress others
-    const otherBoxes = document.querySelectorAll('.timeout-box[aria-pressed="true"]');
-    otherBoxes.forEach(otherBox => {
-      if (otherBox !== box) {
-        otherBox.setAttribute('aria-pressed', 'false');
-        otherBox.classList.remove('active');
-      }
-    });
-
-    if (isPressed) {
-      // Stop timeout
-      box.setAttribute('aria-pressed', 'false');
-      box.classList.remove('active');
-      box.classList.remove('used');
-      if (timeoutDisplay) timeoutDisplay.textContent = '';
-      resetTimeoutCountdown();
-      box.setAttribute('aria-label', `${teamName} timeout available`);
-    } else {
-      // Check if available (not all used)
-      const teamBoxes = document.querySelectorAll(`.timeout-box[data-team="${team}"]`);
-      const availableIndex = Array.from(teamBoxes).findIndex(b => !b.classList.contains('used'));
-      if (availableIndex === -1) return; // No available timeouts
-
-      // Start timeout on this box (but since boxes are identical, could use availableIndex, but since clicked specific, check if this box is not used
-      if (box.classList.contains('used')) return; // Can't start on used box
-
-      if (timeoutDisplay) timeoutDisplay.textContent = `Timeout: ${teamName}`;
-      box.setAttribute('aria-pressed', 'true');
-      box.classList.add('active');
-      box.classList.add('used');
-      startTimeoutCountdown(team, 60, getTimeoutTeamColorMap());
-      box.setAttribute('aria-label', `${teamName} timeout used`);
-    }
-
-    // Save after change
-    const setNumber = scoreGameModal.dataset.currentSet;
-    if (setNumber) saveTimeoutStates(setNumber);
-  });
-});
-
-// Note: With this setup, timeout states (used, active, remaining) are persisted per set in client-side state.js.
-// For server persistence, add logic to serialize state.setTimeoutStates to your Cloudflare Worker/DO on save events,
-// using transactions in D1 SQLite for atomic updates (e.g., UPDATE match SET timeout_data = json WHERE id = ?).
-// Example: On modal hidden or score change, debounce and send PATCH with set-specific data to avoid clobbering.

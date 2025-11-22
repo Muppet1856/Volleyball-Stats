@@ -1,5 +1,5 @@
 // swap.js
-import { applyTimeoutTeamColor, getTimeoutTeamColorMap } from './timeOut.js';
+import './timeOut.js';
 import { state } from '../state.js';
 export function mainSwap(config) {
   state.isDisplaySwapped = !state.isDisplaySwapped;

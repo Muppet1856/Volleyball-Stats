@@ -1,5 +1,5 @@
+// ui/opponentName.js
 import { debounce } from '../utils/debounce.js';
-import { updateState } from '../state.js';
 
 export const debouncedOpponentUpdate = debounce(() => {
   updateOpponentName();
@@ -16,9 +16,5 @@ export function updateOpponentName() {
     const tmpl = el.getAttribute('data-opp-team-template');
     if (tmpl) el.textContent = tmpl.replace(pattern, oppName);
   });
-<<<<<<< Updated upstream
-}
-=======
   updateState({ opponent: oppName });
 }
->>>>>>> Stashed changes
