@@ -1,4 +1,4 @@
-// volleyball_stats.js — the only file loaded in <script type="module">
+// js/volleyball_stats.js — the only file loaded in <script type="module">
 import { state } from './state.js';
 import { initializeHomeTeam } from './init/homeTeam.js';
 import { setDefaultDate } from './init/date.js';
@@ -7,6 +7,7 @@ import { swapConfig , mainSwap } from './ui/swap.js';
 import { debouncedOpponentUpdate , updateOpponentName} from './ui/opponentName.js';
 import './ui/scoreModals.js';
 import './ui/finalizeButtons.js';
+import './ui/resultSummary.js';  // New import to load the result summary logic
 
 //import { loadPlayers, seedDemoPlayersIfEmpty } from './players/loader.js';
 //import { loadMatchFromUrl } from './match/loader.js';  // new file
@@ -44,4 +45,3 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loader').style.display = 'none';
   document.getElementById('main-content').style.visibility = 'visible';
 });
-  

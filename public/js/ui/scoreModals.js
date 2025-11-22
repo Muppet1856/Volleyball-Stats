@@ -90,3 +90,36 @@ scoreZones.forEach((zone) => {
     }
   });
 });
+
+// Sync table inputs to state on direct edit or modal update
+window.addEventListener('DOMContentLoaded', () => {
+  const allSetInputs = document.querySelectorAll('input[id^="set"][id$="Home"], input[id^="set"][id$="Opp"]');
+  allSetInputs.forEach(input => {
+    input.addEventListener('input', () => {
+      const inputId = input.id;
+      const match = inputId.match(/set(\d+)(Home|Opp)/);
+      if (!match) return;
+      const setNum = match[1];
+      const side = match[2];
+      const team = side.toLowerCase() === 'home' ? 'home' : 'opp';
+      const score = parseInt(input.value, 10) || 0;
+      input.value = score;  // Normalize input to integer
+      updateState({
+        sets: {
+          [setNum]: {
+            scores: { [team]: score }
+          }
+        }
+      });
+      // If modal is open for this set, sync display
+      const modal = document.getElementById('scoreGameModal');
+      if (modal && modal.classList.contains('show') && modal.dataset.currentSet === setNum) {
+        const displayId = side === 'Home' ? 'scoreGameHomeDisplay' : 'scoreGameOppDisplay';
+        const display = document.getElementById(displayId);
+        if (display) {
+          display.textContent = padScore(score);
+        }
+      }
+    });
+  });
+});
