@@ -28,7 +28,15 @@
 
 </head>
 <body>
-  <form id="matchForm" class="needs-validation" novalidate>
+<div id="loader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; display: flex; align-items: center; justify-content: center; z-index: 9999;">
+  <div class="spinner-border text-primary" role="status"> <!-- Bootstrap spinner class -->
+    <span class="visually-hidden">Loading...</span> <!-- For accessibility -->
+  </div>
+</div>
+<div id="main-content" style="visibility: hidden;"> <!-- Your app's root div, initially hidden --><div id="main-content" style="visibility: hidden;"> <!-- Your app's root div, initially hidden -->
+  <!-- Rest of your UI here, e.g., team names, scoreboards -->
+</div>
+<form id="matchForm" class="needs-validation" novalidate>
   <div class="container mt-4">
     <div class="section mb-3 d-flex flex-wrap gap-2">
       <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matchIndexModal">Saved Matches</button>
@@ -82,7 +90,7 @@
               </div>
               <div class="col-12 col-xl-6">
                 <label for="opponent" class="form-label">Opponent</label>
-                <input type="text" class="form-control" id="opponent" oninput="updateOpponentName(); updateFirstServeOptions(); updateSetHeaders()">
+                <input type="text" class="form-control" id="opponent">
               </div>
               <div class="col-12 col-md-6 col-xl-4">
                 <label for="jerseyColorHome" class="form-label" id="jerseyColorHomeLabel" data-home-team-template="Jersey Color ({homeTeam})">Jersey Color (Home Team)</label>
@@ -100,7 +108,7 @@
                 </select>
               </div>
               <div class="col-12 col-md-6 col-xl-4">
-                <label for="jerseyColorOpp" id="jerseyColorOppLabel" class="form-label">Jersey Color (Opponent)</label>
+                <label for="jerseyColorOpp" class="form-label" id="jerseyColorOppLabel" data-opp-team-template="Jersey Color ({oppTeam})">Jersey Color (Opponent)</label>
                 <select class="form-select jersey-select" id="jerseyColorOpp">
                   <option class="jersey-option" value="white" data-color="#ffffff">White</option>
                   <option class="jersey-option" value="grey" data-color="#808080" selected>Grey</option>
@@ -132,7 +140,7 @@
                     </div>
                     <span class="result-vs">vs</span>
                     <div class="result-team">
-                      <label for="resultOpp" class="form-label mb-0" id="resultOppLabel">Opponent</label>
+                      <label for="resultOpp" class="form-label mb-0" id="resultOppLabel" data-opp-team-template="{oppTeam}">Opponent</label>
                       <select class="form-select w-auto text-center" id="resultOpp">
                         <option value="0">0</option>
                         <option value="1">1</option>
@@ -145,7 +153,10 @@
               </div>
               <div class="col-12 col-xl-6">
                 <label for="firstServer" class="form-label">First Serve</label>
-                <select class="form-select" id="firstServer"></select>
+                <select class="form-select" id="firstServer">
+                  <option class="firstServer" data-home-team-template="{homeTeam}">Home Team</option>
+                  <option class="firstServer" data-opp-team-template="{oppTeam}">Opponent</option>
+                </select>
               </div>
             </div>
           </div>
@@ -175,16 +186,16 @@
     <div class="section">
       <h2 class="mb-3">Set-by-Set Scoring</h2>
       <div class="mb-2 text-center">
-        <button type="button" class="btn btn-secondary swap-btn" onclick="swapScores()"></button>
+        <button id="swapTeamsBtn" type="button" class="btn btn-secondary swap-btn"></button>
       </div>
-      <table class="table table-bordered set-table">
+      <table class="table table-bordered set-table" id="scoring-table">
         <tr>
           <th class="set-index-header">Set</th>
           <th class="left-score header-cell" id="homeHeader">
-            <button type="button" class="team-name-button" data-team-header="home" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Home Team">Home Team</button>
+            <button type="button" class="team-name-button" data-team-header="home" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Home Team" data-home-team-template="{homeTeam}">Home Team</button>
           </th>
           <th class="right-score header-cell" id="oppHeader">
-            <button type="button" class="team-name-button" data-team-header="opp" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Opponent">Opponent</button>
+            <button type="button" class="team-name-button" data-team-header="opp" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="bottom" data-bs-content="Opponent" data-opp-team-template="{oppTeam}">Opponent</button>
           </th>
           <th></th>
         </tr>
@@ -197,7 +208,8 @@
           <td><input type="number" class="form-control right-score" id="set1Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
-              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="1">Score Game</button>
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-bs-toggle="modal" data-bs-target="#scoreGameModal" data-set="1">Score Game</button>
+              <button type="button" class="btn btn-primary finalize-button" data-bs-toggle="button" data-set="1">Final</button>
             </div>
           </td>
         </tr>
@@ -210,7 +222,8 @@
           <td><input type="number" class="form-control right-score" id="set2Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
-              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="2">Score Game</button>
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-bs-toggle="modal" data-bs-target="#scoreGameModal" data-set="2">Score Game</button>
+              <button type="button" class="btn btn-primary finalize-button" data-bs-toggle="button" data-set="2">Final</button>
             </div>
           </td>
         </tr>
@@ -223,7 +236,8 @@
           <td><input type="number" class="form-control right-score" id="set3Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
-              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="3">Score Game</button>
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-bs-toggle="modal" data-bs-target="#scoreGameModal" data-set="3">Score Game</button>
+              <button type="button" class="btn btn-primary finalize-button" data-bs-toggle="button" data-set="3">Final</button>
             </div>
           </td>
         </tr>
@@ -236,7 +250,8 @@
           <td><input type="number" class="form-control right-score" id="set4Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
-              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="4">Score Game</button>
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-bs-toggle="modal" data-bs-target="#scoreGameModal" data-set="4">Score Game</button>
+              <button type="button" class="btn btn-primary finalize-button" data-bs-toggle="button" data-set="4">Final</button>
             </div>
           </td>
         </tr>
@@ -249,7 +264,8 @@
           <td><input type="number" class="form-control right-score" id="set5Opp" min="0" max="99" inputmode="numeric" pattern="[0-9]*"></td>
           <td class="set-actions">
             <div class="set-actions-stack">
-              <button type="button" class="btn btn-outline-dark score-game-btn" data-set="5">Score Game</button>
+              <button type="button" class="btn btn-outline-dark score-game-btn" data-bs-toggle="modal" data-bs-target="#scoreGameModal" data-set="5">Score Game</button>
+              <button type="button" class="btn btn-primary finalize-button" data-bs-toggle="button" data-set="5">Final</button>
             </div>
           </td>
         </tr>
@@ -267,43 +283,63 @@
             <div class="scoreboard-wrapper">
               <button type="button" class="btn btn-light modal-swap-btn swap-btn" id="scoreModalSwapBtn" aria-label="Swap team sides"></button>
               <div class="team-panel team-blue">
-                <span class="score-team-label" id="scoreGameLeftLabel">Home Team</span>
+                <span class="score-team-label" id="scoreGameLeftLabel" data-home-team-template="{homeTeam}">Home Team</span>
                 <div class="score-zone increment" role="button" tabindex="0" data-team="home" data-action="increment" aria-label="Increase Home Team score"></div>
                 <div class="score-zone decrement" role="button" tabindex="0" data-team="home" data-action="decrement" aria-label="Decrease Home Team score"></div>
                 <div class="score-value" id="scoreGameHomeDisplay">00</div>
               </div>
               <div class="team-panel team-red">
-                <span class="score-team-label" id="scoreGameRightLabel">Opponent</span>
+                <span class="score-team-label" id="scoreGameRightLabel" data-opp-team-template="{oppTeam}">Opponent</span>
                 <div class="score-zone increment" role="button" tabindex="0" data-team="opp" data-action="increment" aria-label="Increase opponent score"></div>
                 <div class="score-zone decrement" role="button" tabindex="0" data-team="opp" data-action="decrement" aria-label="Decrease opponent score"></div>
                 <div class="score-value" id="scoreGameOppDisplay">00</div>
               </div>
             </div>
+            <!-- Updated timeout-row in the modal (add classes to timeout-container) -->
             <div class="timeout-row" role="group" aria-label="Timeout controls">
               <div class="timeout-bar">
-                <div class="timeout-container" data-team="home" aria-label="Home Team timeouts">
+                <div class="timeout-container left-timeout" data-team="home" aria-label="Home Team timeouts">
                   <div class="timeout-boxes">
-                    <button type="button" class="timeout-box btn" data-team="home" data-timeout-index="0" aria-pressed="false" aria-label="Home Team first timeout available">
+                    <button type="button" class="timeout-box btn team-blue" data-team="home" data-timeout-index="0" aria-pressed="false" aria-label="Home Team first timeout available">
                       <span class="timeout-box-text">TO</span>
                     </button>
-                    <button type="button" class="timeout-box btn" data-team="home" data-timeout-index="1" aria-pressed="false" aria-label="Home Team second timeout available">
+                    <button type="button" class="timeout-box btn team-blue" data-team="home" data-timeout-index="1" aria-pressed="false" aria-label="Home Team second timeout available">
                       <span class="timeout-box-text">TO</span>
                     </button>
                   </div>
                 </div>
-                <div class="timeout-container" data-team="opp" aria-label="Opponent timeouts">
+                <div class="timeout-container right-timeout" data-team="opp" aria-label="Opponent timeouts">
                   <div class="timeout-boxes">
-                    <button type="button" class="timeout-box btn" data-team="opp" data-timeout-index="0" aria-pressed="false" aria-label="Opponent first timeout available">
+                    <button type="button" class="timeout-box btn team-red" data-team="opp" data-timeout-index="0" aria-pressed="false" aria-label="Opponent first timeout available">
                       <span class="timeout-box-text">TO</span>
                     </button>
-                    <button type="button" class="timeout-box btn" data-team="opp" data-timeout-index="1" aria-pressed="false" aria-label="Opponent second timeout available">
+                    <button type="button" class="timeout-box btn team-red" data-team="opp" data-timeout-index="1" aria-pressed="false" aria-label="Opponent second timeout available">
                       <span class="timeout-box-text">TO</span>
                     </button>
                   </div>
                 </div>
               </div>
               <div id="scoreGameTimeoutDisplay" class="timeout-timer-display" role="status" aria-live="polite"></div>
-              <div id="scoreGameTimeoutSrStatus" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+              <div id="timeoutContainer" class="mt-4 position-relative" style="height: 30px; display: none;" aria-live="polite" aria-atomic="true">
+                  <div class="progress w-100 h-100" style="direction: rtl;">
+                      <div
+                          id="scoreGameTimeoutSrStatus"
+                          class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                          role="progressbar"
+                          aria-valuemin="0"
+                          aria-valuemax="60"
+                          aria-valuenow="60"
+                          style="width: 100%; transition: width 1s linear;"
+                      ></div>
+                  </div>
+
+                  <!-- Centered overlay text -->
+                  <div id="timeoutCenteredLabel"
+                       class="position-absolute top-50 start-50 translate-middle fw-bold"
+                       style="pointer-events: none;">
+                      1:00
+                  </div>
+              </div>
             </div>
           </div>
         </div>
@@ -390,7 +426,7 @@
   </form>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/volleyball_stats.js" defer></script>
-
+  <script type="module" src="js/volleyball_stats.js" defer></script>
+</div>
 </body>
 </html>
