@@ -1,115 +1,148 @@
-// timeOut.js (updated for state integration and declarative renders)
-import { state, updateState } from '../state.js'; // New: Required for state access
-import { renderModal } from './renderScoringModal.js'; // New: For re-renders on timer tick
-
+// timeOut.js
 let countdownInterval = null;
 let currentActiveButton = null;
-let remaining = 0;  // Transient remaining seconds
+
+function updateDisplay(bar, label, remaining, duration) {
+    const displayRemaining = Math.max(remaining, 0);
+    const pct = (displayRemaining / duration) * 100;
+    bar.style.width = pct + '%';
+    bar.setAttribute('aria-valuenow', displayRemaining);
+    const mm = Math.floor(displayRemaining / 60);
+    const ss = String(displayRemaining % 60).padStart(2, '0');
+    label.textContent = `${mm}:${ss}`;
+}
 
 export function resetTimeoutCountdown() {
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-    countdownInterval = null;
-  }
-  remaining = 0;
-  currentActiveButton = null;
-  renderModal(); // Re-render to clear UI
+    const container = document.getElementById("timeoutContainer");
+    const bar = document.getElementById("scoreGameTimeoutSrStatus");
+    const label = document.getElementById("timeoutCenteredLabel");
+
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+
+    if (bar) {
+        bar.style.width = "0%";
+        bar.setAttribute("aria-valuenow", 0);
+    }
+
+    if (label) {
+        label.textContent = "";
+    }
+
+    if (container) {
+        container.style.display = "none";
+    }
+
+    if (currentActiveButton) {
+        currentActiveButton.classList.remove('active');
+        currentActiveButton = null;
+    }
 }
 
 export function startTimeoutCountdown(button) {
-  const duration = 60;
-  remaining = duration;
-  currentActiveButton = button;
+    const duration = 60;
+    let remaining = duration;
 
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-  }
+    const container = document.getElementById("timeoutContainer");
+    const bar = document.getElementById("scoreGameTimeoutSrStatus");
+    const label = document.getElementById("timeoutCenteredLabel");
 
-  countdownInterval = setInterval(() => {
-    remaining = Math.max(remaining - 1, 0);
-    renderModal(); // Re-render on each tick (updates bar/label)
+    if (!container || !bar || !label) return;
 
-    if (remaining <= 0) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-      currentActiveButton = null;
-      renderModal(); // Final render to hide/clear
+    currentActiveButton = button;
+
+    const isLeft = button.classList.contains('team-blue');
+
+    bar.classList.remove("bg-primary", "bg-danger");
+    bar.classList.add(isLeft ? "bg-primary" : "bg-danger");
+
+    container.style.display = "block";
+
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
     }
-  }, 1000);
 
-  renderModal(); // Initial render to show start
-}
+    updateDisplay(bar, label, remaining, duration);
 
-// New exports unchanged...
-export function getActiveTimeout() {
-  if (!currentActiveButton) return null;
-  return {
-    team: currentActiveButton.dataset.team,
-    index: parseInt(currentActiveButton.dataset.timeoutIndex),
-    isBlue: currentActiveButton.classList.contains('team-blue')
-  };
-}
+    countdownInterval = setInterval(() => {
+        remaining--;
 
-export function getRemaining() {
-  return remaining;
+        updateDisplay(bar, label, remaining, duration);
+
+        if (remaining <= 0) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+            if (currentActiveButton) {
+                currentActiveButton.classList.remove('active');
+                currentActiveButton = null;
+            }
+            container.style.display = "none";
+            const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
+            if (timeoutDisplay) {
+              timeoutDisplay.textContent = '';
+            }
+            return;
+        }
+    }, 1000);
 }
 
 function handleTimeoutClick(e) {
-  const box = e.target.closest('.timeout-box');
-  if (!box) return;
+    const box = e.target.closest('.timeout-box');
+    if (!box) return;
 
-  const setNumber = state.currentSet;
-  if (!setNumber) return;
+    const modal = document.getElementById('scoreGameModal');
+    if (!modal) return;
+    const setNumber = modal.dataset.currentSet;
+    if (!setNumber) return;
 
-  const team = box.dataset.team;
-  const index = parseInt(box.dataset.timeoutIndex);
-  const isPressed = box.getAttribute('aria-pressed') === 'true';
+    const team = box.dataset.team;
+    const index = parseInt(box.dataset.timeoutIndex);
+    const teamName = team === 'home' ? 'Home Team' : 'Opponent';
+    const ord = index + 1 === 1 ? 'first' : 'second';
 
-  if (isPressed) {
-    // Deselect, update state, reset timer
-    updateState({
-      sets: {
-        ...state.sets,
-        [setNumber]: {
-          ...state.sets[setNumber],
-          timeouts: {
-            ...state.sets[setNumber].timeouts,
-            [team]: state.sets[setNumber].timeouts[team].map((val, i) => i === index ? false : val)
-          }
+    const isPressed = box.getAttribute('aria-pressed') === 'true';
+
+    const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
+
+    if (isPressed) {
+        // Deselect
+        box.setAttribute('aria-pressed', 'false');
+        box.classList.remove('used', 'active');
+        box.classList.add('available');
+        resetTimeoutCountdown();
+        box.setAttribute('aria-label', `${teamName} ${ord} timeout available`);
+        if (timeoutDisplay) {
+          timeoutDisplay.textContent = '';
         }
-      }
-    }, renderModal);
-    resetTimeoutCountdown();
-  } else {
-    // Select, update state, start timer
-    updateState({
-      sets: {
-        ...state.sets,
-        [setNumber]: {
-          ...state.sets[setNumber],
-          timeouts: {
-            ...state.sets[setNumber].timeouts,
-            [team]: state.sets[setNumber].timeouts[team].map((val, i) => i === index ? true : val)
-          }
+        window.setTimeouts[setNumber][team][index] = false;
+    } else {
+        // Select and start
+        resetTimeoutCountdown(); // Cancel any existing timer
+        box.setAttribute('aria-pressed', 'true');
+        box.classList.remove('available');
+        box.classList.add('used', 'active');
+        startTimeoutCountdown(box);
+        box.setAttribute('aria-label', `${teamName} ${ord} timeout used`);
+        if (timeoutDisplay) {
+          timeoutDisplay.textContent = `Timeout: ${teamName}`;
         }
-      }
-    }, renderModal);
-    startTimeoutCountdown(box);
-  }
+        window.setTimeouts[setNumber][team][index] = true;
+    }
 }
 
-// Event listeners (add to DOMContentLoaded or ensure they're attached)
 window.addEventListener("DOMContentLoaded", () => {
-  const timeoutBoxes = document.querySelectorAll('.timeout-box');
-  timeoutBoxes.forEach(box => {
-    box.classList.add('available');
-    box.addEventListener('click', handleTimeoutClick);
-  });
+    const timeoutBoxes = document.querySelectorAll('.timeout-box');
+    timeoutBoxes.forEach(box => {
+        box.classList.add('available');
+        box.addEventListener('click', handleTimeoutClick);
+    });
 
-  document.addEventListener("click", (e) => {
-    if (e.target.closest('.timeout-box') || e.target.closest('#timeoutContainer')) {
-      return;
-    }
-    resetTimeoutCountdown();
-  });
+    document.addEventListener("click", (e) => {
+        if (e.target.closest('.timeout-box') || e.target.closest('#timeoutContainer')) {
+            return;
+        }
+        resetTimeoutCountdown();
+    });
 });

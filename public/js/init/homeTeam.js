@@ -1,6 +1,4 @@
-// init/homeTeam.js (updated to sync with state)
-import { state, updateState } from '../state.js'; // New import
-
+// init.js
 export async function initializeHomeTeam() {
   const HOME_TEAM_FALLBACK = 'Home Team';
   const pattern = /\{homeTeam\}/g;
@@ -17,9 +15,6 @@ export async function initializeHomeTeam() {
   } catch (e) {
     console.warn('Could not load home team config', e);
   }
-
-  // Update central state with fetched home team name
-  updateState({ homeTeam: homeName });
 
   document.querySelectorAll('[data-home-team-template]').forEach(el => {
     const tmpl = el.getAttribute('data-home-team-template');

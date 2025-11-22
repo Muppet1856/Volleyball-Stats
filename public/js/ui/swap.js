@@ -1,13 +1,7 @@
 // swap.js
-import { state } from '../state.js'; // New import if needed
-import { renderModal } from './renderScoringModal.js'; // New import
-
 export function mainSwap(config) {
   swapColumnsGeneric(config);
   swapModal();
-  if (state.isModalOpen) {
-    renderModal(); // Re-render modal post-swap
-  }
 }
 
 function swapColumnsGeneric(config) {

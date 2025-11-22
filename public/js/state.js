@@ -1,22 +1,22 @@
-// state.js (add finalized and match wins)
+// state.js
+const TIMEOUT_COUNT = 2;
+const TIMEOUT_DURATION_SECONDS = 60;
+const SET_NUMBERS = [1, 2, 3, 4, 5];
+const matchSetRecords = new Map();
 export const state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',
   isDisplaySwapped: false,
-  currentSet: null,
-  sets: {
-    1: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
-    2: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
-    3: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
-    4: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false },
-    5: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false }
+  currentSet: 1,
+  scores: [0, 0],
+  timeouts: {
+    home: Array(TIMEOUT_COUNT).fill(false),
+    opp: Array(TIMEOUT_COUNT).fill(false)
   },
-  matchWins: { home: 0, opp: 0 },  // Track set wins
-  overallWinner: null,  // 'home', 'opp', or null
-  isModalOpen: false
+  activeTimeout: { home: null, opp: null },
+  timeoutTimers: { home: null, opp: null },
+  timeoutRemainingSeconds: {
+    home: TIMEOUT_DURATION_SECONDS,
+    opp: TIMEOUT_DURATION_SECONDS
+  }// ... everything else in one place
 };
-
-export function updateState(newState, callback) {
-  Object.assign(state, newState);
-  if (callback) callback();
-}

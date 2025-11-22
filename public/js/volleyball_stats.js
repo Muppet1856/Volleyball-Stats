@@ -6,7 +6,7 @@ import { enhanceJerseySelectsCustom } from './init/jerseyColors.js';
 import { swapConfig , mainSwap } from './ui/swap.js';
 import { debouncedOpponentUpdate , updateOpponentName} from './ui/opponentName.js';
 import './ui/scoreModals.js';
-import './ui/finalizeButtons.js';
+//import './ui/finalizeButtons.js';
 
 //import { loadPlayers, seedDemoPlayersIfEmpty } from './players/loader.js';
 //import { loadMatchFromUrl } from './match/loader.js';  // new file
@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (swapButton) {
     swapButton.addEventListener('click', () => {
       mainSwap(swapConfig);
+      // Optional: Toggle button text or state if you want to indicate swap/revert
+      // e.g., swapButton.textContent = swapButton.textContent === 'Swap Teams' ? 'Revert Swap' : 'Swap Teams';
     });
   } else {
     console.warn('Swap button not found.');
@@ -42,3 +44,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loader').style.display = 'none';
   document.getElementById('main-content').style.visibility = 'visible';
 });
+  
