@@ -3,7 +3,7 @@ const wsResultsBody = document.querySelector('#ws-results tbody');
 const runRestButton = document.querySelector('#run-rest-tests');
 const runWsButton = document.querySelector('#run-ws-tests');
 
-function renderRow(targetBody, label, method, status, body) {
+function renderRow(targetBody, label, method, request, status, body) {
   const row = document.createElement('tr');
   const endpointCell = document.createElement('td');
   endpointCell.textContent = label;
@@ -11,6 +11,21 @@ function renderRow(targetBody, label, method, status, body) {
 
   const methodCell = document.createElement('td');
   methodCell.textContent = method;
+
+  const requestCell = document.createElement('td');
+  const requestDetails = document.createElement('details');
+  const requestSummary = document.createElement('summary');
+  const requestText =
+    request === null || request === undefined || request === ''
+      ? 'No payload'
+      : request;
+  requestSummary.textContent =
+    typeof requestText === 'string' ? requestText.slice(0, 100) : 'View request';
+  const requestPre = document.createElement('pre');
+  requestPre.textContent =
+    typeof requestText === 'string' ? requestText : JSON.stringify(requestText, null, 2);
+  requestDetails.append(requestSummary, requestPre);
+  requestCell.appendChild(requestDetails);
 
   const statusCell = document.createElement('td');
   statusCell.textContent = status;
@@ -26,23 +41,25 @@ function renderRow(targetBody, label, method, status, body) {
   details.append(summary, pre);
   responseCell.appendChild(details);
 
-  row.append(endpointCell, methodCell, statusCell, responseCell);
+  row.append(endpointCell, methodCell, requestCell, statusCell, responseCell);
   targetBody.appendChild(row);
 }
 
-function addRestResult(endpoint, method, status, body) {
-  renderRow(restResultsBody, endpoint, method, status, body);
+function addRestResult(endpoint, method, request, status, body) {
+  renderRow(restResultsBody, endpoint, method, request, status, body);
 }
 
-function addWsResult(action, method, status, body) {
-  renderRow(wsResultsBody, action, method, status, body);
+function addWsResult(action, method, request, status, body) {
+  renderRow(wsResultsBody, action, method, request, status, body);
 }
 
 async function callApi(endpoint, method = 'GET', body) {
   const options = { method, headers: {} };
+  const serializedBody =
+    body === null || body === undefined ? null : JSON.stringify(body);
   if (body !== undefined) {
     options.headers['Content-Type'] = 'application/json';
-    options.body = JSON.stringify(body);
+    options.body = serializedBody;
   }
 
   const response = await fetch(endpoint, options);
@@ -55,7 +72,7 @@ async function callApi(endpoint, method = 'GET', body) {
     parsedBody = await response.text();
   }
 
-  return { status: response.status, body: parsedBody };
+  return { status: response.status, body: parsedBody, request: serializedBody };
 }
 
 async function runRestTests() {
@@ -66,7 +83,7 @@ async function runRestTests() {
   const steps = [
     async () => {
       const res = await callApi('/api/config');
-      addRestResult('/api/config', 'GET', res.status, res.body);
+      addRestResult('/api/config', 'GET', res.request, res.status, res.body);
     },
     async () => {
       const payload = {
@@ -85,151 +102,177 @@ async function runRestTests() {
       };
       const res = await callApi('/api/match/create', 'POST', payload);
       state.matchId = res.body?.id ?? null;
-      addRestResult('/api/match/create', 'POST', res.status, res.body);
+      addRestResult('/api/match/create', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-location', 'POST', { matchId: state.matchId, location: 'Test Arena Updated' });
-      addRestResult('/api/match/set-location', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-location', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-date-time', 'POST', { matchId: state.matchId, date: new Date().toISOString() });
-      addRestResult('/api/match/set-date-time', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-date-time', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-opp-name', 'POST', { matchId: state.matchId, opponent: 'Updated Visitors' });
-      addRestResult('/api/match/set-opp-name', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-opp-name', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-type', 'POST', { matchId: state.matchId, types: JSON.stringify({ scrimmage: true }) });
-      addRestResult('/api/match/set-type', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-type', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-result', 'POST', { matchId: state.matchId, resultHome: 3, resultOpp: 1 });
-      addRestResult('/api/match/set-result', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-result', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-players', 'POST', { matchId: state.matchId, players: JSON.stringify([7, 8, 9, 10, 11, 12]) });
-      addRestResult('/api/match/set-players', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-players', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-home-color', 'POST', { matchId: state.matchId, jerseyColorHome: 'gold' });
-      addRestResult('/api/match/set-home-color', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-home-color', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-opp-color', 'POST', { matchId: state.matchId, jerseyColorOpp: 'black' });
-      addRestResult('/api/match/set-opp-color', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-opp-color', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-first-server', 'POST', { matchId: state.matchId, firstServer: 'opp' });
-      addRestResult('/api/match/set-first-server', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-first-server', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-deleted', 'POST', { matchId: state.matchId, deleted: 0 });
-      addRestResult('/api/match/set-deleted', 'POST', res.status, res.body);
+      addRestResult('/api/match/set-deleted', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'GET', 0, 'Cannot continue tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'GET', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi(`/api/match/get/${state.matchId}`);
-      addRestResult(`/api/match/get/${state.matchId}`, 'GET', res.status, res.body);
+      addRestResult(`/api/match/get/${state.matchId}`, 'GET', res.request, res.status, res.body);
     },
     async () => {
       const res = await callApi('/api/match');
-      addRestResult('/api/match', 'GET', res.status, res.body);
+      addRestResult('/api/match', 'GET', res.request, res.status, res.body);
     },
     async () => {
       const res = await callApi('/api/player/create', 'POST', { number: '00', last_name: 'Tester', initial: 'T' });
       state.playerId = res.body?.id ?? null;
-      addRestResult('/api/player/create', 'POST', res.status, res.body);
+      addRestResult('/api/player/create', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId) return addRestResult('playerId missing', 'POST', 0, 'Cannot continue player tests without playerId');
+      if (!state.playerId)
+        return addRestResult('playerId missing', 'POST', null, 0, 'Cannot continue player tests without playerId');
       const res = await callApi('/api/player/set-lname', 'POST', { playerId: state.playerId, lastName: 'McTest' });
-      addRestResult('/api/player/set-lname', 'POST', res.status, res.body);
+      addRestResult('/api/player/set-lname', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId) return addRestResult('playerId missing', 'POST', 0, 'Cannot continue player tests without playerId');
+      if (!state.playerId)
+        return addRestResult('playerId missing', 'POST', null, 0, 'Cannot continue player tests without playerId');
       const res = await callApi('/api/player/set-fname', 'POST', { playerId: state.playerId, initial: 'TM' });
-      addRestResult('/api/player/set-fname', 'POST', res.status, res.body);
+      addRestResult('/api/player/set-fname', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId) return addRestResult('playerId missing', 'POST', 0, 'Cannot continue player tests without playerId');
+      if (!state.playerId)
+        return addRestResult('playerId missing', 'POST', null, 0, 'Cannot continue player tests without playerId');
       const res = await callApi('/api/player/set-number', 'POST', { playerId: state.playerId, number: '99' });
-      addRestResult('/api/player/set-number', 'POST', res.status, res.body);
+      addRestResult('/api/player/set-number', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId) return addRestResult('playerId missing', 'GET', 0, 'Cannot continue player tests without playerId');
+      if (!state.playerId)
+        return addRestResult('playerId missing', 'GET', null, 0, 'Cannot continue player tests without playerId');
       const res = await callApi(`/api/player/get/${state.playerId}`);
-      addRestResult(`/api/player/get/${state.playerId}`, 'GET', res.status, res.body);
+      addRestResult(`/api/player/get/${state.playerId}`, 'GET', res.request, res.status, res.body);
     },
     async () => {
       const res = await callApi('/api/player');
-      addRestResult('/api/player', 'GET', res.status, res.body);
+      addRestResult('/api/player', 'GET', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue set tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue set tests without matchId');
       const res = await callApi('/api/set/create', 'POST', { match_id: state.matchId, set_number: 1, home_score: 0, opp_score: 0, home_timeout_1: 0, home_timeout_2: 0, opp_timeout_1: 0, opp_timeout_2: 0 });
       state.setId = res.body?.id ?? null;
-      addRestResult('/api/set/create', 'POST', res.status, res.body);
+      addRestResult('/api/set/create', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.setId) return addRestResult('setId missing', 'POST', 0, 'Cannot continue set tests without setId');
+      if (!state.setId)
+        return addRestResult('setId missing', 'POST', null, 0, 'Cannot continue set tests without setId');
       const res = await callApi('/api/set/set-home-score', 'POST', { setId: state.setId, homeScore: 25 });
-      addRestResult('/api/set/set-home-score', 'POST', res.status, res.body);
+      addRestResult('/api/set/set-home-score', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.setId) return addRestResult('setId missing', 'POST', 0, 'Cannot continue set tests without setId');
+      if (!state.setId)
+        return addRestResult('setId missing', 'POST', null, 0, 'Cannot continue set tests without setId');
       const res = await callApi('/api/set/set-opp-score', 'POST', { setId: state.setId, oppScore: 20 });
-      addRestResult('/api/set/set-opp-score', 'POST', res.status, res.body);
+      addRestResult('/api/set/set-opp-score', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.setId) return addRestResult('setId missing', 'POST', 0, 'Cannot continue set tests without setId');
+      if (!state.setId)
+        return addRestResult('setId missing', 'POST', null, 0, 'Cannot continue set tests without setId');
       const res = await callApi('/api/set/set-home-timeout', 'POST', { setId: state.setId, timeoutNumber: 1, value: 1 });
-      addRestResult('/api/set/set-home-timeout', 'POST', res.status, res.body);
+      addRestResult('/api/set/set-home-timeout', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.setId) return addRestResult('setId missing', 'POST', 0, 'Cannot continue set tests without setId');
+      if (!state.setId)
+        return addRestResult('setId missing', 'POST', null, 0, 'Cannot continue set tests without setId');
       const res = await callApi('/api/set/set-opp-timeout', 'POST', { setId: state.setId, timeoutNumber: 2, value: 1 });
-      addRestResult('/api/set/set-opp-timeout', 'POST', res.status, res.body);
+      addRestResult('/api/set/set-opp-timeout', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'POST', 0, 'Cannot continue set tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue set tests without matchId');
       const res = await callApi('/api/set/set-is-final', 'POST', { matchId: state.matchId, finalizedSets: JSON.stringify({ 1: true }) });
-      addRestResult('/api/set/set-is-final', 'POST', res.status, res.body);
+      addRestResult('/api/set/set-is-final', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.setId) return addRestResult('setId missing', 'GET', 0, 'Cannot continue set tests without setId');
+      if (!state.setId)
+        return addRestResult('setId missing', 'GET', null, 0, 'Cannot continue set tests without setId');
       const res = await callApi(`/api/set/get/${state.setId}`);
-      addRestResult(`/api/set/get/${state.setId}`, 'GET', res.status, res.body);
+      addRestResult(`/api/set/get/${state.setId}`, 'GET', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'GET', 0, 'Cannot continue set tests without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'GET', null, 0, 'Cannot continue set tests without matchId');
       const res = await callApi(`/api/set?matchId=${state.matchId}`);
-      addRestResult(`/api/set?matchId=${state.matchId}`, 'GET', res.status, res.body);
+      addRestResult(`/api/set?matchId=${state.matchId}`, 'GET', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.setId) return addRestResult('setId missing', 'DELETE', 0, 'Cannot delete set without setId');
+      if (!state.setId)
+        return addRestResult('setId missing', 'DELETE', null, 0, 'Cannot delete set without setId');
       const res = await callApi(`/api/set/delete/${state.setId}`, 'DELETE');
-      addRestResult(`/api/set/delete/${state.setId}`, 'DELETE', res.status, res.body);
+      addRestResult(`/api/set/delete/${state.setId}`, 'DELETE', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId) return addRestResult('playerId missing', 'DELETE', 0, 'Cannot delete player without playerId');
+      if (!state.playerId)
+        return addRestResult('playerId missing', 'DELETE', null, 0, 'Cannot delete player without playerId');
       const res = await callApi(`/api/player/delete/${state.playerId}`, 'DELETE');
-      addRestResult(`/api/player/delete/${state.playerId}`, 'DELETE', res.status, res.body);
+      addRestResult(`/api/player/delete/${state.playerId}`, 'DELETE', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.matchId) return addRestResult('matchId missing', 'DELETE', 0, 'Cannot delete match without matchId');
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'DELETE', null, 0, 'Cannot delete match without matchId');
       const res = await callApi(`/api/match/delete/${state.matchId}`, 'DELETE');
-      addRestResult(`/api/match/delete/${state.matchId}`, 'DELETE', res.status, res.body);
+      addRestResult(`/api/match/delete/${state.matchId}`, 'DELETE', res.request, res.status, res.body);
     },
   ];
 
@@ -237,7 +280,7 @@ async function runRestTests() {
     try {
       await step();
     } catch (error) {
-      addRestResult('Error running step', 'N/A', 0, (error && error.message) || String(error));
+      addRestResult('Error running step', 'N/A', null, 0, (error && error.message) || String(error));
     }
   }
 
@@ -279,8 +322,10 @@ function createWsClient(name) {
       ws.removeEventListener('error', handleError);
       resolve({
         ws,
-        send(resource, action, payload) {
-          ws.send(JSON.stringify({ [resource]: { [action]: payload } }));
+        send(resource, action, payload, serializedPayload) {
+          const message = serializedPayload ?? JSON.stringify({ [resource]: { [action]: payload } });
+          ws.send(message);
+          return message;
         },
         async nextResponse(timeoutMs = 5000) {
           if (queue.length > 0) {
@@ -329,16 +374,17 @@ function createWsClient(name) {
 }
 
 async function sendAndTrack(client, label, resource, action, payload) {
+  const serializedPayload = JSON.stringify({ [resource]: { [action]: payload } });
   try {
-    client.send(resource, action, payload);
+    client.send(resource, action, payload, serializedPayload);
     const response = await client.nextResponse();
-    addWsResult(label, 'WS', response.status, response.body);
+    addWsResult(label, 'WS', serializedPayload, response.status, response.body);
     if (response.status >= 300) {
       throw new Error(`${label} failed with status ${response.status}`);
     }
     return response;
   } catch (error) {
-    addWsResult(label, 'WS', 0, error.message || String(error));
+    addWsResult(label, 'WS', serializedPayload, 0, error.message || String(error));
     throw error;
   }
 }
@@ -350,19 +396,19 @@ async function runWebSocketTests() {
   let actor;
 
   try {
-    addWsResult('Connect listener', 'CONNECT', '…', 'Opening listener socket');
+    addWsResult('Connect listener', 'CONNECT', null, '…', 'Opening listener socket');
     listener = await createWsClient('listener');
-    addWsResult('Connect listener', 'CONNECT', 101, 'Listener connected');
+    addWsResult('Connect listener', 'CONNECT', null, 101, 'Listener connected');
     listener.ws.addEventListener('message', (event) => {
       const text = event.data?.toString ? event.data.toString() : String(event.data);
       if (!text.startsWith('Debug:')) {
-        addWsResult('Broadcast', 'EVENT', 'info', text);
+        addWsResult('Broadcast', 'EVENT', null, 'info', text);
       }
     });
 
-    addWsResult('Connect actor', 'CONNECT', '…', 'Opening actor socket');
+    addWsResult('Connect actor', 'CONNECT', null, '…', 'Opening actor socket');
     actor = await createWsClient('actor');
-    addWsResult('Connect actor', 'CONNECT', 101, 'Actor connected');
+    addWsResult('Connect actor', 'CONNECT', null, 101, 'Actor connected');
 
     const uniqueSuffix = Date.now().toString();
 
@@ -455,7 +501,7 @@ async function runWebSocketTests() {
     await sleep(200);
     await sendAndTrack(actor, 'set:match delete', 'match', 'delete', { id: setMatchId });
   } catch (error) {
-    addWsResult('Error running WebSocket flow', 'N/A', 0, error.message || String(error));
+    addWsResult('Error running WebSocket flow', 'N/A', null, 0, error.message || String(error));
   } finally {
     actor?.close();
     listener?.close();
