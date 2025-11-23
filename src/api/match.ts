@@ -143,6 +143,42 @@ export async function setPlayers(storage: any, matchId: number, players: string)
   }
 }
 
+export async function addPlayer(storage: any, matchId: number, player: string): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+//      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+    });
+    return textResponse("Players updated successfully", 200);
+  } catch (error) {
+    return errorResponse("Error updating players: " + (error as Error).message, 500);
+  }
+}
+
+export async function removePlayer(storage: any, matchId: number, player: string): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+//      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+    });
+    return textResponse("Players updated successfully", 200);
+  } catch (error) {
+    return errorResponse("Error updating players: " + (error as Error).message, 500);
+  }
+}
+
+export async function updatePlayer(storage: any, matchId: number, player: string): Promise<Response> {
+  const sql = storage.sql;
+  try {
+    storage.transactionSync(() => {
+//      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+    });
+    return textResponse("Players updated successfully", 200);
+  } catch (error) {
+    return errorResponse("Error updating players: " + (error as Error).message, 500);
+  }
+}
+
 export async function setDeleted(storage: any, matchId: number, deleted: any): Promise<Response> {
   const sql = storage.sql;
   try {

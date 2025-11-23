@@ -103,6 +103,15 @@ export class MatchState {
           } else if (request.method === "POST" && action === "set-players") {
             const body = await request.json();
             return matchApi.setPlayers(storage, body.matchId, body.players);
+          } else if (request.method === "POST" && action === "add-player") {
+            const body = await request.json();
+            return matchApi.addPlayer(storage, body.matchId, body.player);
+          } else if (request.method === "POST" && action === "remove-player") {
+            const body = await request.json();
+            return matchApi.removePlayer(storage, body.matchId, body.player);
+          } else if (request.method === "POST" && action === "update-player") {
+            const body = await request.json();
+            return matchApi.updatePlayer(storage, body.matchId, body.player);
           } else if (request.method === "POST" && action === "set-home-color") {
             const body = await request.json();
             return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
@@ -243,6 +252,18 @@ export class MatchState {
               break;
             case 'set-players':
               res = await matchApi.setPlayers(storage, data.matchId, data.players);
+              matchId = data.matchId;
+              break;
+            case 'add-player':
+              res = await matchApi.addPlayer(storage, data.matchId, data.player);
+              matchId = data.matchId;
+              break;
+            case 'remove-player':
+              res = await matchApi.removePlayer(storage, data.matchId, data.player);
+              matchId = data.matchId;
+              break;
+            case 'update-player':
+              res = await matchApi.updatePlayer(storage, data.matchId, data.player);
               matchId = data.matchId;
               break;
             case 'set-home-color':
