@@ -72,6 +72,32 @@ body.score-modal-open {
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
 }
+.temp-jersey-flag {
+  line-height: 1;
+}
+.temp-jersey-flag .bi {
+  font-size: 1.05rem;
+}
+.temp-jersey-popover .popover-header,
+.temp-jersey-popover .popover-body {
+  background-color: #fff3cd;
+  color: #664d03;
+}
+.temp-jersey-popover {
+  border-color: #ffe69c;
+}
+.temp-jersey-popover .popover-arrow::before,
+.temp-jersey-popover .popover-arrow::after,
+.temp-jersey-popover.bs-popover-top .popover-arrow::before,
+.temp-jersey-popover.bs-popover-top .popover-arrow::after,
+.temp-jersey-popover.bs-popover-bottom .popover-arrow::before,
+.temp-jersey-popover.bs-popover-bottom .popover-arrow::after,
+.temp-jersey-popover.bs-popover-start .popover-arrow::before,
+.temp-jersey-popover.bs-popover-start .popover-arrow::after,
+.temp-jersey-popover.bs-popover-end .popover-arrow::before,
+.temp-jersey-popover.bs-popover-end .popover-arrow::after {
+  border-color: #ffe69c !important;
+}
 .game-info-grid .form-label,
 .game-info-grid legend {
   font-weight: 600;
