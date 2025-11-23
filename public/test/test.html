@@ -22,20 +22,43 @@
   </style>
 </head>
 <body>
-  <h1>API Test Rig</h1>
-  <p class="description">Runs a series of requests against the Worker endpoints and displays responses. Use this in a dev environment only.</p>
-  <button id="run-tests">Run All Tests</button>
-  <table id="results">
-    <thead>
-      <tr>
-        <th style="width: 28%;">Endpoint</th>
-        <th style="width: 10%;">Method</th>
-        <th style="width: 12%;">Status</th>
-        <th>Response</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  <script src="./test.js" type="module"></script>
-</body>
-</html>
+    <h1>API Test Rig</h1>
+    <p class="description">Runs a series of requests against the Worker endpoints and displays responses. Use this in a dev environment only.</p>
+
+    <section>
+      <h2>REST workflow</h2>
+      <p class="description">Exercises the REST endpoints using fetch calls from the browser.</p>
+      <button id="run-rest-tests">Run REST Tests</button>
+      <table id="rest-results">
+        <thead>
+          <tr>
+            <th style="width: 28%;">Endpoint</th>
+            <th style="width: 10%;">Method</th>
+            <th style="width: 12%;">Status</th>
+            <th>Response</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>WebSocket workflow</h2>
+      <p class="description">Connects to <code>/ws</code>, sends the same create/update/read/delete messages as the CLI harness, and shows server responses.</p>
+      <button id="run-ws-tests">Run WebSocket Tests</button>
+      <table id="ws-results">
+        <thead>
+          <tr>
+            <th style="width: 34%;">Action</th>
+            <th style="width: 14%;">Method</th>
+            <th style="width: 12%;">Status</th>
+            <th>Response</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <script src="./test.js" type="module"></script>
+  </body>
+  </html>
