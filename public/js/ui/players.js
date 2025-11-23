@@ -290,6 +290,7 @@ function resetForm() {
 function setRosterConflictState(active) {
   hasRosterNumberConflict = active;
   updateModalDismissControls(active);
+  updateConflictCloseButtonLabel(active);
   const modal = document.getElementById('playerModal');
   if (modal) {
     modal.dataset.rosterNumberConflict = active ? 'true' : 'false';
@@ -311,6 +312,13 @@ function updateModalDismissControls(disabled) {
     button.setAttribute('aria-disabled', disabled.toString());
     button.classList.toggle('disabled', disabled);
   });
+}
+
+function updateConflictCloseButtonLabel(conflictActive) {
+  const closeBtn = document.getElementById('playerModalCloseBtn');
+  if (!closeBtn) return;
+  closeBtn.textContent = conflictActive ? 'Cancel' : 'Close';
+  closeBtn.setAttribute('aria-label', conflictActive ? 'Cancel adding player' : 'Close');
 }
 
 function handlePlayerModalHide(event) {

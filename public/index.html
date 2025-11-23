@@ -379,7 +379,13 @@
               <div class="d-flex flex-wrap gap-2">
                 <button type="button" class="btn btn-primary" id="savePlayerBtn" onclick="submitPlayer()">Add Player</button>
                 <button type="button" class="btn btn-outline-secondary" id="cancelEditBtn" style="display: none;" onclick="cancelEdit()">Cancel</button>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-allow-roster-conflict="true">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  id="playerModalCloseBtn"
+                  data-bs-dismiss="modal"
+                  data-allow-roster-conflict="true"
+                >
                   Close
                 </button>
               </div>
