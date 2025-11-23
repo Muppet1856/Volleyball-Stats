@@ -301,6 +301,12 @@ function updateModalDismissControls(disabled) {
   if (!modal) return;
   const dismissButtons = modal.querySelectorAll('[data-bs-dismiss="modal"]');
   dismissButtons.forEach((button) => {
+    if (button.dataset.allowRosterConflict === 'true') {
+      button.disabled = false;
+      button.setAttribute('aria-disabled', 'false');
+      button.classList.remove('disabled');
+      return;
+    }
     button.disabled = disabled;
     button.setAttribute('aria-disabled', disabled.toString());
     button.classList.toggle('disabled', disabled);
@@ -475,6 +481,7 @@ function attachEvents() {
   const sortToggleBtn = document.getElementById('playerSortToggleBtn');
   const modalSortToggleBtn = document.getElementById('modalPlayerSortToggleBtn');
   const playerModal = document.getElementById('playerModal');
+  const dismissButtons = playerModal?.querySelectorAll('[data-bs-dismiss="modal"]');
 
   if (saveBtn) {
     saveBtn.removeAttribute('onclick');
@@ -500,6 +507,11 @@ function attachEvents() {
     playerModal.dataset.rosterNumberConflict = 'false';
     updateModalDismissControls(false);
     playerModal.addEventListener('hide.bs.modal', handlePlayerModalHide);
+  }
+  if (dismissButtons?.length) {
+    dismissButtons.forEach((button) => {
+      button.addEventListener('click', resetForm);
+    });
   }
 }
 
