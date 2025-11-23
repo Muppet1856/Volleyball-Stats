@@ -1,4 +1,4 @@
-// ui/resultSummary.js
+// js/ui/resultSummary.js
 import { state, updateState } from '../state.js';
 
 function syncMatchResults() {

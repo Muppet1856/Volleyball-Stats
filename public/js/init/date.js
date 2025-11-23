@@ -1,3 +1,4 @@
+// js/init/date.js
 export function setDefaultDate() {
   const dateInput = document.getElementById('date');
   if (dateInput && !dateInput.value) {

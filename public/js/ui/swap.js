@@ -1,4 +1,4 @@
-// swap.js
+// js/ui/swap.js
 import './timeOut.js';
 import { state } from '../state.js';
 export function mainSwap(config) {

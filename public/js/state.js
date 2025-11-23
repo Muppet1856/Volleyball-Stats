@@ -1,4 +1,4 @@
-// state.js
+// js/state.js
 export let state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',

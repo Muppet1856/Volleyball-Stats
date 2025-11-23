@@ -1,4 +1,4 @@
-// timeOut.js (updated to allow deselect/cancel)
+// js/ui/timeOut.js
 import { state, updateState } from '../state.js';  
 
 let countdownInterval = null;

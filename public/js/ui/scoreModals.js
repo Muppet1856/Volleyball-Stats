@@ -1,4 +1,4 @@
-// ui/scoreModals.js (updated)
+// js/ui/scoreModals.js (updated)
 import { state, updateState } from '../state.js';  // Add this import
 import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js';
 

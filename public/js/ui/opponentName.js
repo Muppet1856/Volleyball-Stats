@@ -1,4 +1,4 @@
-// ui/opponentName.js
+// js/ui/opponentName.js
 import { debounce } from '../utils/debounce.js';
 
 export const debouncedOpponentUpdate = debounce(() => {

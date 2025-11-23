@@ -1,4 +1,4 @@
-// ui/finalizeButtons.js
+// js/ui/finalizeButtons.js
 import { state, updateState } from '../state.js';
 
 window.addEventListener('DOMContentLoaded', () => {
