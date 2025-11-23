@@ -143,6 +143,14 @@ body.score-modal-open {
 }
 .left-score { background-color: blue; color: white; }
 .right-score { background-color: red; color: white; }
+.left-score:disabled, .left-score[disabled] {
+  background-color: #5665a3;
+  color: #f1f3f5;
+}
+.right-score:disabled, .right-score[disabled] {
+  background-color: #c2777f;
+  color: #f1f3f5;
+}
 .set-inputs input { flex: 1; max-width: 100px; text-align: center; font-size: 1.5em; padding: 10px; }
 .swap-btn { text-align: center; width: 100%; }
 .swap-btn::after {
@@ -802,26 +810,27 @@ body.score-modal-open {
 
 /* Styles for finalize button when active/finalized */
 .finalize-button.active {
-  background-color: var(--bs-success); /* Green background */
-  border-color: var(--bs-success);
-  color: #fff; /* White text for contrast */
+  background-color: #198754;
+  border-color: rgba(25, 135, 84, 0.75);
+  color: #fff;
 }
 
 .finalize-button.active:hover,
 .finalize-button.active:focus {
-  background-color: var(--bs-success); /* Keep green on hover/focus */
-  border-color: var(--bs-success);
-  box-shadow: 0 0 0 0.25rem rgba(var(--bs-success-rgb), 0.25); /* Optional: Green focus shadow */
+  background-color: #157347;
+  border-color: rgba(20, 108, 67, 0.7);
+  box-shadow: 0 0 0 0.15rem rgba(25, 135, 84, 0.18);
+  color: #fff;
 }
 
 [data-bs-theme="dark"] .finalize-button.active {
-  background-color: var(--bs-success-dark); /* Darker green for dark mode */
-  border-color: var(--bs-success-dark);
+  background-color: #198754;
+  border-color: rgba(25, 135, 84, 0.65);
 }
 
 [data-bs-theme="dark"] .finalize-button.active:hover,
 [data-bs-theme="dark"] .finalize-button.active:focus {
-  background-color: var(--bs-success-dark);
-  border-color: var(--bs-success-dark);
-  box-shadow: 0 0 0 0.25rem rgba(var(--bs-success-dark-rgb), 0.25);
+  background-color: #157347;
+  border-color: rgba(20, 108, 67, 0.6);
+  box-shadow: 0 0 0 0.15rem rgba(25, 135, 84, 0.25);
 }
