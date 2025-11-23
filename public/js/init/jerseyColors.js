@@ -7,14 +7,14 @@ function getContrastColor(hex) {
   return luminance > 0.5 ? '#000000' : '#ffffff';  // black text on light jerseys, white on dark
 }
 
-function createJerseySvg(color) {
+export function createJerseySvg(color, number = '0') {
   const textColor = getContrastColor(color);
   return `
-    <svg width="26" height="26" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-      <path d="M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z" 
+    <svg width="52" height="52" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <path d="M15 10l9-6h16l9 6 5 14-11 5v21H21V29l-11-5z"
             fill="${color}" stroke="#000" stroke-width="2"/>
-      <text x="50%" y="40%" text-anchor="middle" fill="${textColor}" 
-            font-size="19" font-weight="bold" dominant-baseline="middle">0</text>
+      <text x="50%" y="40%" text-anchor="middle" fill="${textColor}"
+            font-size="19" font-weight="bold" dominant-baseline="middle">${number}</text>
     </svg>
   `.trim();
 }
@@ -56,6 +56,7 @@ export function enhanceJerseySelectsCustom() {
         button.querySelector('.selected-text').textContent = opt.textContent;
         // Keep the real <select> in sync (for form submission)
         originalSelect.value = opt.value;
+        originalSelect.dispatchEvent(new Event('change', { bubbles: true }));
       });
 
       li.appendChild(a);
