@@ -100,20 +100,5 @@ Follow these steps to verify that the score modal zero-fills the opposing side w
 3. Increase the score for only one team using the modal controls.
 4. Close the modal and observe the grid—the untouched side of the set now reads `0`, matching the modal logic.
 
-## Test harnesses
-
-You can exercise the Durable Object workflows through either the original Python harness or the new JavaScript harness—run whichever is most convenient for your environment.
-
-- **Python (WebSocket only):**
-  1. Ensure you have Python 3.11+ available.
-  2. Set `WS_URL` in `test/testcases.py` or export `WS_URL` in your environment if you need to target a different Worker endpoint.
-  3. Run `python test/testcases.py` to execute the WebSocket scenario used during early development.
-
-- **Node/JS (REST and WebSocket):**
-  1. Install dependencies once with `npm install` to pull the `ws` client used for WebSockets.
-  2. Optionally set `WORKER_BASE_URL` (defaults to `http://127.0.0.1:8787`) and `WORKER_WS_URL` (defaults to `${WORKER_BASE_URL}/ws` with the appropriate `ws`/`wss` scheme) to point at your deployed Worker.
-  3. Run the harness with `npm run js:harness -- [--rest] [--ws]`. With no flags, both REST and WebSocket flows run; use `--rest` or `--ws` to target a single protocol.
-  4. The script performs the same create/update/read/delete steps as the Python harness, cleaning up matches, players, and sets it creates during the run.
-
 ## License
 Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
