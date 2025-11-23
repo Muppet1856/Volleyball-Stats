@@ -5,6 +5,7 @@ export let state = {
   matchWins: { home: 0, opp: 0 },
   overallWinner: null,
   players: [],
+  matchPlayers: [],
   sets: {
     1: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
     2: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
@@ -36,6 +37,45 @@ function deepMerge(target, source) {
   return target;
 }
 
+function sanitizeLoadedState() {
+  const legacyMatchPlayers = [];
+
+  if (!Array.isArray(state.players)) {
+    state.players = [];
+  }
+
+  state.players = state.players.map((player) => {
+    const base = {
+      id: player.id,
+      number: player.number,
+      lastName: player.lastName,
+      ...(player.initial ? { initial: player.initial } : {}),
+    };
+
+    const temp = player.tempNumber ?? player.temp_number;
+    const parsedTemp = temp === undefined || temp === null || temp === '' ? null : Number(temp);
+    if (parsedTemp !== null && !Number.isNaN(parsedTemp)) {
+      legacyMatchPlayers.push({ playerId: player.id, tempNumber: parsedTemp });
+    }
+
+    return base;
+  });
+
+  if (!Array.isArray(state.matchPlayers)) {
+    state.matchPlayers = [];
+  }
+
+  if (legacyMatchPlayers.length) {
+    const merged = new Map(state.matchPlayers.map((entry) => [entry.playerId, entry]));
+    legacyMatchPlayers.forEach((entry) => {
+      if (entry.playerId) {
+        merged.set(entry.playerId, entry);
+      }
+    });
+    state.matchPlayers = Array.from(merged.values());
+  }
+}
+
 export function updateState(partialState) {
   deepMerge(state, partialState);
   saveStateToStorage();
@@ -61,6 +101,8 @@ export function loadStateFromStorage() {
   try {
     const parsed = JSON.parse(saved);
     deepMerge(state, parsed);
+    sanitizeLoadedState();
+    saveStateToStorage();
     notifyListeners();
   } catch (error) {
     console.warn('Failed to parse saved state, clearing storage.', error);
@@ -80,12 +122,108 @@ export function setPlayers(players) {
       number: player.number,
       lastName: player.lastName,
       ...(player.initial ? { initial: player.initial } : {}),
-      ...(player.tempNumber ? { tempNumber: player.tempNumber } : {}),
     }));
     saveStateToStorage();
     notifyListeners();
   }
   return state.players;
+}
+
+function normalizeMatchPlayer(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const playerId = entry.playerId ?? entry.id;
+  if (!playerId) return null;
+
+  const temp = entry.tempNumber ?? entry.temp_number;
+  const parsedTemp = temp === undefined || temp === null || temp === '' ? null : Number(temp);
+  if (parsedTemp !== null && Number.isNaN(parsedTemp)) {
+    return null;
+  }
+
+  return parsedTemp === null ? { playerId } : { playerId, tempNumber: parsedTemp };
+}
+
+export function setMatchPlayers(matchPlayers = []) {
+  if (!Array.isArray(matchPlayers)) return state.matchPlayers;
+
+  const normalized = matchPlayers
+    .map(normalizeMatchPlayer)
+    .filter(Boolean);
+
+  state.matchPlayers = normalized;
+  saveStateToStorage();
+  notifyListeners();
+  return state.matchPlayers;
+}
+
+export function upsertMatchPlayer(playerId, tempNumber = null) {
+  if (!playerId) return state.matchPlayers;
+
+  const parsedTemp = tempNumber === undefined || tempNumber === null || tempNumber === ''
+    ? null
+    : Number(tempNumber);
+  if (parsedTemp !== null && Number.isNaN(parsedTemp)) {
+    return state.matchPlayers;
+  }
+
+  const existingIndex = state.matchPlayers.findIndex((entry) => entry.playerId === playerId);
+  const entry = parsedTemp === null ? { playerId } : { playerId, tempNumber: parsedTemp };
+
+  if (existingIndex >= 0) {
+    state.matchPlayers[existingIndex] = entry;
+  } else {
+    state.matchPlayers.push(entry);
+  }
+
+  saveStateToStorage();
+  notifyListeners();
+  return state.matchPlayers;
+}
+
+export function removeMatchPlayer(playerId) {
+  if (!playerId) return state.matchPlayers;
+
+  const next = state.matchPlayers.filter((entry) => entry.playerId !== playerId);
+  if (next.length !== state.matchPlayers.length) {
+    state.matchPlayers = next;
+    saveStateToStorage();
+    notifyListeners();
+  }
+  return state.matchPlayers;
+}
+
+export function loadMatchPlayers(rawPlayers) {
+  if (rawPlayers === undefined || rawPlayers === null) {
+    return state.matchPlayers;
+  }
+
+  let parsed = rawPlayers;
+  if (typeof rawPlayers === 'string') {
+    try {
+      parsed = JSON.parse(rawPlayers);
+    } catch (error) {
+      console.warn('Failed to parse match players payload', error);
+      parsed = [];
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    parsed = [];
+  }
+
+  return setMatchPlayers(parsed);
+}
+
+export function serializeMatchPlayersForApi() {
+  return state.matchPlayers.map(({ playerId, tempNumber }) => ({
+    player_id: playerId,
+    temp_number: tempNumber ?? null,
+  }));
+}
+
+export function serializeMatchPlayersJson() {
+  return JSON.stringify(serializeMatchPlayersForApi());
 }
 
 // Expose for console debugging (keep this)
@@ -95,5 +233,8 @@ window.loadStateFromStorage = loadStateFromStorage;
 window.saveStateToStorage = saveStateToStorage;
 window.subscribeToState = subscribe;
 window.setPlayers = setPlayers;
+window.setMatchPlayers = setMatchPlayers;
+window.loadMatchPlayers = loadMatchPlayers;
+window.serializeMatchPlayersForApi = serializeMatchPlayersForApi;
 
 loadStateFromStorage();
