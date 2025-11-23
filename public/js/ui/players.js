@@ -170,9 +170,15 @@ function renderMainList(list) {
     name.textContent = formatPlayerName(player);
 
     const label = document.createElement('label');
-    label.className = 'mb-0 flex-grow-1 d-flex align-items-center';
+    label.className = 'mb-0 flex-grow-1 d-flex align-items-center gap-2';
     label.htmlFor = toggle.id;
-    label.append(numberCircle, name);
+
+    if (tempNumber !== null && tempNumber !== undefined) {
+      const tempFlag = createTempJerseyFlag(tempNumber, player.number);
+      label.append(numberCircle, tempFlag, name);
+    } else {
+      label.append(numberCircle, name);
+    }
 
     item.append(toggle, label);
     container.appendChild(item);
@@ -241,6 +247,25 @@ function createPlayerSummary(player) {
 
   wrapper.append(numberCircle, name, tempBadge);
   return wrapper;
+}
+
+function createTempJerseyFlag(tempNumber, rosterNumber) {
+  const flag = document.createElement('button');
+  flag.type = 'button';
+  flag.className = 'btn btn-link p-0 border-0 temp-jersey-flag text-warning';
+  flag.setAttribute('aria-label', `Temporary jersey ${tempNumber} replaces roster number ${rosterNumber}`);
+  flag.innerHTML = '<i class="bi bi-info-circle-fill" aria-hidden="true"></i>';
+  flag.dataset.bsToggle = 'popover';
+  flag.dataset.bsTrigger = 'focus hover';
+  flag.dataset.bsPlacement = 'right';
+  flag.dataset.bsCustomClass = 'temp-jersey-popover';
+  flag.dataset.bsContent = `Temporary jersey #${tempNumber} is currently replacing roster #${rosterNumber}.`;
+
+  if (typeof bootstrap !== 'undefined' && bootstrap?.Popover) {
+    new bootstrap.Popover(flag);
+  }
+
+  return flag;
 }
 
 function startEdit(playerId) {
