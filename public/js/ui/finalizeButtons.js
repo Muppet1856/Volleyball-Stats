@@ -1,6 +1,5 @@
 // ui/finalizeButtons.js
 import { state, updateState } from '../state.js';
-import { syncMatchResults } from './resultSummary.js';
 
 window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.finalize-button').forEach(btn => {
@@ -8,11 +7,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // Initial state sync (if loaded from saved match)
     if (state.sets[setNumber].finalized) {
       btn.classList.add('active');
-      toggleSetElements(setNumber, true);
       applyFinalizedStyles(setNumber);
     }
-    // Initial sync for results (called per button but idempotent)
-    syncMatchResults();
 
     btn.addEventListener('click', () => {
       const finalized = btn.classList.contains('active');
@@ -50,22 +46,45 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      toggleSetElements(setNumber, finalized);
       applyFinalizedStyles(setNumber);
-      syncMatchResults();  // Sync dropdowns after change
+      updateSetAccess();  // Recompute access after change
     });
   });
+
+  updateSetAccess();  // Initial access setup
 });
 
-function toggleSetElements(setNumber, disable) {
-  const scoreBtn = document.querySelector(`[data-set="${setNumber}"].score-game-btn`);
-  if (scoreBtn) {
-    scoreBtn.disabled = disable;
+function updateSetAccess() {
+  let previousFinalized = true;  // Set 1 always unlocked
+
+  for (let set = 1; set <= 5; set++) {
+    const unlocked = previousFinalized;
+    const finalized = state.sets[set].finalized;
+
+    const row = document.querySelector(`#scoring-table tr:nth-child(${set + 1})`);
+    const scoreBtn = row ? row.querySelector('.score-game-btn') : null;
+    const finalizeBtn = row ? row.querySelector('.finalize-button') : null;
+    const homeInput = document.getElementById(`set${set}Home`);
+    const oppInput = document.getElementById(`set${set}Opp`);
+
+    if (row) {
+      row.classList.toggle('set-locked', !unlocked);
+    }
+
+    if (unlocked) {
+      if (scoreBtn) scoreBtn.disabled = finalized;
+      if (homeInput) homeInput.disabled = finalized;
+      if (oppInput) oppInput.disabled = finalized;
+      if (finalizeBtn) finalizeBtn.disabled = false;
+    } else {
+      if (scoreBtn) scoreBtn.disabled = true;
+      if (homeInput) homeInput.disabled = true;
+      if (oppInput) oppInput.disabled = true;
+      if (finalizeBtn) finalizeBtn.disabled = true;
+    }
+
+    previousFinalized = finalized;
   }
-  const homeInput = document.getElementById(`set${setNumber}Home`);
-  const oppInput = document.getElementById(`set${setNumber}Opp`);
-  if (homeInput) homeInput.disabled = disable;
-  if (oppInput) oppInput.disabled = disable;
 }
 
 function applyFinalizedStyles(setNumber) {
