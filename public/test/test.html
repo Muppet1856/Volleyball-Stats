@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volleyball Stats API Test Rig</title>
+  <link rel="stylesheet" href="/css/normalize.css">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #f6f6f6; color: #222; }
+    h1 { margin-bottom: 0.25rem; }
+    p.description { margin-top: 0; color: #555; }
+    button { margin: 1rem 0; padding: 0.75rem 1.5rem; font-size: 1rem; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid #e3e3e3; }
+    th { text-align: left; background: #fafafa; }
+    tr:last-child td { border-bottom: none; }
+    .status-success { color: #0b7a0b; }
+    .status-error { color: #b00020; }
+    .endpoint { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.95rem; }
+    details { margin-top: 0.35rem; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0.35rem 0 0; }
+  </style>
+</head>
+<body>
+  <h1>API Test Rig</h1>
+  <p class="description">Runs a series of requests against the Worker endpoints and displays responses. Use this in a dev environment only.</p>
+  <button id="run-tests">Run All Tests</button>
+  <table id="results">
+    <thead>
+      <tr>
+        <th style="width: 28%;">Endpoint</th>
+        <th style="width: 10%;">Method</th>
+        <th style="width: 12%;">Status</th>
+        <th>Response</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <script src="./test.js" type="module"></script>
+</body>
+</html>
