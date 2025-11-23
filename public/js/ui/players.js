@@ -82,7 +82,7 @@ function getSelectedHomeJerseyColor() {
 
 function createJerseyBadge(number, title) {
   const badge = document.createElement('span');
-  badge.className = 'player-number-circle';
+  badge.className = 'player-jersey-icon';
   badge.innerHTML = createJerseySvg(getSelectedHomeJerseyColor(), number ?? '');
   if (title) {
     badge.title = title;
