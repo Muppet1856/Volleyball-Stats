@@ -1,4 +1,5 @@
 import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer } from '../state.js';
+import { createJerseySvg } from '../init/jerseyColors.js';
 
 const STORAGE_KEY = 'volleyballStats:roster';
 const SORT_MODES = {
@@ -10,6 +11,9 @@ let roster = [];
 let editId = null;
 let mainSortMode = SORT_MODES.NUMBER;
 let modalSortMode = SORT_MODES.NUMBER;
+
+const DEFAULT_JERSEY_COLOR = '#0d6efd';
+const ROSTER_JERSEY_SIZE = 47;
 
 function getMatchPlayerEntry(playerId) {
   return state.matchPlayers.find((player) => player.playerId === playerId) ?? null;
@@ -64,6 +68,27 @@ function formatPlayerName(player) {
 function getEffectivePlayerNumber(player) {
   const temp = getMatchTempNumber(player.id);
   return temp ?? player.number;
+}
+
+function getSelectedHomeJerseyColor() {
+  const select = document.getElementById('jerseyColorHome');
+  const selectedColor = select?.selectedOptions?.[0]?.dataset.color?.trim();
+  if (selectedColor) return selectedColor;
+
+  const computedPrimary = getComputedStyle(document.documentElement)
+    .getPropertyValue('--bs-primary')
+    ?.trim();
+  return computedPrimary || DEFAULT_JERSEY_COLOR;
+}
+
+function createJerseyBadge(number, title) {
+  const badge = document.createElement('span');
+  badge.className = 'player-jersey-icon';
+  badge.innerHTML = createJerseySvg(getSelectedHomeJerseyColor(), number ?? '', ROSTER_JERSEY_SIZE);
+  if (title) {
+    badge.title = title;
+  }
+  return badge;
 }
 
 function sortMainPlayers(list, mode = mainSortMode) {
@@ -132,10 +157,10 @@ function renderMainList(list) {
 
     const tempNumber = getMatchTempNumber(player.id);
 
-    const numberCircle = document.createElement('span');
-    numberCircle.className = 'player-number-circle';
-    numberCircle.textContent = tempNumber ?? player.number;
-    numberCircle.title = tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
+    const numberCircle = createJerseyBadge(
+      tempNumber ?? player.number,
+      tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`,
+    );
 
     const name = document.createElement('span');
     name.className = 'player-name';
@@ -150,10 +175,6 @@ function renderMainList(list) {
     label.className = 'mb-0 flex-grow-1 d-flex align-items-center';
     label.htmlFor = toggle.id;
     label.append(numberCircle, name, tempBadge);
-
-    if (!appeared) {
-      item.classList.add('opacity-75');
-    }
 
     item.append(toggle, label);
     container.appendChild(item);
@@ -220,10 +241,7 @@ function createPlayerSummary(player) {
   wrapper.className = 'd-flex align-items-center gap-2 flex-wrap';
   wrapper.style.minWidth = '0';
 
-  const numberCircle = document.createElement('span');
-  numberCircle.className = 'player-number-circle';
-  numberCircle.textContent = player.number;
-  numberCircle.title = `Jersey #${player.number}`;
+  const numberCircle = createJerseyBadge(player.number, `Jersey #${player.number}`);
 
   const name = document.createElement('span');
   name.className = 'player-name';
@@ -428,6 +446,11 @@ function attachEvents() {
   }
   if (sortSelect) {
     sortSelect.addEventListener('change', (event) => setModalSortMode(event.target.value));
+  }
+
+  const homeJerseySelect = document.getElementById('jerseyColorHome');
+  if (homeJerseySelect) {
+    homeJerseySelect.addEventListener('change', renderRoster);
   }
 }
 
