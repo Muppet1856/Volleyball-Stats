@@ -220,23 +220,16 @@ function createPlayerSummary(player) {
   wrapper.className = 'd-flex align-items-center gap-2 flex-wrap';
   wrapper.style.minWidth = '0';
 
-  const tempNumber = getMatchTempNumber(player.id);
-
   const numberCircle = document.createElement('span');
   numberCircle.className = 'player-number-circle';
-  numberCircle.textContent = tempNumber ?? player.number;
-  numberCircle.title = tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
+  numberCircle.textContent = player.number;
+  numberCircle.title = `Jersey #${player.number}`;
 
   const name = document.createElement('span');
   name.className = 'player-name';
   name.textContent = formatPlayerName(player);
 
-  const tempBadge = document.createElement('span');
-  tempBadge.className = 'badge text-bg-secondary';
-  tempBadge.style.display = tempNumber ? '' : 'none';
-  tempBadge.textContent = tempNumber ? `Temp: ${tempNumber}` : '';
-
-  wrapper.append(numberCircle, name, tempBadge);
+  wrapper.append(numberCircle, name);
   return wrapper;
 }
 
