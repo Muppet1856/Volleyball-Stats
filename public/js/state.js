@@ -55,24 +55,26 @@ function sanitizeLoadedState() {
     const temp = player.tempNumber ?? player.temp_number;
     const parsedTemp = temp === undefined || temp === null || temp === '' ? null : Number(temp);
     if (parsedTemp !== null && !Number.isNaN(parsedTemp)) {
-      legacyMatchPlayers.push({ playerId: player.id, tempNumber: parsedTemp });
+      legacyMatchPlayers.push({ playerId: player.id, tempNumber: parsedTemp, appeared: true });
     }
 
     return base;
   });
 
-  if (!Array.isArray(state.matchPlayers)) {
-    state.matchPlayers = [];
-  }
+  const normalizedExisting = Array.isArray(state.matchPlayers)
+    ? state.matchPlayers.map(normalizeMatchPlayer).filter(Boolean)
+    : [];
 
   if (legacyMatchPlayers.length) {
-    const merged = new Map(state.matchPlayers.map((entry) => [entry.playerId, entry]));
+    const merged = new Map(normalizedExisting.map((entry) => [entry.playerId, entry]));
     legacyMatchPlayers.forEach((entry) => {
       if (entry.playerId) {
         merged.set(entry.playerId, entry);
       }
     });
     state.matchPlayers = Array.from(merged.values());
+  } else {
+    state.matchPlayers = normalizedExisting;
   }
 }
 
@@ -141,7 +143,12 @@ function normalizeMatchPlayer(entry) {
     return null;
   }
 
-  return parsedTemp === null ? { playerId } : { playerId, tempNumber: parsedTemp };
+  const appearedValue = entry.appeared ?? entry.active ?? entry.selected;
+  const appeared = appearedValue === undefined ? true : Boolean(appearedValue);
+
+  return parsedTemp === null
+    ? { playerId, appeared }
+    : { playerId, appeared, tempNumber: parsedTemp };
 }
 
 export function setMatchPlayers(matchPlayers = []) {
@@ -149,15 +156,19 @@ export function setMatchPlayers(matchPlayers = []) {
 
   const normalized = matchPlayers
     .map(normalizeMatchPlayer)
-    .filter(Boolean);
+    .filter(Boolean)
+    .reduce((acc, entry) => {
+      acc.set(entry.playerId, entry);
+      return acc;
+    }, new Map());
 
-  state.matchPlayers = normalized;
+  state.matchPlayers = Array.from(normalized.values());
   saveStateToStorage();
   notifyListeners();
   return state.matchPlayers;
 }
 
-export function upsertMatchPlayer(playerId, tempNumber = null) {
+export function upsertMatchPlayer(playerId, tempNumber = null, appeared = true) {
   if (!playerId) return state.matchPlayers;
 
   const parsedTemp = tempNumber === undefined || tempNumber === null || tempNumber === ''
@@ -168,7 +179,9 @@ export function upsertMatchPlayer(playerId, tempNumber = null) {
   }
 
   const existingIndex = state.matchPlayers.findIndex((entry) => entry.playerId === playerId);
-  const entry = parsedTemp === null ? { playerId } : { playerId, tempNumber: parsedTemp };
+  const entry = parsedTemp === null
+    ? { playerId, appeared: Boolean(appeared) }
+    : { playerId, tempNumber: parsedTemp, appeared: Boolean(appeared) };
 
   if (existingIndex >= 0) {
     state.matchPlayers[existingIndex] = entry;
@@ -216,9 +229,10 @@ export function loadMatchPlayers(rawPlayers) {
 }
 
 export function serializeMatchPlayersForApi() {
-  return state.matchPlayers.map(({ playerId, tempNumber }) => ({
+  return state.matchPlayers.map(({ playerId, tempNumber, appeared }) => ({
     player_id: playerId,
     temp_number: tempNumber ?? null,
+    appeared: appeared ?? true,
   }));
 }
 
