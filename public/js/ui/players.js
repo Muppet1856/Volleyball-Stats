@@ -1,4 +1,5 @@
 import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer } from '../state.js';
+import { createJerseySvg } from '../init/jerseyColors.js';
 
 const STORAGE_KEY = 'volleyballStats:roster';
 const SORT_MODES = {
@@ -10,6 +11,8 @@ let roster = [];
 let editId = null;
 let mainSortMode = SORT_MODES.NUMBER;
 let modalSortMode = SORT_MODES.NUMBER;
+
+const DEFAULT_JERSEY_COLOR = '#0d6efd';
 
 function getMatchPlayerEntry(playerId) {
   return state.matchPlayers.find((player) => player.playerId === playerId) ?? null;
@@ -64,6 +67,27 @@ function formatPlayerName(player) {
 function getEffectivePlayerNumber(player) {
   const temp = getMatchTempNumber(player.id);
   return temp ?? player.number;
+}
+
+function getSelectedHomeJerseyColor() {
+  const select = document.getElementById('jerseyColorHome');
+  const selectedColor = select?.selectedOptions?.[0]?.dataset.color?.trim();
+  if (selectedColor) return selectedColor;
+
+  const computedPrimary = getComputedStyle(document.documentElement)
+    .getPropertyValue('--bs-primary')
+    ?.trim();
+  return computedPrimary || DEFAULT_JERSEY_COLOR;
+}
+
+function createJerseyBadge(number, title) {
+  const badge = document.createElement('span');
+  badge.className = 'player-number-circle';
+  badge.innerHTML = createJerseySvg(getSelectedHomeJerseyColor(), number ?? '');
+  if (title) {
+    badge.title = title;
+  }
+  return badge;
 }
 
 function sortMainPlayers(list, mode = mainSortMode) {
@@ -132,10 +156,10 @@ function renderMainList(list) {
 
     const tempNumber = getMatchTempNumber(player.id);
 
-    const numberCircle = document.createElement('span');
-    numberCircle.className = 'player-number-circle';
-    numberCircle.textContent = tempNumber ?? player.number;
-    numberCircle.title = tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
+    const numberCircle = createJerseyBadge(
+      tempNumber ?? player.number,
+      tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`,
+    );
 
     const name = document.createElement('span');
     name.className = 'player-name';
@@ -220,10 +244,7 @@ function createPlayerSummary(player) {
   wrapper.className = 'd-flex align-items-center gap-2 flex-wrap';
   wrapper.style.minWidth = '0';
 
-  const numberCircle = document.createElement('span');
-  numberCircle.className = 'player-number-circle';
-  numberCircle.textContent = player.number;
-  numberCircle.title = `Jersey #${player.number}`;
+  const numberCircle = createJerseyBadge(player.number, `Jersey #${player.number}`);
 
   const name = document.createElement('span');
   name.className = 'player-name';
