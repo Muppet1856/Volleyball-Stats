@@ -313,11 +313,22 @@ export class MatchState {
         case 'set':
           switch (action) {
             case 'create':
+              const normalizedSetData = {
+                ...data,
+                match_id: data.match_id ?? data.matchId,
+                set_number: data.set_number ?? data.setNumber,
+                home_score: data.home_score ?? data.homeScore,
+                opp_score: data.opp_score ?? data.oppScore,
+                home_timeout_1: data.home_timeout_1 ?? data.homeTimeout1 ?? data.homeTimeout_1,
+                home_timeout_2: data.home_timeout_2 ?? data.homeTimeout2 ?? data.homeTimeout_2,
+                opp_timeout_1: data.opp_timeout_1 ?? data.oppTimeout1 ?? data.oppTimeout_1,
+                opp_timeout_2: data.opp_timeout_2 ?? data.oppTimeout2 ?? data.oppTimeout_2,
+              };
               const mockReq = {
-                json: async () => data,
+                json: async () => normalizedSetData,
               } as Request;
               res = await setApi.createSet(storage, mockReq);
-              matchId = data.matchId; // Assume provided; fallback if needed
+              matchId = normalizedSetData.match_id; // Assume provided; fallback if needed
               break;
             case 'set-home-score':
               res = await setApi.setHomeScore(storage, data.setId, data.homeScore);
