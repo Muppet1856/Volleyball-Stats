@@ -361,6 +361,11 @@ function toggleSortMode() {
   setMainSortMode(nextMode);
 }
 
+function toggleModalSortMode() {
+  const nextMode = modalSortMode === SORT_MODES.NUMBER ? SORT_MODES.NAME : SORT_MODES.NUMBER;
+  setModalSortMode(nextMode);
+}
+
 function setMainSortMode(mode) {
   mainSortMode = mode;
   const toggleBtn = document.getElementById('playerSortToggleBtn');
@@ -377,10 +382,13 @@ function setMainSortMode(mode) {
 
 function setModalSortMode(mode) {
   modalSortMode = mode;
-  const sortSelect = document.getElementById('modalPlayerSortSelect');
+  const sortToggleBtn = document.getElementById('modalPlayerSortToggleBtn');
 
-  if (sortSelect && sortSelect.value !== mode) {
-    sortSelect.value = mode;
+  if (sortToggleBtn) {
+    const isNumberSort = mode === SORT_MODES.NUMBER;
+    sortToggleBtn.textContent = isNumberSort ? 'Sort: Number' : 'Sort: Name';
+    sortToggleBtn.setAttribute('aria-pressed', (!isNumberSort).toString());
+    sortToggleBtn.title = isNumberSort ? 'Sorted numerically by jersey number.' : 'Sorted alphabetically by name.';
   }
 
   renderRoster();
@@ -418,7 +426,7 @@ function attachEvents() {
   const saveBtn = document.getElementById('savePlayerBtn');
   const cancelBtn = document.getElementById('cancelEditBtn');
   const sortToggleBtn = document.getElementById('playerSortToggleBtn');
-  const sortSelect = document.getElementById('modalPlayerSortSelect');
+  const modalSortToggleBtn = document.getElementById('modalPlayerSortToggleBtn');
 
   if (saveBtn) {
     saveBtn.removeAttribute('onclick');
@@ -431,8 +439,8 @@ function attachEvents() {
   if (sortToggleBtn) {
     sortToggleBtn.addEventListener('click', toggleSortMode);
   }
-  if (sortSelect) {
-    sortSelect.addEventListener('change', (event) => setModalSortMode(event.target.value));
+  if (modalSortToggleBtn) {
+    modalSortToggleBtn.addEventListener('click', toggleModalSortMode);
   }
 
   const homeJerseySelect = document.getElementById('jerseyColorHome');
@@ -445,10 +453,8 @@ function initRosterModule() {
   roster = loadRoster();
   pruneMatchPlayers();
   attachEvents();
-  const sortSelect = document.getElementById('modalPlayerSortSelect');
-  const initialModalMode = sortSelect?.value ?? modalSortMode;
   setMainSortMode(mainSortMode);
-  setModalSortMode(initialModalMode);
+  setModalSortMode(modalSortMode);
 }
 
 document.addEventListener('DOMContentLoaded', initRosterModule);
