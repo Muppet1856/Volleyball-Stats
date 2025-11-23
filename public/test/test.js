@@ -424,15 +424,20 @@ async function runWebSocketTests() {
     const setMatchId = setMatchCreate.body.id;
     await sleep(200);
 
-    const setsResp = await sendAndTrack(actor, 'set:get list', 'set', 'get', { matchId: setMatchId });
-    let setId = Array.isArray(setsResp.body)
-      ? (setsResp.body.find((entry) => Number(entry.number ?? entry.setNumber ?? entry.set_number) === 1)?.id ?? null)
-      : null;
-    if (!setId) {
-      const setCreate = await sendAndTrack(actor, 'set:create', 'set', 'create', { matchId: setMatchId, setNumber: 1 });
-      setId = setCreate.body.id;
-      await sleep(200);
-    }
+    const setCreate = await sendAndTrack(actor, 'set:create (no preexisting sets)', 'set', 'create', {
+      matchId: setMatchId,
+      setNumber: 1,
+      homeScore: 0,
+      oppScore: 0,
+      homeTimeout1: 0,
+      homeTimeout2: 0,
+      oppTimeout1: 0,
+      oppTimeout2: 0,
+    });
+    const setId = setCreate.body.id;
+    await sleep(200);
+
+    await sendAndTrack(actor, 'set:get list', 'set', 'get', { matchId: setMatchId });
 
     await sendAndTrack(actor, 'set:set-home-score', 'set', 'set-home-score', { setId, homeScore: 25, matchId: setMatchId });
     await sleep(100);
