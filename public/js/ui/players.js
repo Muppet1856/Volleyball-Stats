@@ -491,7 +491,7 @@ function submitPlayer() {
     roster.push(payload);
   }
 
-  const nextTemp = tempNumber !== null ? tempNumber : existingMatchEntry?.tempNumber ?? null;
+  const nextTemp = tempNumber !== null ? tempNumber : null;
   const appeared = existingMatchEntry?.appeared ?? (tempNumber !== null);
   const nextWornNumber = nextTemp !== null ? nextTemp : payload.number;
 
