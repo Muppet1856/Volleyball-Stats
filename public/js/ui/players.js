@@ -198,12 +198,8 @@ function renderModalList(list) {
     const item = document.createElement('div');
     item.className = 'player-item justify-content-between gap-3 align-items-center flex-wrap';
 
-    const appeared = getMatchAppearance(player.id);
-    const toggle = createAppearanceCheckbox(player.id, appeared, 'modal-player');
-
-    const label = document.createElement('label');
+    const label = document.createElement('div');
     label.className = 'player-name mb-0 flex-grow-1';
-    label.htmlFor = toggle.id;
     label.appendChild(createPlayerSummary(player));
 
     const actions = document.createElement('div');
@@ -221,17 +217,8 @@ function renderModalList(list) {
     deleteBtn.textContent = 'Delete';
     deleteBtn.addEventListener('click', () => deletePlayer(player.id));
 
-    const toggleWrapper = document.createElement('div');
-    toggleWrapper.className = 'form-check form-switch m-0 flex-shrink-0 player-appearance-toggle';
-
-    const toggleLabel = document.createElement('label');
-    toggleLabel.className = 'form-check-label small';
-    toggleLabel.htmlFor = toggle.id;
-    toggleLabel.textContent = 'Played';
-
-    toggleWrapper.append(toggle, toggleLabel);
     actions.append(editBtn, deleteBtn);
-    item.append(label, toggleWrapper, actions);
+    item.append(label, actions);
     container.appendChild(item);
   }
 }
