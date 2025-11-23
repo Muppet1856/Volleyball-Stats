@@ -8,6 +8,7 @@ import { debouncedOpponentUpdate , updateOpponentName} from './ui/opponentName.j
 import './ui/scoreModals.js';
 import './ui/finalizeButtons.js';
 import './ui/resultSummary.js';  // New import to load the result summary logic
+import './ui/players.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   await initializeHomeTeam();
