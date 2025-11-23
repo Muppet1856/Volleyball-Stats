@@ -1,0 +1,12 @@
+{
+  "name": "volleyball-stats",
+  "version": "1.0.0",
+  "description": "Helper scripts and harnesses for exercising the Volleyball Stats worker API.",
+  "type": "module",
+  "scripts": {
+    "js:harness": "node test/js/harness.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
