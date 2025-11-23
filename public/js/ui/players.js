@@ -10,9 +10,18 @@ let roster = [];
 let editId = null;
 let currentSortMode = SORT_MODES.NUMBER;
 
+function getMatchPlayerEntry(playerId) {
+  return state.matchPlayers.find((player) => player.playerId === playerId) ?? null;
+}
+
 function getMatchTempNumber(playerId) {
-  const entry = state.matchPlayers.find((player) => player.playerId === playerId);
+  const entry = getMatchPlayerEntry(playerId);
   return entry?.tempNumber ?? null;
+}
+
+function getMatchAppearance(playerId) {
+  const entry = getMatchPlayerEntry(playerId);
+  return entry?.appeared ?? false;
 }
 
 function loadRoster() {
@@ -91,6 +100,9 @@ function renderMainList(list) {
     const item = document.createElement('div');
     item.className = 'player-item';
 
+    const appeared = getMatchAppearance(player.id);
+    const toggle = createAppearanceCheckbox(player.id, appeared, 'main-player');
+
     const tempNumber = getMatchTempNumber(player.id);
 
     const numberCircle = document.createElement('span');
@@ -107,7 +119,16 @@ function renderMainList(list) {
     tempBadge.style.display = tempNumber ? '' : 'none';
     tempBadge.textContent = tempNumber ? `Temp: ${tempNumber}` : '';
 
-    item.append(numberCircle, name, tempBadge);
+    const label = document.createElement('label');
+    label.className = 'mb-0 flex-grow-1 d-flex align-items-center';
+    label.htmlFor = toggle.id;
+    label.append(numberCircle, name, tempBadge);
+
+    if (!appeared) {
+      item.classList.add('opacity-75');
+    }
+
+    item.append(toggle, label);
     container.appendChild(item);
   }
 }
@@ -127,10 +148,14 @@ function renderModalList(list) {
 
   for (const player of list) {
     const item = document.createElement('div');
-    item.className = 'player-item justify-content-between gap-3';
+    item.className = 'player-item justify-content-between gap-3 align-items-center flex-wrap';
+
+    const appeared = getMatchAppearance(player.id);
+    const toggle = createAppearanceCheckbox(player.id, appeared, 'modal-player');
 
     const label = document.createElement('label');
     label.className = 'player-name mb-0 flex-grow-1';
+    label.htmlFor = toggle.id;
     label.appendChild(createPlayerSummary(player));
 
     const actions = document.createElement('div');
@@ -148,8 +173,17 @@ function renderModalList(list) {
     deleteBtn.textContent = 'Delete';
     deleteBtn.addEventListener('click', () => deletePlayer(player.id));
 
+    const toggleWrapper = document.createElement('div');
+    toggleWrapper.className = 'form-check form-switch m-0 flex-shrink-0 player-appearance-toggle';
+
+    const toggleLabel = document.createElement('label');
+    toggleLabel.className = 'form-check-label small';
+    toggleLabel.htmlFor = toggle.id;
+    toggleLabel.textContent = 'Played';
+
+    toggleWrapper.append(toggle, toggleLabel);
     actions.append(editBtn, deleteBtn);
-    item.append(label, actions);
+    item.append(label, toggleWrapper, actions);
     container.appendChild(item);
   }
 }
@@ -262,6 +296,8 @@ function submitPlayer() {
     return;
   }
 
+  const existingMatchEntry = getMatchPlayerEntry(payload.id);
+
   const existingIndex = roster.findIndex((p) => p.id === payload.id);
   if (existingIndex >= 0) {
     roster[existingIndex] = payload;
@@ -269,8 +305,11 @@ function submitPlayer() {
     roster.push(payload);
   }
 
-  if (tempNumber !== null) {
-    upsertMatchPlayer(payload.id, tempNumber);
+  const nextTemp = tempNumber !== null ? tempNumber : existingMatchEntry?.tempNumber ?? null;
+  const appeared = existingMatchEntry?.appeared ?? (tempNumber !== null);
+
+  if (existingMatchEntry || appeared || nextTemp !== null) {
+    upsertMatchPlayer(payload.id, nextTemp, appeared);
   } else {
     removeMatchPlayer(payload.id);
   }
@@ -322,6 +361,26 @@ function pruneMatchPlayers() {
   if (filtered.length !== state.matchPlayers.length) {
     setMatchPlayers(filtered);
   }
+}
+
+function createAppearanceCheckbox(playerId, appeared, prefix) {
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'form-check-input';
+  checkbox.id = `${prefix}-${playerId}`;
+  checkbox.checked = appeared;
+  checkbox.setAttribute('aria-label', 'Appeared in match');
+  checkbox.addEventListener('change', (event) => {
+    handleAppearanceToggle(playerId, event.target.checked);
+  });
+  return checkbox;
+}
+
+function handleAppearanceToggle(playerId, appeared) {
+  const currentEntry = getMatchPlayerEntry(playerId);
+  const tempNumber = currentEntry?.tempNumber ?? null;
+  upsertMatchPlayer(playerId, tempNumber, appeared);
+  renderRoster();
 }
 
 function attachEvents() {

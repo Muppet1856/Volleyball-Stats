@@ -43,6 +43,14 @@ body.score-modal-open {
   gap: 0.5rem;
   min-width: 0;
 }
+.player-appearance-toggle label {
+  width: auto;
+  min-width: 0;
+  gap: 0.35rem;
+}
+.player-appearance-toggle .form-check-input {
+  margin-right: 0.35rem;
+}
 .player-item span { vertical-align: middle; }
 .player-item .player-name {
   flex: 1;
