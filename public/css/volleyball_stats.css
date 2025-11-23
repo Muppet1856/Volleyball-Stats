@@ -61,26 +61,16 @@ body.score-modal-open {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.player-number-circle {
+.player-jersey-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 39px;
+  height: 39px;
   margin-right: 8px;
-  flex: 0 0 28px;
+  flex: 0 0 39px;
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  background-color: var(--bs-primary);
-  color: var(--bs-white);
-  font-weight: 600;
-  font-size: 0.85rem;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  box-sizing: border-box;
-  padding: 0;
 }
 .game-info-grid .form-label,
 .game-info-grid legend {
