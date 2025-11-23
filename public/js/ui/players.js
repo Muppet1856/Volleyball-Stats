@@ -1,3 +1,5 @@
+import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer } from '../state.js';
+
 const STORAGE_KEY = 'volleyballStats:roster';
 const SORT_MODES = {
   NUMBER: 'number',
@@ -7,6 +9,11 @@ const SORT_MODES = {
 let roster = [];
 let editId = null;
 let currentSortMode = SORT_MODES.NUMBER;
+
+function getMatchTempNumber(playerId) {
+  const entry = state.matchPlayers.find((player) => player.playerId === playerId);
+  return entry?.tempNumber ?? null;
+}
 
 function loadRoster() {
   try {
@@ -33,10 +40,7 @@ function normalizePlayer(player) {
   const lastName = typeof player.lastName === 'string' ? player.lastName.trim() : '';
   if (!lastName) return null;
   const initial = typeof player.initial === 'string' ? player.initial.trim() : '';
-  const tempNumber = player.tempNumber !== undefined && player.tempNumber !== null && player.tempNumber !== ''
-    ? Number(player.tempNumber)
-    : null;
-  return { id, number, lastName, initial, tempNumber };
+  return { id, number, lastName, initial };
 }
 
 function formatPlayerName(player) {
@@ -87,10 +91,12 @@ function renderMainList(list) {
     const item = document.createElement('div');
     item.className = 'player-item';
 
+    const tempNumber = getMatchTempNumber(player.id);
+
     const numberCircle = document.createElement('span');
     numberCircle.className = 'player-number-circle';
-    numberCircle.textContent = player.tempNumber ?? player.number;
-    numberCircle.title = player.tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
+    numberCircle.textContent = tempNumber ?? player.number;
+    numberCircle.title = tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
 
     const name = document.createElement('span');
     name.className = 'player-name';
@@ -98,8 +104,8 @@ function renderMainList(list) {
 
     const tempBadge = document.createElement('span');
     tempBadge.className = 'badge text-bg-secondary ms-2';
-    tempBadge.style.display = player.tempNumber ? '' : 'none';
-    tempBadge.textContent = player.tempNumber ? `Temp: ${player.tempNumber}` : '';
+    tempBadge.style.display = tempNumber ? '' : 'none';
+    tempBadge.textContent = tempNumber ? `Temp: ${tempNumber}` : '';
 
     item.append(numberCircle, name, tempBadge);
     container.appendChild(item);
@@ -153,10 +159,12 @@ function createPlayerSummary(player) {
   wrapper.className = 'd-flex align-items-center gap-2 flex-wrap';
   wrapper.style.minWidth = '0';
 
+  const tempNumber = getMatchTempNumber(player.id);
+
   const numberCircle = document.createElement('span');
   numberCircle.className = 'player-number-circle';
-  numberCircle.textContent = player.tempNumber ?? player.number;
-  numberCircle.title = player.tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
+  numberCircle.textContent = tempNumber ?? player.number;
+  numberCircle.title = tempNumber ? `Temporary number for #${player.number}` : `Jersey #${player.number}`;
 
   const name = document.createElement('span');
   name.className = 'player-name';
@@ -164,8 +172,8 @@ function createPlayerSummary(player) {
 
   const tempBadge = document.createElement('span');
   tempBadge.className = 'badge text-bg-secondary';
-  tempBadge.style.display = player.tempNumber ? '' : 'none';
-  tempBadge.textContent = player.tempNumber ? `Temp: ${player.tempNumber}` : '';
+  tempBadge.style.display = tempNumber ? '' : 'none';
+  tempBadge.textContent = tempNumber ? `Temp: ${tempNumber}` : '';
 
   wrapper.append(numberCircle, name, tempBadge);
   return wrapper;
@@ -184,7 +192,7 @@ function startEdit(playerId) {
   numberInput.value = player.number;
   lastNameInput.value = player.lastName;
   initialInput.value = player.initial ?? '';
-  tempNumberInput.value = player.tempNumber ?? '';
+  tempNumberInput.value = getMatchTempNumber(player.id) ?? '';
 
   editId = player.id;
   saveBtn.textContent = 'Update Player';
@@ -227,9 +235,16 @@ function submitPlayer() {
   const lastNameValue = lastNameInput.value.trim();
   const initialValue = initialInput.value.trim();
   const tempNumberValue = tempNumberInput.value.trim();
+  const tempNumber = tempNumberValue === '' ? null : Number(tempNumberValue);
 
   if (!lastNameValue || Number.isNaN(numberValue)) {
     error.textContent = 'Player number and last name are required.';
+    error.classList.remove('d-none');
+    return;
+  }
+
+  if (tempNumberValue !== '' && Number.isNaN(tempNumber)) {
+    error.textContent = 'Temporary jersey numbers must be numeric.';
     error.classList.remove('d-none');
     return;
   }
@@ -239,7 +254,6 @@ function submitPlayer() {
     number: numberValue,
     lastName: lastNameValue,
     initial: initialValue,
-    tempNumber: tempNumberValue !== '' ? Number(tempNumberValue) : null,
   });
 
   if (!payload) {
@@ -255,6 +269,12 @@ function submitPlayer() {
     roster.push(payload);
   }
 
+  if (tempNumber !== null) {
+    upsertMatchPlayer(payload.id, tempNumber);
+  } else {
+    removeMatchPlayer(payload.id);
+  }
+
   saveRoster();
   resetForm();
   renderRoster();
@@ -267,6 +287,7 @@ function deletePlayer(playerId) {
   if (editId === playerId) {
     resetForm();
   }
+  removeMatchPlayer(playerId);
   saveRoster();
   renderRoster();
 }
@@ -295,6 +316,14 @@ function setSortMode(mode) {
   renderRoster();
 }
 
+function pruneMatchPlayers() {
+  const validIds = new Set(roster.map((player) => player.id));
+  const filtered = state.matchPlayers.filter((entry) => validIds.has(entry.playerId));
+  if (filtered.length !== state.matchPlayers.length) {
+    setMatchPlayers(filtered);
+  }
+}
+
 function attachEvents() {
   const saveBtn = document.getElementById('savePlayerBtn');
   const cancelBtn = document.getElementById('cancelEditBtn');
@@ -319,6 +348,7 @@ function attachEvents() {
 
 function initRosterModule() {
   roster = loadRoster();
+  pruneMatchPlayers();
   attachEvents();
   setSortMode(currentSortMode);
 }
