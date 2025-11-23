@@ -12,6 +12,7 @@ let editId = null;
 let mainSortMode = SORT_MODES.NUMBER;
 let modalSortMode = SORT_MODES.NUMBER;
 let hasRosterNumberConflict = false;
+let hasWornJerseyConflict = false;
 
 const DEFAULT_JERSEY_COLOR = '#0d6efd';
 const ROSTER_JERSEY_SIZE = 47;
@@ -134,6 +135,7 @@ function renderRoster() {
   const modalSorted = sortModalPlayers(roster);
   renderMainList(mainSorted);
   renderModalList(modalSorted);
+  refreshWornJerseyConflicts();
 }
 
 function renderMainList(list) {
@@ -274,6 +276,7 @@ function resetForm() {
   const saveBtn = document.getElementById('savePlayerBtn');
   const cancelBtn = document.getElementById('cancelEditBtn');
   const error = document.getElementById('playerFormError');
+  const warning = document.getElementById('playerFormWarning');
 
   numberInput.value = '';
   lastNameInput.value = '';
@@ -283,26 +286,43 @@ function resetForm() {
   cancelBtn.style.display = 'none';
   error.classList.add('d-none');
   error.textContent = '';
+  warning?.classList.add('d-none');
+  if (warning) {
+    warning.textContent = '';
+  }
   editId = null;
   setRosterConflictState(false);
+  refreshWornJerseyConflicts();
 }
 
 function setRosterConflictState(active) {
   hasRosterNumberConflict = active;
-  updateModalDismissControls(active);
-  updateConflictCloseButtonLabel(active);
+  syncModalConflictState();
+}
+
+function setWornJerseyConflictState(active) {
+  hasWornJerseyConflict = active;
+  syncModalConflictState();
+}
+
+function syncModalConflictState() {
   const modal = document.getElementById('playerModal');
+  const modalConflictActive = hasRosterNumberConflict || hasWornJerseyConflict;
+  updateModalDismissControls(modalConflictActive, hasWornJerseyConflict);
+  updateConflictCloseButtonLabel(modalConflictActive);
   if (modal) {
-    modal.dataset.rosterNumberConflict = active ? 'true' : 'false';
+    modal.dataset.rosterNumberConflict = hasRosterNumberConflict ? 'true' : 'false';
+    modal.dataset.wornJerseyConflict = hasWornJerseyConflict ? 'true' : 'false';
+    modal.dataset.modalConflict = modalConflictActive ? 'true' : 'false';
   }
 }
 
-function updateModalDismissControls(disabled) {
+function updateModalDismissControls(disabled, lockAll = false) {
   const modal = document.getElementById('playerModal');
   if (!modal) return;
   const dismissButtons = modal.querySelectorAll('[data-bs-dismiss="modal"]');
   dismissButtons.forEach((button) => {
-    if (button.dataset.allowRosterConflict === 'true') {
+    if (!lockAll && button.dataset.allowRosterConflict === 'true') {
       button.disabled = false;
       button.setAttribute('aria-disabled', 'false');
       button.classList.remove('disabled');
@@ -323,9 +343,83 @@ function updateConflictCloseButtonLabel(conflictActive) {
 
 function handlePlayerModalHide(event) {
   const modal = event.target;
-  if (modal?.dataset.rosterNumberConflict === 'true' || hasRosterNumberConflict) {
+  if (
+    modal?.dataset.modalConflict === 'true' ||
+    modal?.dataset.rosterNumberConflict === 'true' ||
+    modal?.dataset.wornJerseyConflict === 'true' ||
+    hasRosterNumberConflict ||
+    hasWornJerseyConflict
+  ) {
     event.preventDefault();
   }
+}
+
+function getWornJerseyAssignments() {
+  return roster
+    .map((player) => {
+      const tempNumber = getMatchTempNumber(player.id);
+      const wornNumber = tempNumber ?? player.number;
+      const numericWorn = wornNumber === null ? null : Number(wornNumber);
+      if (numericWorn === null || Number.isNaN(numericWorn)) return null;
+      return { player, wornNumber: numericWorn };
+    })
+    .filter(Boolean);
+}
+
+function findPreferredWornConflict(assignments, preferredPlayerId, preferredWornNumber) {
+  const conflictsByNumber = new Map();
+  assignments.forEach((entry) => {
+    const list = conflictsByNumber.get(entry.wornNumber) ?? [];
+    list.push(entry.player);
+    conflictsByNumber.set(entry.wornNumber, list);
+  });
+
+  if (preferredPlayerId) {
+    const preferredEntry = assignments.find((entry) => entry.player.id === preferredPlayerId);
+    if (preferredEntry) {
+      const preferredPlayers = conflictsByNumber.get(preferredEntry.wornNumber);
+      if (preferredPlayers?.length > 1) {
+        return { wornNumber: preferredEntry.wornNumber, players: preferredPlayers };
+      }
+    }
+  }
+
+  if (preferredWornNumber !== null && preferredWornNumber !== undefined) {
+    const preferredList = conflictsByNumber.get(Number(preferredWornNumber));
+    if (preferredList?.length > 1) {
+      return { wornNumber: Number(preferredWornNumber), players: preferredList };
+    }
+  }
+
+  for (const [wornNumber, players] of conflictsByNumber.entries()) {
+    if (players.length > 1) {
+      return { wornNumber, players };
+    }
+  }
+
+  return null;
+}
+
+function refreshWornJerseyConflicts(preferredPlayerId = null, preferredWornNumber = null) {
+  const warning = document.getElementById('playerFormWarning');
+  if (!warning) return false;
+
+  const assignments = getWornJerseyAssignments();
+  const preferredNumber = preferredWornNumber === null ? null : Number(preferredWornNumber);
+  const conflict = findPreferredWornConflict(assignments, preferredPlayerId, preferredNumber);
+
+  if (conflict) {
+    const names = conflict.players.map((player) => formatPlayerName(player)).join(', ');
+    warning.textContent = `Worn jersey #${conflict.wornNumber} is assigned to ${names}. Update a roster or temporary number to resolve the conflict.`;
+    warning.classList.remove('d-none');
+    setWornJerseyConflictState(true);
+    return true;
+  }
+
+  warning.classList.add('d-none');
+  warning.textContent = '';
+  setWornJerseyConflictState(false);
+  return false;
 }
 
 function submitPlayer() {
@@ -334,10 +428,16 @@ function submitPlayer() {
   const initialInput = document.getElementById('initial');
   const tempNumberInput = document.getElementById('tempNumber');
   const error = document.getElementById('playerFormError');
+  const warning = document.getElementById('playerFormWarning');
 
   error.classList.add('d-none');
   error.textContent = '';
   setRosterConflictState(false);
+  setWornJerseyConflictState(false);
+  if (warning) {
+    warning.classList.add('d-none');
+    warning.textContent = '';
+  }
 
   const numberValue = Number(numberInput.value);
   const lastNameValue = lastNameInput.value.trim();
@@ -393,6 +493,7 @@ function submitPlayer() {
 
   const nextTemp = tempNumber !== null ? tempNumber : existingMatchEntry?.tempNumber ?? null;
   const appeared = existingMatchEntry?.appeared ?? (tempNumber !== null);
+  const nextWornNumber = nextTemp !== null ? nextTemp : payload.number;
 
   if (existingMatchEntry || appeared || nextTemp !== null) {
     upsertMatchPlayer(payload.id, nextTemp, appeared);
@@ -401,8 +502,12 @@ function submitPlayer() {
   }
 
   saveRoster();
-  resetForm();
   renderRoster();
+
+  const wornConflictActive = refreshWornJerseyConflicts(payload.id, nextWornNumber);
+  if (!wornConflictActive) {
+    resetForm();
+  }
 }
 
 function deletePlayer(playerId) {
@@ -513,6 +618,8 @@ function attachEvents() {
 
   if (playerModal) {
     playerModal.dataset.rosterNumberConflict = 'false';
+    playerModal.dataset.wornJerseyConflict = 'false';
+    playerModal.dataset.modalConflict = 'false';
     updateModalDismissControls(false);
     playerModal.addEventListener('hide.bs.modal', handlePlayerModalHide);
   }
