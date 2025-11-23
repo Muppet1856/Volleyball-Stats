@@ -11,6 +11,7 @@ let roster = [];
 let editId = null;
 let mainSortMode = SORT_MODES.NUMBER;
 let modalSortMode = SORT_MODES.NUMBER;
+let hasRosterNumberConflict = false;
 
 const DEFAULT_JERSEY_COLOR = '#0d6efd';
 const ROSTER_JERSEY_SIZE = 47;
@@ -283,6 +284,34 @@ function resetForm() {
   error.classList.add('d-none');
   error.textContent = '';
   editId = null;
+  setRosterConflictState(false);
+}
+
+function setRosterConflictState(active) {
+  hasRosterNumberConflict = active;
+  updateModalDismissControls(active);
+  const modal = document.getElementById('playerModal');
+  if (modal) {
+    modal.dataset.rosterNumberConflict = active ? 'true' : 'false';
+  }
+}
+
+function updateModalDismissControls(disabled) {
+  const modal = document.getElementById('playerModal');
+  if (!modal) return;
+  const dismissButtons = modal.querySelectorAll('[data-bs-dismiss="modal"]');
+  dismissButtons.forEach((button) => {
+    button.disabled = disabled;
+    button.setAttribute('aria-disabled', disabled.toString());
+    button.classList.toggle('disabled', disabled);
+  });
+}
+
+function handlePlayerModalHide(event) {
+  const modal = event.target;
+  if (modal?.dataset.rosterNumberConflict === 'true' || hasRosterNumberConflict) {
+    event.preventDefault();
+  }
 }
 
 function submitPlayer() {
@@ -291,6 +320,10 @@ function submitPlayer() {
   const initialInput = document.getElementById('initial');
   const tempNumberInput = document.getElementById('tempNumber');
   const error = document.getElementById('playerFormError');
+
+  error.classList.add('d-none');
+  error.textContent = '';
+  setRosterConflictState(false);
 
   const numberValue = Number(numberInput.value);
   const lastNameValue = lastNameInput.value.trim();
@@ -323,9 +356,21 @@ function submitPlayer() {
     return;
   }
 
-  const existingMatchEntry = getMatchPlayerEntry(payload.id);
+  const conflictingPlayer = roster.find((player) => player.id !== payload.id && Number(player.number) === payload.number);
 
   const existingIndex = roster.findIndex((p) => p.id === payload.id);
+  if (conflictingPlayer) {
+    error.textContent = `Jersey number ${payload.number} is already assigned to ${formatPlayerName(conflictingPlayer)}.`;
+    error.classList.remove('d-none');
+    const revertValue = existingIndex >= 0 ? roster[existingIndex].number : '';
+    numberInput.value = revertValue;
+    numberInput.focus();
+    numberInput.select?.();
+    setRosterConflictState(true);
+    return;
+  }
+
+  const existingMatchEntry = getMatchPlayerEntry(payload.id);
   if (existingIndex >= 0) {
     roster[existingIndex] = payload;
   } else {
@@ -429,6 +474,7 @@ function attachEvents() {
   const cancelBtn = document.getElementById('cancelEditBtn');
   const sortToggleBtn = document.getElementById('playerSortToggleBtn');
   const modalSortToggleBtn = document.getElementById('modalPlayerSortToggleBtn');
+  const playerModal = document.getElementById('playerModal');
 
   if (saveBtn) {
     saveBtn.removeAttribute('onclick');
@@ -448,6 +494,12 @@ function attachEvents() {
   const homeJerseySelect = document.getElementById('jerseyColorHome');
   if (homeJerseySelect) {
     homeJerseySelect.addEventListener('change', renderRoster);
+  }
+
+  if (playerModal) {
+    playerModal.dataset.rosterNumberConflict = 'false';
+    updateModalDismissControls(false);
+    playerModal.addEventListener('hide.bs.modal', handlePlayerModalHide);
   }
 }
 
