@@ -166,15 +166,10 @@ function renderMainList(list) {
     name.className = 'player-name';
     name.textContent = formatPlayerName(player);
 
-    const tempBadge = document.createElement('span');
-    tempBadge.className = 'badge text-bg-secondary ms-2';
-    tempBadge.style.display = tempNumber ? '' : 'none';
-    tempBadge.textContent = tempNumber ? `Temp: ${tempNumber}` : '';
-
     const label = document.createElement('label');
     label.className = 'mb-0 flex-grow-1 d-flex align-items-center';
     label.htmlFor = toggle.id;
-    label.append(numberCircle, name, tempBadge);
+    label.append(numberCircle, name);
 
     item.append(toggle, label);
     container.appendChild(item);
@@ -234,7 +229,14 @@ function createPlayerSummary(player) {
   name.className = 'player-name';
   name.textContent = formatPlayerName(player);
 
-  wrapper.append(numberCircle, name);
+  const tempNumber = getMatchTempNumber(player.id);
+  const tempBadge = document.createElement('span');
+  tempBadge.className = 'badge rounded-pill text-bg-secondary';
+  tempBadge.style.display = tempNumber ? '' : 'none';
+  tempBadge.textContent = tempNumber ? `Temp #${tempNumber}` : '';
+  tempBadge.title = tempNumber ? `Temporary jersey assignment: ${tempNumber}` : '';
+
+  wrapper.append(numberCircle, name, tempBadge);
   return wrapper;
 }
 
