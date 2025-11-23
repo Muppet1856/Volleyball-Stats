@@ -8,7 +8,8 @@ const SORT_MODES = {
 
 let roster = [];
 let editId = null;
-let currentSortMode = SORT_MODES.NUMBER;
+let mainSortMode = SORT_MODES.NUMBER;
+let modalSortMode = SORT_MODES.NUMBER;
 
 function getMatchPlayerEntry(playerId) {
   return state.matchPlayers.find((player) => player.playerId === playerId) ?? null;
@@ -60,7 +61,32 @@ function formatPlayerName(player) {
   return base;
 }
 
-function sortPlayers(list, mode = currentSortMode) {
+function getEffectivePlayerNumber(player) {
+  const temp = getMatchTempNumber(player.id);
+  return temp ?? player.number;
+}
+
+function sortMainPlayers(list, mode = mainSortMode) {
+  const cloned = [...list];
+  cloned.sort((a, b) => {
+    const effectiveNumberA = Number(getEffectivePlayerNumber(a));
+    const effectiveNumberB = Number(getEffectivePlayerNumber(b));
+
+    if (mode === SORT_MODES.NAME) {
+      const nameA = formatPlayerName(a).toLowerCase();
+      const nameB = formatPlayerName(b).toLowerCase();
+      if (nameA !== nameB) return nameA.localeCompare(nameB);
+      return effectiveNumberA - effectiveNumberB;
+    }
+
+    const numDiff = effectiveNumberA - effectiveNumberB;
+    if (numDiff !== 0) return numDiff;
+    return formatPlayerName(a).toLowerCase().localeCompare(formatPlayerName(b).toLowerCase());
+  });
+  return cloned;
+}
+
+function sortModalPlayers(list, mode = modalSortMode) {
   const cloned = [...list];
   cloned.sort((a, b) => {
     if (mode === SORT_MODES.NAME) {
@@ -69,7 +95,7 @@ function sortPlayers(list, mode = currentSortMode) {
       if (nameA !== nameB) return nameA.localeCompare(nameB);
       return Number(a.number) - Number(b.number);
     }
-    // Default to number sorting
+
     const numDiff = Number(a.number) - Number(b.number);
     if (numDiff !== 0) return numDiff;
     return formatPlayerName(a).toLowerCase().localeCompare(formatPlayerName(b).toLowerCase());
@@ -78,9 +104,10 @@ function sortPlayers(list, mode = currentSortMode) {
 }
 
 function renderRoster() {
-  const sorted = sortPlayers(roster);
-  renderMainList(sorted);
-  renderModalList(sorted);
+  const mainSorted = sortMainPlayers(roster);
+  const modalSorted = sortModalPlayers(roster);
+  renderMainList(mainSorted);
+  renderModalList(modalSorted);
 }
 
 function renderMainList(list) {
@@ -332,14 +359,13 @@ function deletePlayer(playerId) {
 }
 
 function toggleSortMode() {
-  const nextMode = currentSortMode === SORT_MODES.NUMBER ? SORT_MODES.NAME : SORT_MODES.NUMBER;
-  setSortMode(nextMode);
+  const nextMode = mainSortMode === SORT_MODES.NUMBER ? SORT_MODES.NAME : SORT_MODES.NUMBER;
+  setMainSortMode(nextMode);
 }
 
-function setSortMode(mode) {
-  currentSortMode = mode;
+function setMainSortMode(mode) {
+  mainSortMode = mode;
   const toggleBtn = document.getElementById('playerSortToggleBtn');
-  const sortSelect = document.getElementById('modalPlayerSortSelect');
 
   if (toggleBtn) {
     const isNumberSort = mode === SORT_MODES.NUMBER;
@@ -347,6 +373,13 @@ function setSortMode(mode) {
     toggleBtn.setAttribute('aria-pressed', (!isNumberSort).toString());
     toggleBtn.title = isNumberSort ? 'Sorted numerically by jersey number.' : 'Sorted alphabetically by name.';
   }
+
+  renderRoster();
+}
+
+function setModalSortMode(mode) {
+  modalSortMode = mode;
+  const sortSelect = document.getElementById('modalPlayerSortSelect');
 
   if (sortSelect && sortSelect.value !== mode) {
     sortSelect.value = mode;
@@ -401,7 +434,7 @@ function attachEvents() {
     sortToggleBtn.addEventListener('click', toggleSortMode);
   }
   if (sortSelect) {
-    sortSelect.addEventListener('change', (event) => setSortMode(event.target.value));
+    sortSelect.addEventListener('change', (event) => setModalSortMode(event.target.value));
   }
 }
 
@@ -409,7 +442,10 @@ function initRosterModule() {
   roster = loadRoster();
   pruneMatchPlayers();
   attachEvents();
-  setSortMode(currentSortMode);
+  const sortSelect = document.getElementById('modalPlayerSortSelect');
+  const initialModalMode = sortSelect?.value ?? modalSortMode;
+  setMainSortMode(mainSortMode);
+  setModalSortMode(initialModalMode);
 }
 
 document.addEventListener('DOMContentLoaded', initRosterModule);
