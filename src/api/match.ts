@@ -143,39 +143,97 @@ export async function setPlayers(storage: any, matchId: number, players: string)
   }
 }
 
-export async function addPlayer(storage: any, matchId: number, player: string): Promise<Response> {
-  const sql = storage.sql;
+// Helper — keep it at the top of the file or in a utils file
+function playerIdFromJson(playerJson: string): number {
+  const id = JSON.parse(playerJson)?.player_id;
+  if (typeof id !== "number") throw new Error("Invalid/missing player_id");
+  return id;
+}
+
+// ————————————————————————————————————————————————————————
+// 1. ADD PLAYER (you receive ready-made JSON → just append)
+export async function addPlayer(storage: any, matchId: number, playerJson: string): Promise<Response> {
   try {
     storage.transactionSync(() => {
-//      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+      storage.sql.exec(
+        `UPDATE matches
+         SET players = COALESCE(players, json_array()) || json_array(?)
+         WHERE id = ?;`,
+        playerJson,
+        matchId
+      );
     });
-    return textResponse("Players updated successfully", 200);
-  } catch (error) {
-    return errorResponse("Error updating players: " + (error as Error).message, 500);
+    return textResponse("Player added", 200);
+  } catch (e) {
+    console.error("addPlayer failed:", e);
+    return errorResponse("Failed to add player", 500);
   }
 }
 
-export async function removePlayer(storage: any, matchId: number, player: string): Promise<Response> {
-  const sql = storage.sql;
+// ————————————————————————————————————————————————————————
+// 2. REMOVE PLAYER
+export async function removePlayer(storage: any, matchId: number, playerJson: string): Promise<Response> {
+  let playerId: number;
+  try {
+    playerId = playerIdFromJson(playerJson);
+  } catch {
+    return errorResponse("Invalid player JSON", 400);
+  }
+
   try {
     storage.transactionSync(() => {
-//      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+      storage.sql.exec(
+        `UPDATE matches
+         SET players = json(
+                 SELECT json_group_array(value)
+                 FROM json_each(players)
+                 WHERE json_extract(value, '$.player_id') != ?
+               )
+         WHERE id = ?;`,
+        playerId,
+        matchId
+      );
     });
-    return textResponse("Players updated successfully", 200);
-  } catch (error) {
-    return errorResponse("Error updating players: " + (error as Error).message, 500);
+    return textResponse("Player removed", 200);
+  } catch (e) {
+    console.error("removePlayer failed:", e);
+    return errorResponse("Failed to remove player", 500);
   }
 }
 
-export async function updatePlayer(storage: any, matchId: number, player: string): Promise<Response> {
-  const sql = storage.sql;
+// ————————————————————————————————————————————————————————
+// 3. UPDATE PLAYER (replace the whole object — future-proof)
+export async function updatePlayer(storage: any, matchId: number, playerJson: string): Promise<Response> {
+  let playerId: number;
+  try {
+    playerId = playerIdFromJson(playerJson);
+  } catch {
+    return errorResponse("Invalid player JSON", 400);
+  }
+
   try {
     storage.transactionSync(() => {
-//      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+      storage.sql.exec(
+        `UPDATE matches
+         SET players = json(
+                 SELECT json_group_array(
+                          CASE WHEN json_extract(value, '$.player_id') = ?
+                               THEN json(?)
+                               ELSE value
+                          END
+                        )
+                 FROM json_each(players)
+               )
+         WHERE id = ?;`,
+        playerId,
+        playerJson,   // drop the entire new object in
+        matchId
+      );
     });
-    return textResponse("Players updated successfully", 200);
-  } catch (error) {
-    return errorResponse("Error updating players: " + (error as Error).message, 500);
+    return textResponse("Player updated", 200);
+  } catch (e) {
+    console.error("updatePlayer failed:", e);
+    return errorResponse("Failed to update player", 500);
   }
 }
 
