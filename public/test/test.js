@@ -78,12 +78,28 @@ async function callApi(endpoint, method = 'GET', body) {
 async function runRestTests() {
   restResultsBody.innerHTML = '';
   runRestButton.disabled = true;
-  const state = { matchId: null, playerId: null, setId: null };
+  const state = { matchId: null, setId: null, starterId: null, benchId: null };
+  const uniqueSuffix = Date.now().toString();
+
+  const starterEntry = () =>
+    state.starterId ? { player_id: state.starterId, temp_number: 11 } : null;
+  const benchEntry = (tempNumber = 22) =>
+    state.benchId ? { player_id: state.benchId, temp_number: tempNumber } : null;
 
   const steps = [
     async () => {
       const res = await callApi('/api/config');
       addRestResult('/api/config', 'GET', res.request, res.status, res.body);
+    },
+    async () => {
+      const res = await callApi('/api/player/create', 'POST', { number: `9${uniqueSuffix}`, last_name: 'Starter', initial: 'S' });
+      state.starterId = res.body?.id ?? null;
+      addRestResult('/api/player/create (starter)', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      const res = await callApi('/api/player/create', 'POST', { number: `8${uniqueSuffix}`, last_name: 'Bench', initial: 'B' });
+      state.benchId = res.body?.id ?? null;
+      addRestResult('/api/player/create (bench)', 'POST', res.request, res.status, res.body);
     },
     async () => {
       const payload = {
@@ -96,7 +112,7 @@ async function runRestTests() {
         result_home: 0,
         result_opp: 0,
         first_server: 'home',
-        players: JSON.stringify([1, 2, 3, 4, 5, 6]),
+        players: JSON.stringify([]),
         finalized_sets: JSON.stringify({}),
         deleted: 0,
       };
@@ -137,7 +153,9 @@ async function runRestTests() {
     async () => {
       if (!state.matchId)
         return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
-      const res = await callApi('/api/match/set-players', 'POST', { matchId: state.matchId, players: JSON.stringify([7, 8, 9, 10, 11, 12]) });
+      const roster = starterEntry();
+      if (!roster) return addRestResult('player missing', 'POST', null, 0, 'Cannot set players without a starter');
+      const res = await callApi('/api/match/set-players', 'POST', { matchId: state.matchId, players: JSON.stringify([roster]) });
       addRestResult('/api/match/set-players', 'POST', res.request, res.status, res.body);
     },
     async () => {
@@ -161,6 +179,30 @@ async function runRestTests() {
     async () => {
       if (!state.matchId)
         return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
+      const bench = benchEntry();
+      if (!bench) return addRestResult('player missing', 'POST', null, 0, 'Cannot add player without bench player');
+      const res = await callApi('/api/match/add-player', 'POST', { matchId: state.matchId, player: JSON.stringify(bench) });
+      addRestResult('/api/match/add-player', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
+      const updatedBench = benchEntry(33);
+      if (!updatedBench) return addRestResult('player missing', 'POST', null, 0, 'Cannot update player without bench player');
+      const res = await callApi('/api/match/update-player', 'POST', { matchId: state.matchId, player: JSON.stringify(updatedBench) });
+      addRestResult('/api/match/update-player', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
+      const roster = starterEntry();
+      if (!roster) return addRestResult('player missing', 'POST', null, 0, 'Cannot remove player without a starter');
+      const res = await callApi('/api/match/remove-player', 'POST', { matchId: state.matchId, player: JSON.stringify(roster) });
+      addRestResult('/api/match/remove-player', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const res = await callApi('/api/match/set-deleted', 'POST', { matchId: state.matchId, deleted: 0 });
       addRestResult('/api/match/set-deleted', 'POST', res.request, res.status, res.body);
     },
@@ -175,33 +217,28 @@ async function runRestTests() {
       addRestResult('/api/match', 'GET', res.request, res.status, res.body);
     },
     async () => {
-      const res = await callApi('/api/player/create', 'POST', { number: '00', last_name: 'Tester', initial: 'T' });
-      state.playerId = res.body?.id ?? null;
-      addRestResult('/api/player/create', 'POST', res.request, res.status, res.body);
-    },
-    async () => {
-      if (!state.playerId)
+      if (!state.benchId)
         return addRestResult('playerId missing', 'POST', null, 0, 'Cannot continue player tests without playerId');
-      const res = await callApi('/api/player/set-lname', 'POST', { playerId: state.playerId, lastName: 'McTest' });
+      const res = await callApi('/api/player/set-lname', 'POST', { playerId: state.benchId, lastName: 'McTest' });
       addRestResult('/api/player/set-lname', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId)
+      if (!state.benchId)
         return addRestResult('playerId missing', 'POST', null, 0, 'Cannot continue player tests without playerId');
-      const res = await callApi('/api/player/set-fname', 'POST', { playerId: state.playerId, initial: 'TM' });
+      const res = await callApi('/api/player/set-fname', 'POST', { playerId: state.benchId, initial: 'TM' });
       addRestResult('/api/player/set-fname', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId)
+      if (!state.benchId)
         return addRestResult('playerId missing', 'POST', null, 0, 'Cannot continue player tests without playerId');
-      const res = await callApi('/api/player/set-number', 'POST', { playerId: state.playerId, number: '99' });
+      const res = await callApi('/api/player/set-number', 'POST', { playerId: state.benchId, number: `99${uniqueSuffix}` });
       addRestResult('/api/player/set-number', 'POST', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId)
+      if (!state.benchId)
         return addRestResult('playerId missing', 'GET', null, 0, 'Cannot continue player tests without playerId');
-      const res = await callApi(`/api/player/get/${state.playerId}`);
-      addRestResult(`/api/player/get/${state.playerId}`, 'GET', res.request, res.status, res.body);
+      const res = await callApi(`/api/player/get/${state.benchId}`);
+      addRestResult(`/api/player/get/${state.benchId}`, 'GET', res.request, res.status, res.body);
     },
     async () => {
       const res = await callApi('/api/player');
@@ -263,10 +300,16 @@ async function runRestTests() {
       addRestResult(`/api/set/delete/${state.setId}`, 'DELETE', res.request, res.status, res.body);
     },
     async () => {
-      if (!state.playerId)
+      if (!state.benchId)
         return addRestResult('playerId missing', 'DELETE', null, 0, 'Cannot delete player without playerId');
-      const res = await callApi(`/api/player/delete/${state.playerId}`, 'DELETE');
-      addRestResult(`/api/player/delete/${state.playerId}`, 'DELETE', res.request, res.status, res.body);
+      const res = await callApi(`/api/player/delete/${state.benchId}`, 'DELETE');
+      addRestResult(`/api/player/delete/${state.benchId}`, 'DELETE', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.starterId)
+        return addRestResult('playerId missing', 'DELETE', null, 0, 'Cannot delete player without playerId');
+      const res = await callApi(`/api/player/delete/${state.starterId}`, 'DELETE');
+      addRestResult(`/api/player/delete/${state.starterId}`, 'DELETE', res.request, res.status, res.body);
     },
     async () => {
       if (!state.matchId)
@@ -412,6 +455,22 @@ async function runWebSocketTests() {
 
     const uniqueSuffix = Date.now().toString();
 
+    const starterCreate = await sendAndTrack(actor, 'player:create starter', 'player', 'create', {
+      number: `9${uniqueSuffix}`,
+      last_name: 'WsStarter',
+      initial: 'S',
+    });
+    const starterId = starterCreate.body.id;
+    await sleep(150);
+
+    const benchCreate = await sendAndTrack(actor, 'player:create bench', 'player', 'create', {
+      number: `8${uniqueSuffix}`,
+      last_name: 'WsBench',
+      initial: 'B',
+    });
+    const benchId = benchCreate.body.id;
+    await sleep(150);
+
     const matchCreate = await sendAndTrack(actor, 'match:create', 'match', 'create', {
       date: new Date().toISOString(),
       opponent: `WS Opponent ${uniqueSuffix}`,
@@ -429,13 +488,19 @@ async function runWebSocketTests() {
     await sleep(100);
     await sendAndTrack(actor, 'match:set-result', 'match', 'set-result', { matchId, resultHome: 3, resultOpp: 2 });
     await sleep(100);
-    await sendAndTrack(actor, 'match:set-players', 'match', 'set-players', { matchId, players: JSON.stringify([{ id: 1 }]) });
+    await sendAndTrack(actor, 'match:set-players', 'match', 'set-players', { matchId, players: JSON.stringify([{ player_id: starterId, temp_number: 11 }]) });
     await sleep(100);
     await sendAndTrack(actor, 'match:set-home-color', 'match', 'set-home-color', { matchId, jerseyColorHome: 'blue' });
     await sleep(100);
     await sendAndTrack(actor, 'match:set-opp-color', 'match', 'set-opp-color', { matchId, jerseyColorOpp: 'black' });
     await sleep(100);
     await sendAndTrack(actor, 'match:set-first-server', 'match', 'set-first-server', { matchId, firstServer: 'home' });
+    await sleep(100);
+    await sendAndTrack(actor, 'match:add-player', 'match', 'add-player', { matchId, player: JSON.stringify({ player_id: benchId, temp_number: 22 }) });
+    await sleep(100);
+    await sendAndTrack(actor, 'match:update-player', 'match', 'update-player', { matchId, player: JSON.stringify({ player_id: benchId, temp_number: 33 }) });
+    await sleep(100);
+    await sendAndTrack(actor, 'match:remove-player', 'match', 'remove-player', { matchId, player: JSON.stringify({ player_id: starterId, temp_number: 11 }) });
     await sleep(100);
     await sendAndTrack(actor, 'match:set-deleted', 'match', 'set-deleted', { matchId, deleted: true });
     await sleep(100);
@@ -444,23 +509,17 @@ async function runWebSocketTests() {
     await sendAndTrack(actor, 'match:delete', 'match', 'delete', { id: matchId });
     await sleep(200);
 
-    const playerCreate = await sendAndTrack(actor, 'player:create', 'player', 'create', {
-      number: `8${uniqueSuffix}`,
-      last_name: 'Ws',
-      initial: 'W',
-    });
-    const playerId = playerCreate.body.id;
-    await sleep(200);
-
-    await sendAndTrack(actor, 'player:set-lname', 'player', 'set-lname', { playerId, lastName: 'WsUpdated' });
+    await sendAndTrack(actor, 'player:set-lname', 'player', 'set-lname', { playerId: benchId, lastName: 'WsUpdated' });
     await sleep(100);
-    await sendAndTrack(actor, 'player:set-fname', 'player', 'set-fname', { playerId, initial: 'Q' });
+    await sendAndTrack(actor, 'player:set-fname', 'player', 'set-fname', { playerId: benchId, initial: 'Q' });
     await sleep(100);
-    await sendAndTrack(actor, 'player:set-number', 'player', 'set-number', { playerId, number: `21${uniqueSuffix}` });
+    await sendAndTrack(actor, 'player:set-number', 'player', 'set-number', { playerId: benchId, number: `21${uniqueSuffix}` });
     await sleep(100);
-    await sendAndTrack(actor, 'player:get one', 'player', 'get', { id: playerId });
+    await sendAndTrack(actor, 'player:get one', 'player', 'get', { id: benchId });
     await sendAndTrack(actor, 'player:get all', 'player', 'get', {});
-    await sendAndTrack(actor, 'player:delete', 'player', 'delete', { id: playerId });
+    await sendAndTrack(actor, 'player:delete bench', 'player', 'delete', { id: benchId });
+    await sleep(100);
+    await sendAndTrack(actor, 'player:delete starter', 'player', 'delete', { id: starterId });
     await sleep(200);
 
     const setMatchCreate = await sendAndTrack(actor, 'set:match create', 'match', 'create', {

@@ -59,6 +59,17 @@ async def client_behavior(client_id, queue_to_other, is_listener=False):
                 pass
         else:
             unique_suffix = str(int(time.time() % 10000))
+            # Create players used in roster operations
+            await send_message(ws, "player", "create", {"number": f"9{unique_suffix}", "last_name": "Starter", "initial": "S"})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            starter_player_id = resp["body"]["id"]
+            
+            await send_message(ws, "player", "create", {"number": f"8{unique_suffix}", "last_name": "Bench", "initial": "B"})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            bench_player_id = resp["body"]["id"]
+            
             # Test match create
             await send_message(ws, "match", "create", {"date": datetime.now().isoformat(), "opponent": "Test Opponent " + unique_suffix})
             resp = await receive_message(ws)
@@ -106,7 +117,7 @@ async def client_behavior(client_id, queue_to_other, is_listener=False):
             await asyncio.sleep(1)
             
             # Test set-players
-            await send_message(ws, "match", "set-players", {"matchId": match_id, "players": '[{"id":1}]'})
+            await send_message(ws, "match", "set-players", {"matchId": match_id, "players": json.dumps([{"player_id": starter_player_id, "temp_number": 11}])})
             resp = await receive_message(ws)
             assert resp["status"] < 300
             
@@ -128,6 +139,27 @@ async def client_behavior(client_id, queue_to_other, is_listener=False):
             
             # Test set-first-server
             await send_message(ws, "match", "set-first-server", {"matchId": match_id, "firstServer": "home"})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            
+            await asyncio.sleep(1)
+            
+            # Test add-player
+            await send_message(ws, "match", "add-player", {"matchId": match_id, "player": json.dumps({"player_id": bench_player_id, "temp_number": 22})})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            
+            await asyncio.sleep(1)
+            
+            # Test update-player
+            await send_message(ws, "match", "update-player", {"matchId": match_id, "player": json.dumps({"player_id": bench_player_id, "temp_number": 33})})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            
+            await asyncio.sleep(1)
+            
+            # Test remove-player
+            await send_message(ws, "match", "remove-player", {"matchId": match_id, "player": json.dumps({"player_id": starter_player_id, "temp_number": 11})})
             resp = await receive_message(ws)
             assert resp["status"] < 300
             
@@ -199,6 +231,19 @@ async def client_behavior(client_id, queue_to_other, is_listener=False):
             
             # Test player delete
             await send_message(ws, "player", "delete", {"id": player_id})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            
+            await asyncio.sleep(1)
+            
+            # Clean up roster players
+            await send_message(ws, "player", "delete", {"id": bench_player_id})
+            resp = await receive_message(ws)
+            assert resp["status"] < 300
+            
+            await asyncio.sleep(1)
+            
+            await send_message(ws, "player", "delete", {"id": starter_player_id})
             resp = await receive_message(ws)
             assert resp["status"] < 300
             

@@ -53,6 +53,21 @@ async function runRestFlow() {
   logHeader("Running REST workflow");
   const uniqueSuffix = Date.now().toString();
 
+  // Prepare players for roster operations
+  const starterCreate = await fetchJson(
+    "/api/player/create",
+    buildPostOptions({ number: `9${uniqueSuffix}`, last_name: "RestStarter", initial: "S" })
+  );
+  const starterId = starterCreate.body.id;
+  console.log(`Created starter player ${starterId}`);
+
+  const benchCreate = await fetchJson(
+    "/api/player/create",
+    buildPostOptions({ number: `8${uniqueSuffix}`, last_name: "RestBench", initial: "B" })
+  );
+  const benchId = benchCreate.body.id;
+  console.log(`Created bench player ${benchId}`);
+
   // Match lifecycle
   const matchCreate = await fetchJson(
     "/api/match/create",
@@ -72,10 +87,13 @@ async function runRestFlow() {
   await fetchJson("/api/match/set-opp-name", buildPostOptions({ matchId, opponent: "REST Opponent Updated" }));
   await fetchJson("/api/match/set-type", buildPostOptions({ matchId, types: JSON.stringify({ friendly: true }) }));
   await fetchJson("/api/match/set-result", buildPostOptions({ matchId, resultHome: 3, resultOpp: 1 }));
-  await fetchJson("/api/match/set-players", buildPostOptions({ matchId, players: JSON.stringify([{ id: 1 }]) }));
+  await fetchJson("/api/match/set-players", buildPostOptions({ matchId, players: JSON.stringify([{ player_id: starterId, temp_number: 11 }]) }));
   await fetchJson("/api/match/set-home-color", buildPostOptions({ matchId, jerseyColorHome: "blue" }));
   await fetchJson("/api/match/set-opp-color", buildPostOptions({ matchId, jerseyColorOpp: "white" }));
   await fetchJson("/api/match/set-first-server", buildPostOptions({ matchId, firstServer: "home" }));
+  await fetchJson("/api/match/add-player", buildPostOptions({ matchId, player: JSON.stringify({ player_id: benchId, temp_number: 22 }) }));
+  await fetchJson("/api/match/update-player", buildPostOptions({ matchId, player: JSON.stringify({ player_id: benchId, temp_number: 33 }) }));
+  await fetchJson("/api/match/remove-player", buildPostOptions({ matchId, player: JSON.stringify({ player_id: starterId, temp_number: 11 }) }));
   await fetchJson("/api/match/set-deleted", buildPostOptions({ matchId, deleted: true }));
   await fetchJson(`/api/match/get/${matchId}`);
   await fetchJson("/api/match");
@@ -83,20 +101,14 @@ async function runRestFlow() {
   console.log(`Deleted match ${matchId}`);
 
   // Player lifecycle
-  const playerCreate = await fetchJson(
-    "/api/player/create",
-    buildPostOptions({ number: `9${uniqueSuffix}`, last_name: "Rest", initial: "R" })
-  );
-  const playerId = playerCreate.body.id;
-  console.log(`Created player ${playerId}`);
-
-  await fetchJson("/api/player/set-lname", buildPostOptions({ playerId, lastName: "Restington" }));
-  await fetchJson("/api/player/set-fname", buildPostOptions({ playerId, initial: "N" }));
-  await fetchJson("/api/player/set-number", buildPostOptions({ playerId, number: `20${uniqueSuffix}` }));
-  await fetchJson(`/api/player/get/${playerId}`);
+  await fetchJson("/api/player/set-lname", buildPostOptions({ playerId: benchId, lastName: "Restington" }));
+  await fetchJson("/api/player/set-fname", buildPostOptions({ playerId: benchId, initial: "N" }));
+  await fetchJson("/api/player/set-number", buildPostOptions({ playerId: benchId, number: `20${uniqueSuffix}` }));
+  await fetchJson(`/api/player/get/${benchId}`);
   await fetchJson("/api/player");
-  await fetchJson(`/api/player/delete/${playerId}`, { method: "DELETE" });
-  console.log(`Deleted player ${playerId}`);
+  await fetchJson(`/api/player/delete/${benchId}`, { method: "DELETE" });
+  await fetchJson(`/api/player/delete/${starterId}`, { method: "DELETE" });
+  console.log(`Deleted players ${benchId} and ${starterId}`);
 
   // Set lifecycle (create a dedicated match first)
   const setMatchCreate = await fetchJson(
@@ -240,6 +252,22 @@ async function runWebSocketFlow() {
 
   const actor = await createWsClient("actor");
 
+  const starterCreate = await sendAndExpectSuccess(actor, "player", "create", {
+    number: `9${uniqueSuffix}`,
+    last_name: "WsStarter",
+    initial: "S",
+  });
+  const starterId = starterCreate.body.id;
+  await sleep(200);
+
+  const benchCreate = await sendAndExpectSuccess(actor, "player", "create", {
+    number: `8${uniqueSuffix}`,
+    last_name: "WsBench",
+    initial: "B",
+  });
+  const benchId = benchCreate.body.id;
+  await sleep(200);
+
   // Match lifecycle
   const matchCreate = await sendAndExpectSuccess(actor, "match", "create", {
     date: new Date().toISOString(),
@@ -258,13 +286,19 @@ async function runWebSocketFlow() {
   await sleep(100);
   await sendAndExpectSuccess(actor, "match", "set-result", { matchId, resultHome: 3, resultOpp: 2 });
   await sleep(100);
-  await sendAndExpectSuccess(actor, "match", "set-players", { matchId, players: JSON.stringify([{ id: 1 }]) });
+  await sendAndExpectSuccess(actor, "match", "set-players", { matchId, players: JSON.stringify([{ player_id: starterId, temp_number: 11 }]) });
   await sleep(100);
   await sendAndExpectSuccess(actor, "match", "set-home-color", { matchId, jerseyColorHome: "blue" });
   await sleep(100);
   await sendAndExpectSuccess(actor, "match", "set-opp-color", { matchId, jerseyColorOpp: "black" });
   await sleep(100);
   await sendAndExpectSuccess(actor, "match", "set-first-server", { matchId, firstServer: "home" });
+  await sleep(100);
+  await sendAndExpectSuccess(actor, "match", "add-player", { matchId, player: JSON.stringify({ player_id: benchId, temp_number: 22 }) });
+  await sleep(100);
+  await sendAndExpectSuccess(actor, "match", "update-player", { matchId, player: JSON.stringify({ player_id: benchId, temp_number: 33 }) });
+  await sleep(100);
+  await sendAndExpectSuccess(actor, "match", "remove-player", { matchId, player: JSON.stringify({ player_id: starterId, temp_number: 11 }) });
   await sleep(100);
   await sendAndExpectSuccess(actor, "match", "set-deleted", { matchId, deleted: true });
   await sleep(100);
@@ -274,23 +308,16 @@ async function runWebSocketFlow() {
   await sleep(200);
 
   // Player lifecycle
-  const playerCreate = await sendAndExpectSuccess(actor, "player", "create", {
-    number: `8${uniqueSuffix}`,
-    last_name: "Ws",
-    initial: "W",
-  });
-  const playerId = playerCreate.body.id;
-  await sleep(200);
-
-  await sendAndExpectSuccess(actor, "player", "set-lname", { playerId, lastName: "WsUpdated" });
+  await sendAndExpectSuccess(actor, "player", "set-lname", { playerId: benchId, lastName: "WsUpdated" });
   await sleep(100);
-  await sendAndExpectSuccess(actor, "player", "set-fname", { playerId, initial: "Q" });
+  await sendAndExpectSuccess(actor, "player", "set-fname", { playerId: benchId, initial: "Q" });
   await sleep(100);
-  await sendAndExpectSuccess(actor, "player", "set-number", { playerId, number: `21${uniqueSuffix}` });
+  await sendAndExpectSuccess(actor, "player", "set-number", { playerId: benchId, number: `21${uniqueSuffix}` });
   await sleep(100);
-  await sendAndExpectSuccess(actor, "player", "get", { id: playerId });
+  await sendAndExpectSuccess(actor, "player", "get", { id: benchId });
   await sendAndExpectSuccess(actor, "player", "get", {});
-  await sendAndExpectSuccess(actor, "player", "delete", { id: playerId });
+  await sendAndExpectSuccess(actor, "player", "delete", { id: benchId });
+  await sendAndExpectSuccess(actor, "player", "delete", { id: starterId });
   await sleep(200);
 
   // Set lifecycle (create a dedicated match first)
