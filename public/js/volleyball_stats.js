@@ -5,6 +5,7 @@ import { setDefaultDate } from './init/date.js';
 import { enhanceJerseySelectsCustom } from './init/jerseyColors.js';
 import { swapConfig , mainSwap } from './ui/swap.js';
 import { debouncedOpponentUpdate , updateOpponentName} from './ui/opponentName.js';
+import { initSavedMatchesModal } from './api/matches.js';
 import './ui/scoreModals.js';
 import './ui/finalizeButtons.js';
 import './ui/resultSummary.js';  // New import to load the result summary logic
@@ -40,6 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   //await updateOpponentName();  // Add here for initial fallback render post-DOM
+  initSavedMatchesModal();
   document.getElementById('loader').style.display = 'none';
   document.getElementById('main-content').style.visibility = 'visible';
 });
