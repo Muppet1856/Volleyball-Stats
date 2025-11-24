@@ -419,27 +419,17 @@ export class MatchState {
       if (res.status < 300 && action !== 'get') {
         const id = this.getIdFromData(resource, action, data, body);
         if (this.isDebug) console.log(`Write success (status ${res.status}) from client ${clientId}. ID for broadcast: ${id}, matchId: ${matchId}`);
-        if (id || (resource === 'set' && action === 'set-is-final' && matchId)) {
-          let broadcastMsg: string;
 
-          if (action === 'delete') {
-            const payload: any = { type: 'delete', resource, id };
-            if (matchId !== undefined) payload.matchId = matchId;
-            broadcastMsg = JSON.stringify(payload);
-          } else if (resource === 'set' && action === 'set-is-final') {
-            // Special: Broadcast all sets for the match
-            const setsRes = await setApi.getSets(storage, matchId!);
-            const setsData = await setsRes.json();
-            broadcastMsg = JSON.stringify({ type: 'update', resource: 'sets', matchId, data: setsData });
-          } else {
-            // Standard: Broadcast updated entity
-            const updated = await this.getUpdated(resource, id!);
-            const payload: any = { type: 'update', resource, data: updated };
-            if (matchId !== undefined) payload.matchId = matchId;
-            broadcastMsg = JSON.stringify(payload);
-          }
+        const broadcastMsg = await this.prepareBroadcastMessage({
+          resource,
+          action,
+          id,
+          matchId,
+          data,
+        });
+
+        if (broadcastMsg) {
           if (this.isDebug) console.log(`Broadcast message prepared from client ${clientId}: ${broadcastMsg.substring(0, 100)}...`);
-
           this.broadcast(broadcastMsg, ws);  // Exclude sender
         } else if (this.isDebug) {
           console.log(`No ID found - skipping broadcast for client ${clientId}`);
@@ -492,6 +482,127 @@ export class MatchState {
     }
   }
 
+  // Build a minimal broadcast payload for the given action
+  private async prepareBroadcastMessage(params: { resource: string; action: string; id?: number; matchId?: number; data: any; }): Promise<string | undefined> {
+    const { resource, action, id, matchId, data } = params;
+
+    if (action === 'delete') {
+      if (id === undefined) return undefined;
+      const payload: any = { type: 'delete', resource, id };
+      if (matchId !== undefined) payload.matchId = matchId;
+      return JSON.stringify(payload);
+    }
+
+    if (resource === 'set' && action === 'set-is-final' && matchId) {
+      // Special: Broadcast all sets for the match
+      const setsRes = await setApi.getSets(this.state.storage, matchId);
+      const setsData = await setsRes.json();
+      return JSON.stringify({ type: 'update', resource: 'sets', action, matchId, data: setsData });
+    }
+
+    if (action === 'create') {
+      if (id === undefined) return undefined;
+      // Creation still sends the full record to allow clients to render new items
+      const created = await this.getUpdated(resource, id);
+      const payload: any = { type: 'update', resource, action, id, data: created };
+      if (matchId !== undefined) payload.matchId = matchId;
+      return JSON.stringify(payload);
+    }
+
+    if (id === undefined) return undefined;
+
+    const changes = await this.getChanges(resource, action, id, data, matchId);
+    if (!changes) return undefined;
+
+    const prunedChanges = Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined));
+    if (Object.keys(prunedChanges).length === 0) return undefined;
+
+    const payload: any = { type: 'update', resource, action, id, changes: prunedChanges };
+    if (matchId !== undefined) payload.matchId = matchId;
+    return JSON.stringify(payload);
+  }
+
+  private async getChanges(resource: string, action: string, id: number, data: any, matchId?: number): Promise<Record<string, any> | null> {
+    switch (resource) {
+      case 'match':
+        return this.getMatchChanges(action, id, data);
+      case 'player':
+        return this.getPlayerChanges(action, id, data);
+      case 'set':
+        return this.getSetChanges(action, id, data, matchId);
+      default:
+        return null;
+    }
+  }
+
+  private async getMatchChanges(action: string, matchId: number, data: any): Promise<Record<string, any> | null> {
+    switch (action) {
+      case 'set-location':
+        return { location: data.location ?? null };
+      case 'set-date-time':
+        return { date: data.date ?? null };
+      case 'set-opp-name':
+        return { opponent: data.opponent ?? null };
+      case 'set-type':
+        return { types: this.coerceJsonString(data.types, {}) };
+      case 'set-result':
+        return {
+          result_home: this.normalizeScore(data.resultHome),
+          result_opp: this.normalizeScore(data.resultOpp),
+        };
+      case 'set-players':
+        return { players: this.coerceJsonString(data.players, []) };
+      case 'add-player':
+      case 'remove-player':
+      case 'update-player':
+        return { players: await this.getMatchColumn(matchId, 'players') };
+      case 'set-home-color':
+        return { jersey_color_home: data.jerseyColorHome ?? null };
+      case 'set-opp-color':
+        return { jersey_color_opp: data.jerseyColorOpp ?? null };
+      case 'set-first-server':
+        return { first_server: data.firstServer ?? null };
+      case 'set-deleted':
+        return { deleted: this.normalizeDeletedFlag(data.deleted) };
+      default:
+        return null;
+    }
+  }
+
+  private getPlayerChanges(action: string, _playerId: number, data: any): Record<string, any> | null {
+    switch (action) {
+      case 'set-lname':
+        return { last_name: data.lastName ?? null };
+      case 'set-fname':
+        return { initial: data.initial ?? null };
+      case 'set-number':
+        return { number: data.number ?? null };
+      default:
+        return null;
+    }
+  }
+
+  private getSetChanges(action: string, _setId: number, data: any, matchId?: number): Record<string, any> | null {
+    switch (action) {
+      case 'set-home-score':
+        return { home_score: this.normalizeScore(data.homeScore) };
+      case 'set-opp-score':
+        return { opp_score: this.normalizeScore(data.oppScore) };
+      case 'set-home-timeout': {
+        const field = data.timeoutNumber === 2 || data.timeoutNumber === '2' ? 'home_timeout_2' : 'home_timeout_1';
+        return { [field]: this.normalizeTimeoutFlag(data.value) };
+      }
+      case 'set-opp-timeout': {
+        const field = data.timeoutNumber === 2 || data.timeoutNumber === '2' ? 'opp_timeout_2' : 'opp_timeout_1';
+        return { [field]: this.normalizeTimeoutFlag(data.value) };
+      }
+      case 'set-is-final':
+        return matchId ? { finalized_sets: data.finalizedSets } : null;
+      default:
+        return null;
+    }
+  }
+
   // Helper: Fetch updated entity (atomic read after write)
   private async getUpdated(resource: string, id: number): Promise<any> {
     const storage = this.state.storage;
@@ -508,6 +619,70 @@ export class MatchState {
       default:
         throw new Error(`No getUpdated for resource: ${resource}`);
     }
+  }
+
+  private async getMatchColumn(matchId: number, column: string): Promise<any> {
+    const sql = this.state.storage.sql;
+    const cursor = sql.exec(`SELECT ${column} FROM matches WHERE id = ?`, matchId);
+    const row = cursor.toArray()[0];
+    return row ? row[column] : undefined;
+  }
+
+  private normalizeScore(value: any): number | null {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return parsed;
+  }
+
+  private normalizeDeletedFlag(value: any): number {
+    if (typeof value === "string") {
+      const lower = value.trim().toLowerCase();
+      if (lower === "true" || lower === "1") {
+        return 1;
+      }
+      return 0;
+    }
+    if (typeof value === "number") {
+      return value !== 0 ? 1 : 0;
+    }
+    return value ? 1 : 0;
+  }
+
+  private coerceJsonString(value: any, fallback: any = {}): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    try {
+      return JSON.stringify(value ?? fallback);
+    } catch (error) {
+      return JSON.stringify(fallback);
+    }
+  }
+
+  private normalizeTimeoutFlag(value: any): number {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+    if (typeof value === "boolean") {
+      return value ? 1 : 0;
+    }
+    if (typeof value === "string") {
+      if (value.trim() === "") return 0;
+      const parsed = Number(value);
+      if (Number.isNaN(parsed)) {
+        return value ? 1 : 0;
+      }
+      return parsed ? 1 : 0;
+    }
+    if (typeof value === "number") {
+      return value ? 1 : 0;
+    }
+    return 0;
   }
 
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
