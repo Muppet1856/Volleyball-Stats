@@ -423,7 +423,9 @@ export class MatchState {
           let broadcastMsg: string;
 
           if (action === 'delete') {
-            broadcastMsg = JSON.stringify({ type: 'delete', resource, id, matchId });
+            const payload: any = { type: 'delete', resource, id };
+            if (matchId !== undefined) payload.matchId = matchId;
+            broadcastMsg = JSON.stringify(payload);
           } else if (resource === 'set' && action === 'set-is-final') {
             // Special: Broadcast all sets for the match
             const setsRes = await setApi.getSets(storage, matchId!);
@@ -432,7 +434,9 @@ export class MatchState {
           } else {
             // Standard: Broadcast updated entity
             const updated = await this.getUpdated(resource, id!);
-            broadcastMsg = JSON.stringify({ type: 'update', resource, id, matchId, data: updated });
+            const payload: any = { type: 'update', resource, data: updated };
+            if (matchId !== undefined) payload.matchId = matchId;
+            broadcastMsg = JSON.stringify(payload);
           }
           if (this.isDebug) console.log(`Broadcast message prepared from client ${clientId}: ${broadcastMsg.substring(0, 100)}...`);
 
