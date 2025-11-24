@@ -135,7 +135,7 @@ export async function setPlayers(storage: any, matchId: number, players: string)
   const sql = storage.sql;
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, players, matchId);
+      sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, coerceJsonString(players, []), matchId);
     });
     return textResponse("Players updated successfully", 200);
   } catch (error) {
@@ -144,28 +144,52 @@ export async function setPlayers(storage: any, matchId: number, players: string)
 }
 
 // Helper — keep it at the top of the file or in a utils file
-function playerIdFromJson(playerJson: string): number {
-  const id = JSON.parse(playerJson)?.player_id;
+function playerIdFromJson(playerJson: any): number {
+  const parsed = typeof playerJson === "string" ? JSON.parse(playerJson) : playerJson;
+  const id = parsed?.player_id;
   if (typeof id !== "number") throw new Error("Invalid/missing player_id");
   return id;
+}
+
+function parsePlayersField(raw: any): any[] {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 // ————————————————————————————————————————————————————————
 // 1. ADD PLAYER (you receive ready-made JSON → just append)
 export async function addPlayer(storage: any, matchId: number, playerJson: string): Promise<Response> {
+  let parsedPlayer: any;
+  try {
+    parsedPlayer = typeof playerJson === "string" ? JSON.parse(playerJson) : playerJson;
+  } catch {
+    return errorResponse("Invalid player JSON", 400);
+  }
+  if (typeof parsedPlayer?.player_id !== "number") {
+    return errorResponse("Invalid player JSON", 400);
+  }
+
   try {
     storage.transactionSync(() => {
-      storage.sql.exec(
-        `UPDATE matches
-         SET players = COALESCE(players, json_array()) || json_array(?)
-         WHERE id = ?;`,
-        playerJson,
-        matchId
-      );
+      const rows = storage.sql.exec(`SELECT players FROM matches WHERE id = ?`, matchId).toArray();
+      if (rows.length === 0) {
+        throw new Error("Match not found");
+      }
+      const normalized = parsePlayersField(rows[0]?.players);
+      normalized.push(parsedPlayer);
+      storage.sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, JSON.stringify(normalized), matchId);
     });
     return textResponse("Player added", 200);
   } catch (e) {
     console.error("addPlayer failed:", e);
+    if ((e as Error).message === "Match not found") {
+      return errorResponse("Match not found", 404);
+    }
     return errorResponse("Failed to add player", 500);
   }
 }
@@ -182,21 +206,20 @@ export async function removePlayer(storage: any, matchId: number, playerJson: st
 
   try {
     storage.transactionSync(() => {
-      storage.sql.exec(
-        `UPDATE matches
-         SET players = json(
-                 SELECT json_group_array(value)
-                 FROM json_each(players)
-                 WHERE json_extract(value, '$.player_id') != ?
-               )
-         WHERE id = ?;`,
-        playerId,
-        matchId
-      );
+      const rows = storage.sql.exec(`SELECT players FROM matches WHERE id = ?`, matchId).toArray();
+      if (rows.length === 0) {
+        throw new Error("Match not found");
+      }
+      const normalized = parsePlayersField(rows[0]?.players);
+      const filtered = normalized.filter((p: any) => p && p.player_id !== playerId);
+      storage.sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, JSON.stringify(filtered), matchId);
     });
     return textResponse("Player removed", 200);
   } catch (e) {
     console.error("removePlayer failed:", e);
+    if ((e as Error).message === "Match not found") {
+      return errorResponse("Match not found", 404);
+    }
     return errorResponse("Failed to remove player", 500);
   }
 }
@@ -205,34 +228,35 @@ export async function removePlayer(storage: any, matchId: number, playerJson: st
 // 3. UPDATE PLAYER (replace the whole object — future-proof)
 export async function updatePlayer(storage: any, matchId: number, playerJson: string): Promise<Response> {
   let playerId: number;
+  let parsedPlayer: any;
   try {
-    playerId = playerIdFromJson(playerJson);
+    parsedPlayer = typeof playerJson === "string" ? JSON.parse(playerJson) : playerJson;
+    playerId = playerIdFromJson(parsedPlayer);
   } catch {
     return errorResponse("Invalid player JSON", 400);
   }
 
   try {
     storage.transactionSync(() => {
-      storage.sql.exec(
-        `UPDATE matches
-         SET players = json(
-                 SELECT json_group_array(
-                          CASE WHEN json_extract(value, '$.player_id') = ?
-                               THEN json(?)
-                               ELSE value
-                          END
-                        )
-                 FROM json_each(players)
-               )
-         WHERE id = ?;`,
-        playerId,
-        playerJson,   // drop the entire new object in
-        matchId
-      );
+      const rows = storage.sql.exec(`SELECT players FROM matches WHERE id = ?`, matchId).toArray();
+      if (rows.length === 0) {
+        throw new Error("Match not found");
+      }
+      const normalized = parsePlayersField(rows[0]?.players);
+      const updated = normalized.map((p: any) => {
+        if (p && p.player_id === playerId) {
+          return parsedPlayer;
+        }
+        return p;
+      });
+      storage.sql.exec(`UPDATE matches SET players = ? WHERE id = ?`, JSON.stringify(updated), matchId);
     });
     return textResponse("Player updated", 200);
   } catch (e) {
     console.error("updatePlayer failed:", e);
+    if ((e as Error).message === "Match not found") {
+      return errorResponse("Match not found", 404);
+    }
     return errorResponse("Failed to update player", 500);
   }
 }
