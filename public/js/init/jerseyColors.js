@@ -19,8 +19,60 @@ export function createJerseySvg(color, number = '0', size = 26) {
   `.trim();
 }
 
+function syncJerseyTrigger(select) {
+  const control = select._jerseyControl;
+  const selectedOption = select?.selectedOptions?.[0];
+  if (!control || !selectedOption) return;
+
+  const color = selectedOption.dataset.color;
+  const text = selectedOption.textContent.trim();
+
+  control.button.querySelector('svg').outerHTML = createJerseySvg(color);
+  control.button.querySelector('.selected-text').textContent = text;
+}
+
+function getNextAvailableOption(select, blockedColor) {
+  const options = Array.from(select.options).filter((opt) => opt.value);
+  if (!options.length) return null;
+
+  const currentIndex = options.findIndex((opt) => opt.value === select.value);
+  const startIndex = currentIndex >= 0 ? currentIndex : 0;
+
+  for (let i = 1; i <= options.length; i += 1) {
+    const candidate = options[(startIndex + i) % options.length];
+    if (candidate.value !== blockedColor) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+let isResolvingJerseyConflict = false;
+
+function enforceDistinctJerseyColors(changedSelect) {
+  if (isResolvingJerseyConflict) return;
+
+  const selects = Array.from(document.querySelectorAll('.jersey-select'));
+  const otherSelect = selects.find((select) => select !== changedSelect);
+  if (!otherSelect || !changedSelect.value) return;
+
+  if (changedSelect.value === otherSelect.value) {
+    const nextOption = getNextAvailableOption(otherSelect, changedSelect.value);
+    if (!nextOption) return;
+
+    isResolvingJerseyConflict = true;
+    otherSelect.value = nextOption.value;
+    syncJerseyTrigger(otherSelect);
+    otherSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    isResolvingJerseyConflict = false;
+  }
+}
+
 export function enhanceJerseySelectsCustom() {
-  document.querySelectorAll('.jersey-select').forEach(originalSelect => {
+  const jerseySelects = Array.from(document.querySelectorAll('.jersey-select'));
+
+  jerseySelects.forEach(originalSelect => {
     const selectedOption = originalSelect.selectedOptions[0];
     const currentColor = selectedOption.dataset.color;
     const currentText = selectedOption.textContent.trim();
@@ -72,5 +124,13 @@ export function enhanceJerseySelectsCustom() {
     // Insert the custom dropdown and hide the original <select>
     originalSelect.parentNode.insertBefore(wrapper, originalSelect);
     originalSelect.style.display = 'none';
+
+    originalSelect._jerseyControl = { button };
+    originalSelect.addEventListener('change', (event) => {
+      syncJerseyTrigger(event.target);
+      enforceDistinctJerseyColors(event.target);
+    });
   });
+
+  jerseySelects.forEach((select) => enforceDistinctJerseyColors(select));
 }
