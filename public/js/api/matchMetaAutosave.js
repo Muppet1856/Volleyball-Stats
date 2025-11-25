@@ -29,7 +29,7 @@ function parseTypes(rawTypes) {
   if (typeof rawTypes === 'string') {
     try {
       return parseTypes(JSON.parse(rawTypes));
-    } catch (error) {
+    } catch (_error) {
       return {};
     }
   }
@@ -168,7 +168,6 @@ function setSelectValue(select, value) {
 export function hydrateMatchMeta(match = {}) {
   suppressMetaWrites = true;
   try {
-    console.log('[hydrateMatchMeta] payload', match);
     const matchId = coerceMatchId(match.id ?? match.match_id ?? match.matchId);
     if (matchId !== null) {
       setActiveMatchId(matchId);
@@ -211,7 +210,6 @@ export function hydrateMatchMeta(match = {}) {
 
     // Load match players (including temp numbers) into state for UI rendering.
     const mergedPlayers = mergePlayersWithTemps(match.players ?? [], match.temp_numbers ?? match.tempNumbers);
-    console.log('[hydrateMatchMeta] mergedPlayers', mergedPlayers);
     loadMatchPlayers(mergedPlayers);
   } finally {
     suppressMetaWrites = false;
@@ -276,10 +274,8 @@ export async function loadMatchFromUrl() {
   }
 
   try {
-    console.log('[loadMatchFromUrl] fetching match', matchId);
     const response = await getMatch(matchId);
     if (!response || response.status >= 300 || !response.body) {
-      console.warn(`Failed to load match ${matchId} from URL parameter.`);
       return null;
     }
     const match = response.body;
@@ -289,10 +285,8 @@ export async function loadMatchFromUrl() {
     const mergedPlayers = mergePlayersWithTemps(match.players ?? [], match.temp_numbers ?? match.tempNumbers);
     setMatchPlayers(mergedPlayers);
     loadMatchPlayers(mergedPlayers);
-    console.log('[loadMatchFromUrl] hydrated players', mergedPlayers);
     return match;
-  } catch (error) {
-    console.error(`Error loading match ${matchId} from URL:`, error);
+  } catch (_error) {
     return null;
   }
 }

@@ -122,14 +122,9 @@ function sanitizeLoadedState() {
 }
 
 export function updateState(partialState) {
-  // Debug hook to see matchPlayers state changes
-  if (partialState?.matchPlayers !== undefined) {
-    console.log('[state:updateState] matchPlayers incoming', partialState.matchPlayers);
-  }
   deepMerge(state, partialState);
   saveStateToStorage();
   notifyListeners();
-  // Optional: console.log('Updated state:', state) for debugging
 }
 
 export function subscribe(listener) {
@@ -153,8 +148,7 @@ export function loadStateFromStorage() {
     sanitizeLoadedState();
     saveStateToStorage();
     notifyListeners();
-  } catch (error) {
-    console.warn('Failed to parse saved state, clearing storage.', error);
+  } catch (_error) {
     localStorage.removeItem(STORAGE_KEY);
   }
   return state;
@@ -210,7 +204,6 @@ export function setMatchPlayers(matchPlayers = []) {
     }, new Map());
 
   state.matchPlayers = Array.from(normalized.values());
-  console.log('[state:setMatchPlayers] normalized', state.matchPlayers);
   saveStateToStorage();
   notifyListeners();
   return state.matchPlayers;
@@ -263,8 +256,7 @@ export function loadMatchPlayers(rawPlayers) {
   if (typeof rawPlayers === 'string') {
     try {
       parsed = JSON.parse(rawPlayers);
-    } catch (error) {
-      console.warn('Failed to parse match players payload', error);
+    } catch (_error) {
       parsed = [];
     }
   }

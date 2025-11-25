@@ -12,8 +12,8 @@ export async function initializeHomeTeam() {
         homeName = data.homeTeam.trim();
       }
     }
-  } catch (e) {
-    console.error('Fetch error:', e.message);  // Log full error details
+  } catch (_e) {
+    // noop
   }
 
   updateState({ homeTeam: homeName });

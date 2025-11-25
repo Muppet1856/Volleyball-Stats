@@ -39,92 +39,67 @@ function serializeTypeSelection(value) {
   }
 }
 
-function logMissingMatchId(field) {
-  console.warn(`Cannot save ${field} without a valid matchId.`);
-}
-
 const debouncedLocationWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('location');
     return;
   }
   const location = normalizeText(value);
-  setMatchLocation(normalizedId, location).catch((error) => {
-    console.error('Failed to save location:', error);
-  });
+  setMatchLocation(normalizedId, location).catch(() => {});
 }, SAVE_DELAY_MS);
 
 const debouncedOpponentWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('opponent');
     return;
   }
   const opponent = normalizeText(value);
-  setMatchOppName(normalizedId, opponent).catch((error) => {
-    console.error('Failed to save opponent:', error);
-  });
+  setMatchOppName(normalizedId, opponent).catch(() => {});
 }, SAVE_DELAY_MS);
 
 const debouncedDateWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('date');
     return;
   }
   const date = normalizeText(value);
-  setMatchDateTime(normalizedId, date).catch((error) => {
-    console.error('Failed to save date:', error);
-  });
+  setMatchDateTime(normalizedId, date).catch(() => {});
 }, SAVE_DELAY_MS);
 
 const debouncedTypeWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('type');
     return;
   }
   const serialized = serializeTypeSelection(value);
-  setMatchType(normalizedId, serialized).catch((error) => {
-    console.error('Failed to save type:', error);
-  });
+  setMatchType(normalizedId, serialized).catch(() => {});
 }, SAVE_DELAY_MS);
 
 const debouncedFirstServerWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('firstServer');
     return;
   }
   const firstServer = normalizeSelectValue(value);
-  setMatchFirstServer(normalizedId, firstServer).catch((error) => {
-    console.error('Failed to save first server:', error);
-  });
+  setMatchFirstServer(normalizedId, firstServer).catch(() => {});
 }, SAVE_DELAY_MS);
 
 const debouncedHomeJerseyWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('home jersey color');
     return;
   }
   const jerseyColorHome = normalizeSelectValue(value);
-  setMatchHomeColor(normalizedId, jerseyColorHome).catch((error) => {
-    console.error('Failed to save home jersey color:', error);
-  });
+  setMatchHomeColor(normalizedId, jerseyColorHome).catch(() => {});
 }, SAVE_DELAY_MS);
 
 const debouncedOppJerseyWrite = debounce((matchId, value) => {
   const normalizedId = normalizeMatchId(matchId);
   if (!normalizedId) {
-    logMissingMatchId('opponent jersey color');
     return;
   }
   const jerseyColorOpp = normalizeSelectValue(value);
-  setMatchOppColor(normalizedId, jerseyColorOpp).catch((error) => {
-    console.error('Failed to save opponent jersey color:', error);
-  });
+  setMatchOppColor(normalizedId, jerseyColorOpp).catch(() => {});
 }, SAVE_DELAY_MS);
 
 export function writeLocation(matchId, location) {

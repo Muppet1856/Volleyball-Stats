@@ -222,8 +222,7 @@ async function handleCreateMatch(event) {
       updateUrlWithMatchId(matchId);
     }
     refreshMatches();
-  } catch (error) {
-    console.error('Match creation failed:', error);
+  } catch (_error) {
     setStatus('Could not create match. Please try again.', 'danger');
   } finally {
     toggleButtonLoading(false);

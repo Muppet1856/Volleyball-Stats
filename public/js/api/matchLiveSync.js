@@ -35,8 +35,8 @@ async function updateSubscription(nextMatchId) {
   if (subscribedMatchId !== null) {
     try {
       await unsubscribeFromMatch(subscribedMatchId);
-    } catch (error) {
-      console.warn('Failed to unsubscribe from match updates', error);
+    } catch {
+      // noop
     }
   }
 
@@ -44,8 +44,8 @@ async function updateSubscription(nextMatchId) {
   if (normalized !== null) {
     try {
       await subscribeToMatch(normalized);
-    } catch (error) {
-      console.warn('Failed to subscribe to match updates', error);
+    } catch {
+      // noop
     }
   }
 }
@@ -208,7 +208,6 @@ function handleUpdate(message) {
   }
 
   if (message.resource === 'match') {
-    console.log('[matchLiveSync] apply match broadcast', message);
     applyMatchBroadcast(message);
     return;
   }
@@ -252,7 +251,6 @@ function applyMatchBroadcast(message) {
     const temps = payload.temp_numbers ?? payload.tempNumbers ?? null;
     if (players !== null || temps !== null) {
       const merged = mergePlayersWithTemps(players ?? [], temps ?? []);
-      console.log('[matchLiveSync] merged players from broadcast', merged);
       loadMatchPlayers(merged);
     }
   }

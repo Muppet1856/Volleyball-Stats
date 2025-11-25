@@ -25,8 +25,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Optional: Toggle button text or state if you want to indicate swap/revert
       // e.g., swapButton.textContent = swapButton.textContent === 'Swap Teams' ? 'Revert Swap' : 'Swap Teams';
     });
-  } else {
-    console.warn('Swap button not found.');
   }
   const modalSwapButton = document.getElementById('scoreModalSwapBtn');
   if (modalSwapButton) {
@@ -35,8 +33,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Optional: Toggle button text or state if you want to indicate swap/revert
       // e.g., swapButton.textContent = swapButton.textContent === 'Swap Teams' ? 'Revert Swap' : 'Swap Teams';
     });
-  } else {
-    console.warn('Modal swap button not found.');
   }
   
   //await updateOpponentName();  // Add here for initial fallback render post-DOM

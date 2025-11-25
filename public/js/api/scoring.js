@@ -59,8 +59,7 @@ async function hydrateSetsForMatch(matchId, { force = false } = {}) {
       rows.forEach(applyServerSetRow);
       hydratedMatchId = normalizedId;
       return rows;
-    } catch (error) {
-      console.error('Failed to hydrate set scores:', error);
+    } catch (_error) {
       return [];
     }
   })();
@@ -152,14 +151,12 @@ async function writeScoreNow(team, setNumber, rawScore) {
   const normalizedMatchId = normalizeMatchId(matchId);
   const normalizedSetNumber = normalizeSetNumber(setNumber);
   if (!normalizedMatchId || !normalizedSetNumber) {
-    console.warn('Cannot save score without match and valid set number.');
     return;
   }
 
   const scoreValue = normalizeScore(rawScore);
   const setId = await ensureSetId(normalizedMatchId, normalizedSetNumber);
   if (!setId) {
-    console.warn('Could not resolve set id for scoring.');
     return;
   }
 
@@ -169,8 +166,8 @@ async function writeScoreNow(team, setNumber, rawScore) {
     } else {
       await setOppScore(setId, scoreValue, normalizedMatchId);
     }
-  } catch (error) {
-    console.error('Failed to save score:', error);
+  } catch {
+    // noop
   }
 }
 

@@ -32,14 +32,9 @@ export class MatchState {
 
     // Init all tables the first time the DO is created
     const sql = this.state.storage.sql;
-    const matchInit = initMatchTable(sql);
-    const playerInit = initPlayerTable(sql);
-    const setInit = initSetTable(sql);
-    if (this.isDebug) {
-      console.log(`Match table init: ${matchInit}`);
-      console.log(`Player table init: ${playerInit}`);
-      console.log(`Set table init: ${setInit}`);
-    }
+    initMatchTable(sql);
+    initPlayerTable(sql);
+    initSetTable(sql);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -59,7 +54,6 @@ export class MatchState {
 
       // Generate unique client ID
       const clientId = Math.random().toString(36).slice(2);
-      if (this.isDebug) console.log(`New client connected: ${clientId}`);
 
       // Accept the WebSocket with clientId as tag
       this.state.acceptWebSocket(server, [clientId]);
@@ -69,7 +63,6 @@ export class MatchState {
         const sql = this.state.storage.sql;
         const cursor = sql.exec('SELECT COUNT(*) FROM matches');
         const count = cursor.next().value['COUNT(*)'];
-        if (this.isDebug) console.log(`Sending debug count to client ${clientId}: ${count} matches`);
         server.send(`Debug: ${count} matches in DB`);
         server.send(`Debug: New client connected: ${clientId}`);
       }
@@ -206,7 +199,6 @@ export class MatchState {
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const clientId = this.getClientId(ws) ?? 'undefined';
-    if (this.isDebug) console.log(`Received WS message from client ${clientId}: ${message instanceof ArrayBuffer ? '[ArrayBuffer]' : message}`);
     const storage = this.state.storage;
     try {
       // Handle potential ArrayBuffer (safe for text/binary; Miniflare might send text as buffer)
@@ -216,7 +208,6 @@ export class MatchState {
       } else {
         msgStr = message;
       }
-      if (this.isDebug) console.log(`Parsed message string from client ${clientId}: ${msgStr}`);
       const payload = JSON.parse(msgStr);
       const resource = Object.keys(payload)[0];
       if (!resource) throw new Error('Invalid payload: missing resource');
@@ -454,15 +445,11 @@ export class MatchState {
         status: res.status,
         body,
       });
-      if (this.isDebug) console.log(`Sending response to client ${clientId}: ${responseMsg.substring(0, 100)}...`);
       ws.send(responseMsg);
-
-      console.log(`Response status: ${res.status}`);
 
       // If successful write action, broadcast update/delete to other clients
       if (res.status < 300 && action !== 'get') {
         const id = this.getIdFromData(resource, action, data, body);
-        if (this.isDebug) console.log(`Write success (status ${res.status}) from client ${clientId}. ID for broadcast: ${id}, matchId: ${matchId}`);
 
         const broadcastMsg = await this.prepareBroadcastMessage({
           resource,
@@ -473,25 +460,16 @@ export class MatchState {
         });
 
         if (broadcastMsg) {
-          if (this.isDebug) console.log(`Broadcast message prepared from client ${clientId}: ${broadcastMsg.substring(0, 100)}...`);
           this.broadcast(broadcastMsg, ws);  // Exclude sender
-        } else if (this.isDebug) {
-          console.log(`No ID found - skipping broadcast for client ${clientId}`);
         }
-      } else if (this.isDebug) {
-        console.log(`No broadcast: status=${res.status}, action=${action} for client ${clientId}`);
       }
 
-      if (this.isDebug) console.log(`Sent response to client ${clientId}`);
-
     } catch (e) {
-      console.error(`WS message error for client ${clientId}: ${e.message}`);
       ws.send(JSON.stringify({
         error: {
           message: (e as Error).message,
         }
       }));
-      if (this.isDebug) console.error(e);
     }
   }
 
@@ -502,14 +480,12 @@ export class MatchState {
       this.matchSubscriptions.delete(clientId);
     }
     const label = clientId ?? 'undefined';
-    if (this.isDebug) console.log(`WS closed for client ${label}: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0 - 1}`);
   }
 
   // Handle errors (optional, but cleans up)
   async webSocketError(ws: WebSocket, error: any) {
     const tags = this.state.getTags(ws);
     const clientId = tags.length > 0 ? tags[0] : 'undefined';
-    if (this.isDebug) console.error(`WS error for client ${clientId}: ${error}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
   }
 
   // Helper: Extract ID from data or body
@@ -825,18 +801,14 @@ export class MatchState {
     for (const conn of this.state.getWebSockets() || []) {
       const connId = this.getClientId(conn) ?? 'undefined';
       if (conn === exclude) {
-        if (this.isDebug) console.log(`Excluding sender client ${connId} from broadcast`);
         continue;
       }
       if (!this.shouldDeliverBroadcast(conn, targetMatchId)) {
-        if (this.isDebug) console.log(`Skipping client ${connId} for matchId ${targetMatchId ?? 'ALL'}`);
         continue;
       }
-      if (this.isDebug) console.log(`Broadcasting to client ${connId}`);
       conn.send(message);
       sentCount++;
     }
-    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${total})`);
   }
 
   private addMatchSubscription(ws: WebSocket, matchId: number) {
@@ -918,8 +890,8 @@ export default {
     let asset: Response | undefined;
     try {
       asset = await env.ASSETS.fetch(request.clone());  // Clone request to preserve body
-    } catch (e) {
-      if (env.debug === "true") console.log("Assets fetch failed; skipping: " + (e as Error).message);
+    } catch (_e) {
+      // noop
     }
     if (asset && asset.status < 400) return asset; // 2xx/3xx → file served
 

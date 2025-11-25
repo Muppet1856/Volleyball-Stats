@@ -35,8 +35,7 @@ function buildPostOptions(payload) {
 }
 
 function logHeader(title) {
-  const separator = "=".repeat(title.length + 4);
-  console.log(`\n${separator}\n| ${title} |\n${separator}`);
+  // logging disabled
 }
 
 function getSetIdForFirstSet(sets) {
@@ -59,14 +58,12 @@ async function runRestFlow() {
     buildPostOptions({ number: `9${uniqueSuffix}`, last_name: "RestStarter", initial: "S" })
   );
   const starterId = starterCreate.body.id;
-  console.log(`Created starter player ${starterId}`);
 
   const benchCreate = await fetchJson(
     "/api/player/create",
     buildPostOptions({ number: `8${uniqueSuffix}`, last_name: "RestBench", initial: "B" })
   );
   const benchId = benchCreate.body.id;
-  console.log(`Created bench player ${benchId}`);
 
   // Match lifecycle
   const matchCreate = await fetchJson(
@@ -80,7 +77,6 @@ async function runRestFlow() {
     })
   );
   const matchId = matchCreate.body.id;
-  console.log(`Created match ${matchId}`);
 
   await fetchJson("/api/match/set-location", buildPostOptions({ matchId, location: "REST Location" }));
   await fetchJson("/api/match/set-date-time", buildPostOptions({ matchId, date: new Date().toISOString() }));
@@ -98,7 +94,6 @@ async function runRestFlow() {
   await fetchJson(`/api/match/get/${matchId}`);
   await fetchJson("/api/match");
   await fetchJson(`/api/match/delete/${matchId}`, { method: "DELETE" });
-  console.log(`Deleted match ${matchId}`);
 
   // Player lifecycle
   await fetchJson("/api/player/set-lname", buildPostOptions({ playerId: benchId, lastName: "Restington" }));
@@ -108,7 +103,6 @@ async function runRestFlow() {
   await fetchJson("/api/player");
   await fetchJson(`/api/player/delete/${benchId}`, { method: "DELETE" });
   await fetchJson(`/api/player/delete/${starterId}`, { method: "DELETE" });
-  console.log(`Deleted players ${benchId} and ${starterId}`);
 
   // Set lifecycle (create a dedicated match first)
   const setMatchCreate = await fetchJson(
@@ -122,7 +116,6 @@ async function runRestFlow() {
     })
   );
   const setMatchId = setMatchCreate.body.id;
-  console.log(`Created match ${setMatchId} for set tests`);
 
   const setsResponse = await fetchJson(`/api/set?matchId=${setMatchId}`);
   let setId = getSetIdForFirstSet(setsResponse.body);
@@ -132,7 +125,6 @@ async function runRestFlow() {
       buildPostOptions({ match_id: setMatchId, set_number: 1 })
     );
     setId = setCreate.body.id;
-    console.log(`Created set ${setId}`);
   }
 
   await fetchJson("/api/set/set-home-score", buildPostOptions({ setId, homeScore: 25 }));
@@ -144,9 +136,6 @@ async function runRestFlow() {
   await fetchJson(`/api/set?matchId=${setMatchId}`);
   await fetchJson(`/api/set/delete/${setId}`, { method: "DELETE" });
   await fetchJson(`/api/match/delete/${setMatchId}`, { method: "DELETE" });
-  console.log(`Deleted set ${setId} and match ${setMatchId}`);
-
-  console.log("REST workflow completed successfully");
 }
 
 function createWsClient(name) {
@@ -158,7 +147,6 @@ function createWsClient(name) {
     const handleMessage = (data) => {
       const text = data.toString();
       if (text.startsWith("Debug:")) {
-        console.log(`[${name}] ${text}`);
         return;
       }
       try {
@@ -170,7 +158,7 @@ function createWsClient(name) {
           queue.push(parsed);
         }
       } catch (error) {
-        console.warn(`[${name}] Non-JSON message: ${text}`);
+        // noop
       }
     };
 
@@ -243,12 +231,7 @@ async function runWebSocketFlow() {
   logHeader("Running WebSocket workflow");
   const uniqueSuffix = Date.now().toString();
   const listener = await createWsClient("listener");
-  listener.ws.on("message", (data) => {
-    const text = data.toString();
-    if (!text.startsWith("Debug:")) {
-      console.log(`[listener broadcast] ${text}`);
-    }
-  });
+  listener.ws.on("message", () => {});
 
   const actor = await createWsClient("actor");
 
@@ -355,13 +338,11 @@ async function runWebSocketFlow() {
   await sleep(500);
   listener.close();
   actor.close();
-  console.log("WebSocket workflow completed successfully");
 }
 
 function parseFlags() {
   const args = new Set(process.argv.slice(2));
   if (args.has("--help")) {
-    console.log("Usage: node test/js/harness.mjs [--rest] [--ws]\n\nWhen no flags are provided, both REST and WebSocket flows run.");
     process.exit(0);
   }
 
@@ -373,7 +354,6 @@ function parseFlags() {
 async function main() {
   const { runRest, runWs } = parseFlags();
   if (!runRest && !runWs) {
-    console.warn("No workflows selected. Use --rest and/or --ws.");
     return;
   }
 
@@ -387,6 +367,5 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Harness failed:", err);
   process.exit(1);
 });

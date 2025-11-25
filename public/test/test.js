@@ -384,7 +384,6 @@ function createWsClient(name) {
           queue.push(parsed);
         }
       } catch (error) {
-        console.warn(`[${name}] Non-JSON message`, event.data);
       }
     };
 

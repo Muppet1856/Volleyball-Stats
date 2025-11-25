@@ -52,8 +52,8 @@ async function syncMatchPlayerMembership(playerId, appeared) {
     } else {
       await removeMatchPlayerApi(matchId, { player_id: playerId });
     }
-  } catch (error) {
-    console.error('Failed to sync match player membership', error);
+  } catch (_error) {
+    // noop
   }
 }
 
@@ -77,8 +77,8 @@ async function syncTempNumberToServer(playerId, previousTemp, nextTemp) {
     } else {
       await updateMatchTempNumber(matchId, { player_id: playerId, temp_number: next });
     }
-  } catch (error) {
-    console.error('Failed to sync temporary number', error);
+  } catch (_error) {
+    // noop
   }
 }
 
@@ -89,8 +89,8 @@ async function loadRoster() {
     roster = normalized;
     setPlayersState(normalized);
     pruneMatchPlayers();
-  } catch (error) {
-    console.error('Failed to load roster from API:', error);
+  } catch (_error) {
+    // noop
   }
 }
 
@@ -605,8 +605,7 @@ async function submitPlayer() {
       resetForm();
       formReset = true;
     }
-  } catch (apiError) {
-    console.error('Failed to save player:', apiError);
+  } catch (_apiError) {
     error.textContent = 'Could not save player. Please try again.';
     error.classList.remove('d-none');
   } finally {
@@ -637,8 +636,7 @@ async function deletePlayer(playerId) {
     removeMatchPlayer(playerId);
     saveRoster();
     renderRoster();
-  } catch (apiError) {
-    console.error('Failed to delete player:', apiError);
+  } catch (_apiError) {
   } finally {
     if (deleteBtn && deleteBtn.tagName === 'BUTTON') {
       deleteBtn.disabled = false;

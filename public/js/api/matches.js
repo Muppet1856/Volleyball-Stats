@@ -165,8 +165,7 @@ function buildActions(match) {
     try {
       await deleteMatch(matchId);
       await refreshMatches();
-    } catch (error) {
-      console.error('Failed to delete match:', error);
+    } catch (_error) {
       setListMessage('Could not delete match. Please try again.', 'text-danger');
     } finally {
       deleteBtn.textContent = 'Delete';
@@ -243,8 +242,7 @@ export async function refreshMatches() {
     const response = await getMatches();
     const matches = Array.isArray(response?.body) ? response.body.slice().sort(compareMatches) : [];
     renderMatches(matches);
-  } catch (error) {
-    console.error('Failed to load matches:', error);
+  } catch (_error) {
     setListMessage('Could not load matches. Please try again.', 'text-danger');
   } finally {
     isLoading = false;

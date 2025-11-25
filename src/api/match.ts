@@ -280,7 +280,6 @@ export async function addPlayer(storage: any, matchId: number, playerJson: strin
     });
     return textResponse("Player added", 200);
   } catch (e) {
-    console.error("addPlayer failed:", e);
     if ((e as Error).message === "Match not found") {
       return errorResponse("Match not found", 404);
     }
@@ -317,7 +316,6 @@ export async function removePlayer(storage: any, matchId: number, playerJson: st
     });
     return textResponse("Player removed", 200);
   } catch (e) {
-    console.error("removePlayer failed:", e);
     if ((e as Error).message === "Match not found") {
       return errorResponse("Match not found", 404);
     }
@@ -371,7 +369,6 @@ export async function updatePlayer(storage: any, matchId: number, playerJson: st
     });
     return textResponse("Player updated", 200);
   } catch (e) {
-    console.error("updatePlayer failed:", e);
     if ((e as Error).message === "Match not found") {
       return errorResponse("Match not found", 404);
     }

@@ -58,8 +58,6 @@ function swapColumnsGeneric(config) {
           target2.parentNode.replaceChild(clonedTarget3, target2);
           target3.parentNode.replaceChild(clonedTarget2, target3);
         }
-      } else {
-        console.warn(`No target found for selector "${rule.selector}" in row ${i}`);
       }
     });
   }
