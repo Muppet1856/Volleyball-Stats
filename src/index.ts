@@ -23,7 +23,7 @@ export class MatchState {
   isDebug: boolean;
   // Track WebSocket clients that explicitly subscribe to match IDs.
   // Missing or empty subscription set means the client receives all broadcasts.
-  private matchSubscriptions: Map<WebSocket, Set<number>> = new Map();
+  private matchSubscriptions: Map<string, Set<number>> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -115,6 +115,15 @@ export class MatchState {
           } else if (request.method === "POST" && action === "update-player") {
             const body = await request.json();
             return matchApi.updatePlayer(storage, body.matchId, body.player);
+          } else if (request.method === "POST" && action === "add-temp-number") {
+            const body = await request.json();
+            return matchApi.addTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
+          } else if (request.method === "POST" && action === "update-temp-number") {
+            const body = await request.json();
+            return matchApi.updateTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
+          } else if (request.method === "POST" && action === "remove-temp-number") {
+            const body = await request.json();
+            return matchApi.removeTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
           } else if (request.method === "POST" && action === "set-home-color") {
             const body = await request.json();
             return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
@@ -196,8 +205,7 @@ export class MatchState {
 
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    const tags = this.state.getTags(ws);
-    const clientId = tags.length > 0 ? tags[0] : 'undefined';
+    const clientId = this.getClientId(ws) ?? 'undefined';
     if (this.isDebug) console.log(`Received WS message from client ${clientId}: ${message instanceof ArrayBuffer ? '[ArrayBuffer]' : message}`);
     const storage = this.state.storage;
     try {
@@ -240,7 +248,7 @@ export class MatchState {
               if (normalized) {
                 this.removeMatchSubscription(ws, normalized);
               } else {
-                this.matchSubscriptions.delete(ws);
+                this.removeMatchSubscription(ws);
               }
               res = jsonResponse({ matchId: normalized ?? null });
               matchId = normalized ?? undefined;
@@ -288,6 +296,18 @@ export class MatchState {
               break;
             case 'update-player':
               res = await matchApi.updatePlayer(storage, data.matchId, data.player);
+              matchId = data.matchId;
+              break;
+            case 'add-temp-number':
+              res = await matchApi.addTempNumber(storage, data.matchId, data.tempNumber ?? data.temp_number ?? data.temp);
+              matchId = data.matchId;
+              break;
+            case 'update-temp-number':
+              res = await matchApi.updateTempNumber(storage, data.matchId, data.tempNumber ?? data.temp_number ?? data.temp);
+              matchId = data.matchId;
+              break;
+            case 'remove-temp-number':
+              res = await matchApi.removeTempNumber(storage, data.matchId, data.tempNumber ?? data.temp_number ?? data.temp);
               matchId = data.matchId;
               break;
             case 'set-home-color':
@@ -477,10 +497,12 @@ export class MatchState {
 
   // Clean up closed connections
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    const tags = this.state.getTags(ws);
-    const clientId = tags.length > 0 ? tags[0] : 'undefined';
-    this.matchSubscriptions.delete(ws);
-    if (this.isDebug) console.log(`WS closed for client ${clientId}: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0 - 1}`);
+    const clientId = this.getClientId(ws);
+    if (clientId) {
+      this.matchSubscriptions.delete(clientId);
+    }
+    const label = clientId ?? 'undefined';
+    if (this.isDebug) console.log(`WS closed for client ${label}: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0 - 1}`);
   }
 
   // Handle errors (optional, but cleans up)
@@ -576,11 +598,24 @@ export class MatchState {
           result_opp: this.normalizeScore(data.resultOpp),
         };
       case 'set-players':
-        return { players: this.coerceJsonString(data.players, []) };
+        return {
+          players: this.coerceJsonString(data.players, []),
+          temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
+        };
       case 'add-player':
       case 'remove-player':
       case 'update-player':
-        return { players: await this.getMatchColumn(matchId, 'players') };
+        return {
+          players: await this.getMatchColumn(matchId, 'players'),
+          temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
+        };
+      case 'add-temp-number':
+      case 'update-temp-number':
+      case 'remove-temp-number':
+        return {
+          temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
+          players: await this.getMatchColumn(matchId, 'players'),
+        };
       case 'set-home-color':
         return { jersey_color_home: data.jerseyColorHome ?? null };
       case 'set-opp-color':
@@ -716,8 +751,7 @@ export class MatchState {
     const total = this.state.getWebSockets()?.length ?? 0;
     const targetMatchId = this.extractMatchIdForBroadcast(message);
     for (const conn of this.state.getWebSockets() || []) {
-      const tags = this.state.getTags(conn);
-      const connId = tags.length > 0 ? tags[0] : 'undefined';
+      const connId = this.getClientId(conn) ?? 'undefined';
       if (conn === exclude) {
         if (this.isDebug) console.log(`Excluding sender client ${connId} from broadcast`);
         continue;
@@ -734,21 +768,25 @@ export class MatchState {
   }
 
   private addMatchSubscription(ws: WebSocket, matchId: number) {
-    const existing = this.matchSubscriptions.get(ws) ?? new Set<number>();
+    const clientId = this.getClientId(ws);
+    if (!clientId) return;
+    const existing = this.matchSubscriptions.get(clientId) ?? new Set<number>();
     existing.add(matchId);
-    this.matchSubscriptions.set(ws, existing);
+    this.matchSubscriptions.set(clientId, existing);
   }
 
   private removeMatchSubscription(ws: WebSocket, matchId?: number) {
+    const clientId = this.getClientId(ws);
+    if (!clientId) return;
     if (matchId === undefined) {
-      this.matchSubscriptions.delete(ws);
+      this.matchSubscriptions.delete(clientId);
       return;
     }
-    const existing = this.matchSubscriptions.get(ws);
+    const existing = this.matchSubscriptions.get(clientId);
     if (!existing) return;
     existing.delete(matchId);
     if (existing.size === 0) {
-      this.matchSubscriptions.delete(ws);
+      this.matchSubscriptions.delete(clientId);
     }
   }
 
@@ -774,11 +812,19 @@ export class MatchState {
   }
 
   private shouldDeliverBroadcast(conn: WebSocket, targetMatchId: number | null): boolean {
-    const subscriptions = this.matchSubscriptions.get(conn);
+    const clientId = this.getClientId(conn);
+    const subscriptions = clientId ? this.matchSubscriptions.get(clientId) : undefined;
     // No subscriptions -> legacy behaviour: receive everything.
     if (!subscriptions || subscriptions.size === 0) return true;
     if (targetMatchId === null) return true;
     return subscriptions.has(targetMatchId);
+  }
+
+  private getClientId(ws: WebSocket): string | null {
+    const tags = this.state.getTags(ws);
+    if (!tags || tags.length === 0) return null;
+    const id = tags[0];
+    return typeof id === 'string' ? id : null;
   }
 }
 

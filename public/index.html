@@ -440,25 +440,14 @@
     </div>
 
     <div id="matchIndexModal" class="modal fade" tabindex="-1" aria-labelledby="matchIndexModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="matchIndexModalLabel">Saved Matches</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <div class="table-responsive">
-              <table id="matchList" class="table table-sm align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th scope="col">Match</th>
-                    <th scope="col" class="text-nowrap">Date</th>
-                    <th scope="col" class="text-end">Actions</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
+            <div id="matchList" class="match-list"></div>
           </div>
         </div>
       </div>

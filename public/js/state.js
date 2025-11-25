@@ -122,6 +122,10 @@ function sanitizeLoadedState() {
 }
 
 export function updateState(partialState) {
+  // Debug hook to see matchPlayers state changes
+  if (partialState?.matchPlayers !== undefined) {
+    console.log('[state:updateState] matchPlayers incoming', partialState.matchPlayers);
+  }
   deepMerge(state, partialState);
   saveStateToStorage();
   notifyListeners();
@@ -177,7 +181,7 @@ export function setPlayers(players) {
 function normalizeMatchPlayer(entry) {
   if (!entry || typeof entry !== 'object') return null;
 
-  const playerId = entry.playerId ?? entry.id;
+  const playerId = entry.playerId ?? entry.player_id ?? entry.id;
   if (!playerId) return null;
 
   const temp = entry.tempNumber ?? entry.temp_number;
@@ -206,6 +210,7 @@ export function setMatchPlayers(matchPlayers = []) {
     }, new Map());
 
   state.matchPlayers = Array.from(normalized.values());
+  console.log('[state:setMatchPlayers] normalized', state.matchPlayers);
   saveStateToStorage();
   notifyListeners();
   return state.matchPlayers;

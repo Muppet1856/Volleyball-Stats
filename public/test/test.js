@@ -195,6 +195,33 @@ async function runRestTests() {
     async () => {
       if (!state.matchId)
         return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
+      if (!state.benchId)
+        return addRestResult('playerId missing', 'POST', null, 0, 'Cannot add temp number without bench player');
+      const tempPayload = { player_id: state.benchId, temp_number: 44 };
+      const res = await callApi('/api/match/add-temp-number', 'POST', { matchId: state.matchId, tempNumber: tempPayload });
+      addRestResult('/api/match/add-temp-number', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
+      if (!state.benchId)
+        return addRestResult('playerId missing', 'POST', null, 0, 'Cannot update temp number without bench player');
+      const tempPayload = { player_id: state.benchId, temp_number: 55 };
+      const res = await callApi('/api/match/update-temp-number', 'POST', { matchId: state.matchId, tempNumber: tempPayload });
+      addRestResult('/api/match/update-temp-number', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
+      if (!state.benchId)
+        return addRestResult('playerId missing', 'POST', null, 0, 'Cannot remove temp number without bench player');
+      const tempPayload = { player_id: state.benchId };
+      const res = await callApi('/api/match/remove-temp-number', 'POST', { matchId: state.matchId, tempNumber: tempPayload });
+      addRestResult('/api/match/remove-temp-number', 'POST', res.request, res.status, res.body);
+    },
+    async () => {
+      if (!state.matchId)
+        return addRestResult('matchId missing', 'POST', null, 0, 'Cannot continue tests without matchId');
       const roster = starterEntry();
       if (!roster) return addRestResult('player missing', 'POST', null, 0, 'Cannot remove player without a starter');
       const res = await callApi('/api/match/remove-player', 'POST', { matchId: state.matchId, player: JSON.stringify(roster) });

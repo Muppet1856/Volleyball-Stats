@@ -1,6 +1,13 @@
-import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer, setPlayers as setPlayersState } from '../state.js';
+import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer, setPlayers as setPlayersState, subscribe as subscribeToState } from '../state.js';
 import { createJerseySvg } from '../init/jerseyColors.js';
 import { fetchPlayers, createPlayer as createPlayerApi, updatePlayer as updatePlayerApi, deletePlayer as deletePlayerApi } from '../api/players.js';
+import {
+  addMatchTempNumber,
+  updateMatchTempNumber,
+  removeMatchTempNumber,
+  addMatchPlayer,
+  removeMatchPlayer as removeMatchPlayerApi,
+} from '../api/ws.js';
 const SORT_MODES = {
   NUMBER: 'number',
   NAME: 'name',
@@ -12,6 +19,7 @@ let mainSortMode = SORT_MODES.NUMBER;
 let modalSortMode = SORT_MODES.NUMBER;
 let hasRosterNumberConflict = false;
 let hasWornJerseyConflict = false;
+let unsubscribeStateListener = null;
 
 const DEFAULT_JERSEY_COLOR = '#0d6efd';
 const ROSTER_JERSEY_SIZE = 47;
@@ -28,6 +36,50 @@ function getMatchTempNumber(playerId) {
 function getMatchAppearance(playerId) {
   const entry = getMatchPlayerEntry(playerId);
   return entry?.appeared ?? false;
+}
+
+async function syncMatchPlayerMembership(playerId, appeared) {
+  const matchId = state.matchId;
+  if (!matchId) return;
+
+  try {
+    if (appeared) {
+      const tempNumber = getMatchTempNumber(playerId);
+      const payload = tempNumber === null || tempNumber === undefined
+        ? { player_id: playerId, appeared: true }
+        : { player_id: playerId, temp_number: tempNumber, appeared: true };
+      await addMatchPlayer(matchId, payload);
+    } else {
+      await removeMatchPlayerApi(matchId, { player_id: playerId });
+    }
+  } catch (error) {
+    console.error('Failed to sync match player membership', error);
+  }
+}
+
+async function syncTempNumberToServer(playerId, previousTemp, nextTemp) {
+  const matchId = state.matchId;
+  if (!matchId) return;
+
+  const prev = previousTemp === undefined ? null : previousTemp;
+  const next = nextTemp === undefined ? null : nextTemp;
+  if (prev === next) return;
+
+  try {
+    if (next === null) {
+      if (prev !== null) {
+        await removeMatchTempNumber(matchId, { player_id: playerId });
+      }
+      return;
+    }
+    if (prev === null) {
+      await addMatchTempNumber(matchId, { player_id: playerId, temp_number: next });
+    } else {
+      await updateMatchTempNumber(matchId, { player_id: playerId, temp_number: next });
+    }
+  } catch (error) {
+    console.error('Failed to sync temporary number', error);
+  }
 }
 
 async function loadRoster() {
@@ -513,8 +565,10 @@ async function submitPlayer() {
   }
 
   const existingMatchEntry = getMatchPlayerEntry(payload.id);
+  const previousTemp = existingMatchEntry?.tempNumber ?? null;
   const saveBtn = document.getElementById('savePlayerBtn');
   const originalText = saveBtn?.textContent;
+  let formReset = false;
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.textContent = editId ? 'Updating...' : 'Saving...';
@@ -541,12 +595,15 @@ async function submitPlayer() {
       removeMatchPlayer(savedPlayer.id);
     }
 
+    await syncTempNumberToServer(savedPlayer.id, previousTemp, nextTemp);
+
     saveRoster();
     renderRoster();
 
     const wornConflictActive = refreshWornJerseyConflicts(savedPlayer.id, nextWornNumber);
     if (!wornConflictActive) {
       resetForm();
+      formReset = true;
     }
   } catch (apiError) {
     console.error('Failed to save player:', apiError);
@@ -555,7 +612,7 @@ async function submitPlayer() {
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = originalText ?? 'Add Player';
+      saveBtn.textContent = formReset ? 'Add Player' : originalText ?? 'Add Player';
     }
   }
 }
@@ -654,6 +711,7 @@ function handleAppearanceToggle(playerId, appeared) {
   const tempNumber = currentEntry?.tempNumber ?? null;
   upsertMatchPlayer(playerId, tempNumber, appeared);
   renderRoster();
+  syncMatchPlayerMembership(playerId, appeared);
 }
 
 function attachEvents() {
@@ -704,6 +762,14 @@ async function initRosterModule() {
   setModalSortMode(modalSortMode);
   await loadRoster();
   renderRoster();
+
+  // Re-render when matchPlayers or roster changes in state (e.g., after hydrate).
+  if (unsubscribeStateListener) {
+    unsubscribeStateListener();
+  }
+  unsubscribeStateListener = subscribeToState(() => {
+    renderRoster();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', initRosterModule);

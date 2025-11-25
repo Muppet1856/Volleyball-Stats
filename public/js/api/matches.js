@@ -18,21 +18,17 @@ function getMatchId(match) {
 }
 
 function getMatchListBody() {
-  const table = document.getElementById(MATCH_LIST_ID);
-  return table ? table.querySelector('tbody') : null;
+  return document.getElementById(MATCH_LIST_ID);
 }
 
 function setListMessage(text, className = 'text-muted') {
   const body = getMatchListBody();
   if (!body) return;
   body.innerHTML = '';
-  const row = document.createElement('tr');
-  const cell = document.createElement('td');
-  cell.colSpan = 3;
-  cell.className = className;
-  cell.textContent = text;
-  row.appendChild(cell);
-  body.appendChild(row);
+  const message = document.createElement('div');
+  message.className = `match-list-message ${className}`;
+  message.textContent = text;
+  body.appendChild(message);
 }
 
 function formatDate(value) {
@@ -57,6 +53,44 @@ function formatDateShort(value) {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function formatModalDate(value) {
+  if (!value) return 'No date set';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function normalizeDateValue(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getTime();
+}
+
+function compareMatches(a, b) {
+  const aDate = normalizeDateValue(a?.date);
+  const bDate = normalizeDateValue(b?.date);
+  if (aDate !== bDate) {
+    if (aDate === null) return 1;
+    if (bDate === null) return -1;
+    return aDate - bDate;
+  }
+
+  const opponentA = (a?.opponent || '').toLowerCase();
+  const opponentB = (b?.opponent || '').toLowerCase();
+  if (opponentA !== opponentB) return opponentA.localeCompare(opponentB);
+
+  const locationA = (a?.location || '').toLowerCase();
+  const locationB = (b?.location || '').toLowerCase();
+  return locationA.localeCompare(locationB);
 }
 
 function buildDeleteMessage(matchId, match) {
@@ -114,24 +148,13 @@ function buildActions(match) {
   const actions = document.createElement('div');
   actions.className = 'btn-group btn-group-sm flex-wrap';
 
-  const loadLink = document.createElement('a');
-  loadLink.className = 'btn btn-primary';
-  loadLink.role = 'button';
-  loadLink.textContent = 'Load';
-  if (matchId) {
-    loadLink.href = `?match=${encodeURIComponent(matchId)}`;
-  } else {
-    loadLink.classList.add('disabled');
-    loadLink.setAttribute('aria-disabled', 'true');
-    loadLink.tabIndex = -1;
-  }
-
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'btn btn-outline-danger';
   deleteBtn.textContent = 'Delete';
   deleteBtn.disabled = !matchId;
-  deleteBtn.addEventListener('click', async () => {
+  deleteBtn.addEventListener('click', async (event) => {
+    event.stopPropagation();
     if (!matchId) return;
     const confirmMessage = buildDeleteMessage(matchId, match);
     const confirmed = await confirmDelete(confirmMessage);
@@ -151,7 +174,7 @@ function buildActions(match) {
     }
   });
 
-  actions.append(loadLink, deleteBtn);
+  actions.append(deleteBtn);
   return actions;
 }
 
@@ -168,26 +191,43 @@ function renderMatches(matches) {
   matches.forEach((match) => {
     const id = getMatchId(match);
     const opponent = match.opponent || 'Unknown opponent';
-    const location = match.location || 'No location';
-    const date = formatDate(match.date);
+    const location = match.location;
+    const date = formatModalDate(match.date);
 
-    const row = document.createElement('tr');
+    const item = document.createElement('div');
+    const canLoad = Boolean(id);
+    item.className = 'match-list-item';
+    if (canLoad) {
+      item.classList.add('match-list-link');
+      item.tabIndex = 0;
+      const navigateToMatch = () => {
+        window.location.href = `?match=${encodeURIComponent(id)}`;
+      };
+      item.addEventListener('click', navigateToMatch);
+      item.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          navigateToMatch();
+        }
+      });
+    }
 
-    const matchCell = document.createElement('td');
-    matchCell.className = 'fw-semibold text-nowrap';
-    matchCell.textContent = location ? `${opponent} @ ${location}` : opponent;
+    const content = document.createElement('div');
+    content.className = 'match-list-content text-truncate';
 
-    const dateCell = document.createElement('td');
-    dateCell.className = 'text-muted small text-nowrap';
-    dateCell.textContent = date;
+    const title = document.createElement('div');
+    title.className = 'match-list-title text-truncate';
+    const locationSuffix = location ? ` @ ${location}` : '';
+    title.textContent = `${date} \u2013 ${opponent}${locationSuffix}`;
+    content.append(title);
 
-    const actionsCell = document.createElement('td');
-    actionsCell.className = 'text-end';
+    const actionsWrapper = document.createElement('div');
+    actionsWrapper.className = 'match-list-actions';
     const actions = buildActions(match);
-    actionsCell.appendChild(actions);
+    actionsWrapper.appendChild(actions);
 
-    row.append(matchCell, dateCell, actionsCell);
-    body.appendChild(row);
+    item.append(content, actionsWrapper);
+    body.appendChild(item);
   });
 }
 
@@ -201,7 +241,7 @@ export async function refreshMatches() {
 
   try {
     const response = await getMatches();
-    const matches = Array.isArray(response?.body) ? response.body : [];
+    const matches = Array.isArray(response?.body) ? response.body.slice().sort(compareMatches) : [];
     renderMatches(matches);
   } catch (error) {
     console.error('Failed to load matches:', error);

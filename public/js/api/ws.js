@@ -106,6 +106,14 @@ export const setMatchType = (matchId, types) => sendRequest('match', 'set-type',
 export const setMatchResult = (matchId, resultHome, resultOpp) =>
   sendRequest('match', 'set-result', { matchId, resultHome, resultOpp });
 export const setMatchPlayers = (matchId, players) => sendRequest('match', 'set-players', { matchId, players });
+export const addMatchPlayer = (matchId, player) => sendRequest('match', 'add-player', { matchId, player });
+export const removeMatchPlayer = (matchId, player) => sendRequest('match', 'remove-player', { matchId, player });
+export const addMatchTempNumber = (matchId, tempNumber) =>
+  sendRequest('match', 'add-temp-number', { matchId, tempNumber });
+export const updateMatchTempNumber = (matchId, tempNumber) =>
+  sendRequest('match', 'update-temp-number', { matchId, tempNumber });
+export const removeMatchTempNumber = (matchId, tempNumber) =>
+  sendRequest('match', 'remove-temp-number', { matchId, tempNumber });
 export const setMatchHomeColor = (matchId, jerseyColorHome) =>
   sendRequest('match', 'set-home-color', { matchId, jerseyColorHome });
 export const setMatchOppColor = (matchId, jerseyColorOpp) =>
@@ -160,6 +168,11 @@ export default {
   setMatchType,
   setMatchResult,
   setMatchPlayers,
+  addMatchPlayer,
+  removeMatchPlayer,
+  addMatchTempNumber,
+  updateMatchTempNumber,
+  removeMatchTempNumber,
   setMatchHomeColor,
   setMatchOppColor,
   setMatchFirstServer,
