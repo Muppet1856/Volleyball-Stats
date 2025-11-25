@@ -1,7 +1,6 @@
-import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer } from '../state.js';
+import { state, setMatchPlayers, upsertMatchPlayer, removeMatchPlayer, setPlayers as setPlayersState } from '../state.js';
 import { createJerseySvg } from '../init/jerseyColors.js';
-
-const STORAGE_KEY = 'volleyballStats:roster';
+import { fetchPlayers, createPlayer as createPlayerApi, updatePlayer as updatePlayerApi, deletePlayer as deletePlayerApi } from '../api/players.js';
 const SORT_MODES = {
   NUMBER: 'number',
   NAME: 'name',
@@ -31,21 +30,21 @@ function getMatchAppearance(playerId) {
   return entry?.appeared ?? false;
 }
 
-function loadRoster() {
+async function loadRoster() {
   try {
-    const cached = localStorage.getItem(STORAGE_KEY);
-    if (!cached) return [];
-    const parsed = JSON.parse(cached);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizePlayer).filter(Boolean);
+    const players = await fetchPlayers();
+    const normalized = players.map(normalizePlayer).filter(Boolean);
+    roster = normalized;
+    setPlayersState(normalized);
+    pruneMatchPlayers();
   } catch (error) {
-    console.warn('Failed to load roster from storage:', error);
-    return [];
+    console.error('Failed to load roster from API:', error);
   }
 }
 
 function saveRoster() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(roster));
+  // Roster is now sourced from the backend; keep state in sync locally.
+  setPlayersState(roster);
 }
 
 function normalizePlayer(player) {
@@ -53,7 +52,11 @@ function normalizePlayer(player) {
   const id = player.id ?? crypto.randomUUID?.() ?? `player-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const number = player.number !== undefined && player.number !== null ? Number(player.number) : null;
   if (Number.isNaN(number)) return null;
-  const lastName = typeof player.lastName === 'string' ? player.lastName.trim() : '';
+  const lastName = typeof player.lastName === 'string'
+    ? player.lastName.trim()
+    : typeof player.last_name === 'string'
+      ? player.last_name.trim()
+      : '';
   if (!lastName) return null;
   const initial = typeof player.initial === 'string' ? player.initial.trim() : '';
   return { id, number, lastName, initial };
@@ -447,7 +450,7 @@ function refreshWornJerseyConflicts(preferredPlayerId = null, preferredWornNumbe
   return false;
 }
 
-function submitPlayer() {
+async function submitPlayer() {
   const numberInput = document.getElementById('number');
   const lastNameInput = document.getElementById('lastName');
   const initialInput = document.getElementById('initial');
@@ -510,41 +513,81 @@ function submitPlayer() {
   }
 
   const existingMatchEntry = getMatchPlayerEntry(payload.id);
-  if (existingIndex >= 0) {
-    roster[existingIndex] = payload;
-  } else {
-    roster.push(payload);
+  const saveBtn = document.getElementById('savePlayerBtn');
+  const originalText = saveBtn?.textContent;
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = editId ? 'Updating...' : 'Saving...';
   }
 
-  const nextTemp = tempNumber !== null ? tempNumber : null;
-  const appeared = existingMatchEntry?.appeared ?? (tempNumber !== null);
-  const nextWornNumber = nextTemp !== null ? nextTemp : payload.number;
+  try {
+    let savedPlayer = payload;
+    if (existingIndex >= 0) {
+      const previous = roster[existingIndex];
+      savedPlayer = await updatePlayerApi(payload.id, payload, previous);
+      roster[existingIndex] = savedPlayer;
+    } else {
+      savedPlayer = await createPlayerApi(payload);
+      roster.push(savedPlayer);
+    }
 
-  if (existingMatchEntry || appeared || nextTemp !== null) {
-    upsertMatchPlayer(payload.id, nextTemp, appeared);
-  } else {
-    removeMatchPlayer(payload.id);
-  }
+    const nextTemp = tempNumber !== null ? tempNumber : null;
+    const appeared = existingMatchEntry?.appeared ?? (tempNumber !== null);
+    const nextWornNumber = nextTemp !== null ? nextTemp : savedPlayer.number;
 
-  saveRoster();
-  renderRoster();
+    if (existingMatchEntry || appeared || nextTemp !== null) {
+      upsertMatchPlayer(savedPlayer.id, nextTemp, appeared);
+    } else {
+      removeMatchPlayer(savedPlayer.id);
+    }
 
-  const wornConflictActive = refreshWornJerseyConflicts(payload.id, nextWornNumber);
-  if (!wornConflictActive) {
-    resetForm();
+    saveRoster();
+    renderRoster();
+
+    const wornConflictActive = refreshWornJerseyConflicts(savedPlayer.id, nextWornNumber);
+    if (!wornConflictActive) {
+      resetForm();
+    }
+  } catch (apiError) {
+    console.error('Failed to save player:', apiError);
+    error.textContent = 'Could not save player. Please try again.';
+    error.classList.remove('d-none');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText ?? 'Add Player';
+    }
   }
 }
 
-function deletePlayer(playerId) {
+async function deletePlayer(playerId) {
   const index = roster.findIndex((p) => p.id === playerId);
   if (index === -1) return;
-  roster.splice(index, 1);
-  if (editId === playerId) {
-    resetForm();
+
+  const deleteBtn = document.activeElement;
+  const originalText = deleteBtn?.textContent;
+  if (deleteBtn && deleteBtn.tagName === 'BUTTON') {
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
   }
-  removeMatchPlayer(playerId);
-  saveRoster();
-  renderRoster();
+
+  try {
+    await deletePlayerApi(playerId);
+    roster.splice(index, 1);
+    if (editId === playerId) {
+      resetForm();
+    }
+    removeMatchPlayer(playerId);
+    saveRoster();
+    renderRoster();
+  } catch (apiError) {
+    console.error('Failed to delete player:', apiError);
+  } finally {
+    if (deleteBtn && deleteBtn.tagName === 'BUTTON') {
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = originalText ?? 'Delete';
+    }
+  }
 }
 
 function toggleSortMode() {
@@ -655,12 +698,12 @@ function attachEvents() {
   }
 }
 
-function initRosterModule() {
-  roster = loadRoster();
-  pruneMatchPlayers();
+async function initRosterModule() {
   attachEvents();
   setMainSortMode(mainSortMode);
   setModalSortMode(modalSortMode);
+  await loadRoster();
+  renderRoster();
 }
 
 document.addEventListener('DOMContentLoaded', initRosterModule);

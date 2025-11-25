@@ -1,9 +1,40 @@
 // js/ui/scoreModals.js (updated)
 import { state, updateState } from '../state.js';  // Add this import
+import { saveScore } from '../api/scoring.js';
 import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js';
 
 function padScore(score) {
   return String(score).padStart(2, '0');
+}
+
+function ensurePairedScore(setNum, team) {
+  const otherTeam = team === 'home' ? 'opp' : 'home';
+  const otherInputId = otherTeam === 'home' ? `set${setNum}Home` : `set${setNum}Opp`;
+  const otherDisplayId = otherTeam === 'home' ? 'scoreGameHomeDisplay' : 'scoreGameOppDisplay';
+  const otherInput = document.getElementById(otherInputId);
+
+  if (!otherInput) return;
+  const raw = otherInput.value;
+  const parsed = parseInt(raw, 10);
+  if (raw === '' || Number.isNaN(parsed)) {
+    otherInput.value = 0;
+    updateState({
+      sets: {
+        [setNum]: {
+          scores: { [otherTeam]: 0 },
+        },
+      },
+    });
+    saveScore(otherTeam, Number(setNum), 0);
+
+    const modal = document.getElementById('scoreGameModal');
+    if (modal && modal.classList.contains('show') && modal.dataset.currentSet === String(setNum)) {
+      const otherDisplay = document.getElementById(otherDisplayId);
+      if (otherDisplay) {
+        otherDisplay.textContent = padScore(0);
+      }
+    }
+  }
 }
 
 const scoreGameModal = document.getElementById('scoreGameModal');
@@ -77,6 +108,7 @@ function handleScoreChange(event) {
       }
     }
   });
+  ensurePairedScore(setNumber, team);
 }
 
 // Attach event listeners (unchanged)
@@ -111,6 +143,8 @@ window.addEventListener('DOMContentLoaded', () => {
           }
         }
       });
+      saveScore(team, Number(setNum), score);
+      ensurePairedScore(setNum, team);
       // If modal is open for this set, sync display
       const modal = document.getElementById('scoreGameModal');
       if (modal && modal.classList.contains('show') && modal.dataset.currentSet === setNum) {

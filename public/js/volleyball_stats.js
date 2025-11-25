@@ -7,6 +7,7 @@ import { swapConfig , mainSwap } from './ui/swap.js';
 import { initSavedMatchesModal } from './api/matches.js';
 import { initMatchCreate } from './api/matchCreate.js';
 import { initMatchMetaAutosave, loadMatchFromUrl } from './api/matchMetaAutosave.js';
+import { hydrateScores } from './api/scoring.js';
 import './ui/scoreModals.js';
 import './ui/finalizeButtons.js';
 import './ui/resultSummary.js';  // New import to load the result summary logic
@@ -40,6 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   //await updateOpponentName();  // Add here for initial fallback render post-DOM
   initMatchMetaAutosave();
   await loadMatchFromUrl();
+  await hydrateScores();
   initSavedMatchesModal();
   initMatchCreate();
   document.getElementById('loader').style.display = 'none';

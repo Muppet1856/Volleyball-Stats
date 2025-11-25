@@ -8,11 +8,11 @@ export let state = {
   players: [],
   matchPlayers: [],
   sets: {
-    1: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    2: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    3: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    4: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    5: { scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
+    1: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
+    2: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
+    3: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
+    4: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
+    5: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
   },
 };
 
@@ -40,6 +40,33 @@ function deepMerge(target, source) {
 
 function sanitizeLoadedState() {
   const legacyMatchPlayers = [];
+
+  // Ensure each set has the expected shape for new fields like id.
+  for (let setNumber = 1; setNumber <= 5; setNumber++) {
+    if (!state.sets[setNumber] || typeof state.sets[setNumber] !== 'object') {
+      state.sets[setNumber] = {
+        id: null,
+        scores: { home: 0, opp: 0 },
+        timeouts: { home: [false, false], opp: [false, false] },
+        finalized: false,
+        winner: null,
+      };
+      continue;
+    }
+    const setState = state.sets[setNumber];
+    if (setState.id === undefined) setState.id = null;
+    if (!setState.scores) setState.scores = { home: 0, opp: 0 };
+    if (setState.scores.home === undefined) setState.scores.home = 0;
+    if (setState.scores.opp === undefined) setState.scores.opp = 0;
+    if (!setState.timeouts || typeof setState.timeouts !== 'object') {
+      setState.timeouts = { home: [false, false], opp: [false, false] };
+    } else {
+      setState.timeouts.home = Array.isArray(setState.timeouts.home) ? setState.timeouts.home : [false, false];
+      setState.timeouts.opp = Array.isArray(setState.timeouts.opp) ? setState.timeouts.opp : [false, false];
+    }
+    if (setState.finalized === undefined) setState.finalized = false;
+    if (setState.winner === undefined) setState.winner = null;
+  }
 
   if (!Array.isArray(state.players)) {
     state.players = [];
