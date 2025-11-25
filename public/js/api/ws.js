@@ -113,6 +113,8 @@ export const setMatchOppColor = (matchId, jerseyColorOpp) =>
 export const setMatchFirstServer = (matchId, firstServer) =>
   sendRequest('match', 'set-first-server', { matchId, firstServer });
 export const setMatchDeleted = (matchId, deleted) => sendRequest('match', 'set-deleted', { matchId, deleted });
+export const subscribeToMatch = (matchId) => sendRequest('match', 'subscribe', { matchId });
+export const unsubscribeFromMatch = (matchId) => sendRequest('match', 'unsubscribe', { matchId });
 export const getMatch = (matchId) => sendRequest('match', 'get', { matchId });
 export const getMatches = () => sendRequest('match', 'get', {});
 export const deleteMatch = (id) => sendRequest('match', 'delete', { id });
@@ -162,6 +164,8 @@ export default {
   setMatchOppColor,
   setMatchFirstServer,
   setMatchDeleted,
+  subscribeToMatch,
+  unsubscribeFromMatch,
   getMatch,
   getMatches,
   deleteMatch,

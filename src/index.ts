@@ -21,6 +21,9 @@ export class MatchState {
   state: DurableObjectState;
   env: Env;
   isDebug: boolean;
+  // Track WebSocket clients that explicitly subscribe to match IDs.
+  // Missing or empty subscription set means the client receives all broadcasts.
+  private matchSubscriptions: Map<WebSocket, Set<number>> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -222,6 +225,27 @@ export class MatchState {
       switch (resource) {
         case 'match':
           switch (action) {
+            case 'subscribe': {
+              const normalized = this.normalizeMatchId(data.matchId ?? data.id);
+              if (!normalized) {
+                throw new Error('Invalid matchId for subscribe');
+              }
+              this.addMatchSubscription(ws, normalized);
+              res = jsonResponse({ matchId: normalized });
+              matchId = normalized;
+              break;
+            }
+            case 'unsubscribe': {
+              const normalized = this.normalizeMatchId(data.matchId ?? data.id);
+              if (normalized) {
+                this.removeMatchSubscription(ws, normalized);
+              } else {
+                this.matchSubscriptions.delete(ws);
+              }
+              res = jsonResponse({ matchId: normalized ?? null });
+              matchId = normalized ?? undefined;
+              break;
+            }
             case 'create':
               // Mock Request for create
               const mockReq = {
@@ -455,6 +479,7 @@ export class MatchState {
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
     const tags = this.state.getTags(ws);
     const clientId = tags.length > 0 ? tags[0] : 'undefined';
+    this.matchSubscriptions.delete(ws);
     if (this.isDebug) console.log(`WS closed for client ${clientId}: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0 - 1}`);
   }
 
@@ -689,6 +714,7 @@ export class MatchState {
   private broadcast(message: string, exclude?: WebSocket) {
     let sentCount = 0;
     const total = this.state.getWebSockets()?.length ?? 0;
+    const targetMatchId = this.extractMatchIdForBroadcast(message);
     for (const conn of this.state.getWebSockets() || []) {
       const tags = this.state.getTags(conn);
       const connId = tags.length > 0 ? tags[0] : 'undefined';
@@ -696,11 +722,63 @@ export class MatchState {
         if (this.isDebug) console.log(`Excluding sender client ${connId} from broadcast`);
         continue;
       }
+      if (!this.shouldDeliverBroadcast(conn, targetMatchId)) {
+        if (this.isDebug) console.log(`Skipping client ${connId} for matchId ${targetMatchId ?? 'ALL'}`);
+        continue;
+      }
       if (this.isDebug) console.log(`Broadcasting to client ${connId}`);
       conn.send(message);
       sentCount++;
     }
     if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${total})`);
+  }
+
+  private addMatchSubscription(ws: WebSocket, matchId: number) {
+    const existing = this.matchSubscriptions.get(ws) ?? new Set<number>();
+    existing.add(matchId);
+    this.matchSubscriptions.set(ws, existing);
+  }
+
+  private removeMatchSubscription(ws: WebSocket, matchId?: number) {
+    if (matchId === undefined) {
+      this.matchSubscriptions.delete(ws);
+      return;
+    }
+    const existing = this.matchSubscriptions.get(ws);
+    if (!existing) return;
+    existing.delete(matchId);
+    if (existing.size === 0) {
+      this.matchSubscriptions.delete(ws);
+    }
+  }
+
+  private normalizeMatchId(raw: any): number | null {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  private extractMatchIdForBroadcast(message: string): number | null {
+    try {
+      const parsed = JSON.parse(message);
+      const rawMatchId = parsed?.matchId ?? parsed?.data?.matchId ?? parsed?.data?.match_id;
+      const normalized = this.normalizeMatchId(rawMatchId);
+      if (normalized !== null) return normalized;
+      // Fallback: allow match create/delete messages that omit explicit matchId.
+      if (parsed?.resource === 'match') {
+        return this.normalizeMatchId(parsed?.id);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private shouldDeliverBroadcast(conn: WebSocket, targetMatchId: number | null): boolean {
+    const subscriptions = this.matchSubscriptions.get(conn);
+    // No subscriptions -> legacy behaviour: receive everything.
+    if (!subscriptions || subscriptions.size === 0) return true;
+    if (targetMatchId === null) return true;
+    return subscriptions.has(targetMatchId);
   }
 }
 

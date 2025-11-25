@@ -7,6 +7,7 @@ import { swapConfig , mainSwap } from './ui/swap.js';
 import { initSavedMatchesModal } from './api/matches.js';
 import { initMatchCreate } from './api/matchCreate.js';
 import { initMatchMetaAutosave, loadMatchFromUrl } from './api/matchMetaAutosave.js';
+import { initMatchLiveSync } from './api/matchLiveSync.js';
 import { hydrateScores } from './api/scoring.js';
 import './ui/scoreModals.js';
 import './ui/finalizeButtons.js';
@@ -42,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initMatchMetaAutosave();
   await loadMatchFromUrl();
   await hydrateScores();
+  initMatchLiveSync();
   initSavedMatchesModal();
   initMatchCreate();
   document.getElementById('loader').style.display = 'none';

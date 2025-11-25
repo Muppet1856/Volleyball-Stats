@@ -707,6 +707,7 @@ async function initRosterModule() {
 }
 
 document.addEventListener('DOMContentLoaded', initRosterModule);
+document.addEventListener('volleyball:new-match-reset', renderRoster);
 
 // Expose handlers for inline attributes (fallback)
 window.submitPlayer = submitPlayer;

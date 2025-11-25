@@ -1,4 +1,22 @@
 // js/state.js
+function createDefaultSetState() {
+  return {
+    id: null,
+    scores: { home: 0, opp: 0 },
+    timeouts: { home: [false, false], opp: [false, false] },
+    finalized: false,
+    winner: null,
+  };
+}
+
+function createDefaultSets() {
+  const sets = {};
+  for (let set = 1; set <= 5; set++) {
+    sets[set] = createDefaultSetState();
+  }
+  return sets;
+}
+
 export let state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',
@@ -7,13 +25,7 @@ export let state = {
   overallWinner: null,
   players: [],
   matchPlayers: [],
-  sets: {
-    1: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    2: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    3: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    4: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-    5: { id: null, scores: { home: 0, opp: 0 }, timeouts: { home: [false, false], opp: [false, false] }, finalized: false, winner: null },
-  },
+  sets: createDefaultSets(),
 };
 
 const STORAGE_KEY = 'volleyball-stats-state';
@@ -269,6 +281,24 @@ export function serializeMatchPlayersForApi() {
 
 export function serializeMatchPlayersJson() {
   return JSON.stringify(serializeMatchPlayersForApi());
+}
+
+export function resetMatchState() {
+  state.matchId = null;
+  state.matchWins = { home: 0, opp: 0 };
+  state.overallWinner = null;
+  state.opponent = 'Opponent';
+  state.location = null;
+  state.date = null;
+  state.matchTypes = {};
+  state.firstServer = null;
+  state.jerseyColorHome = null;
+  state.jerseyColorOpp = null;
+  state.matchPlayers = [];
+  state.sets = createDefaultSets();
+  saveStateToStorage();
+  notifyListeners();
+  return state;
 }
 
 // Expose for console debugging (keep this)
