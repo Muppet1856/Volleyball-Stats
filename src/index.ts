@@ -71,127 +71,127 @@ export class MatchState {
     }
 
     /* ---------- /api/* routing ---------- */
-    if (path.startsWith("/api/")) {
-      const parts = path.slice(5).split("/"); // remove "/api"
-      const resource = parts[0];
-      const action = parts[1] ?? "";
-      const id = parts[2] ? parseInt(parts[2]) : undefined;  // Optional ID for updates/gets
+    // if (path.startsWith("/api/")) {
+    //   const parts = path.slice(5).split("/"); // remove "/api"
+    //   const resource = parts[0];
+    //   const action = parts[1] ?? "";
+    //   const id = parts[2] ? parseInt(parts[2]) : undefined;  // Optional ID for updates/gets
 
-      switch (resource) {
-        case "match":
-          if (request.method === "POST" && action === "create") {
-            return matchApi.createMatch(storage, request);
-          } else if (request.method === "POST" && action === "set-location") {
-            const body = await request.json();
-            return matchApi.setLocation(storage, body.matchId, body.location);
-          } else if (request.method === "POST" && action === "set-date-time") {
-            const body = await request.json();
-            return matchApi.setDateTime(storage, body.matchId, body.date);
-          } else if (request.method === "POST" && action === "set-opp-name") {
-            const body = await request.json();
-            return matchApi.setOppName(storage, body.matchId, body.opponent);
-          } else if (request.method === "POST" && action === "set-type") {
-            const body = await request.json();
-            return matchApi.setType(storage, body.matchId, body.types);
-          } else if (request.method === "POST" && action === "set-result") {
-            const body = await request.json();
-            return matchApi.setResult(storage, body.matchId, body.resultHome, body.resultOpp);
-          } else if (request.method === "POST" && action === "set-players") {
-            const body = await request.json();
-            return matchApi.setPlayers(storage, body.matchId, body.players);
-          } else if (request.method === "POST" && action === "add-player") {
-            const body = await request.json();
-            return matchApi.addPlayer(storage, body.matchId, body.player);
-          } else if (request.method === "POST" && action === "remove-player") {
-            const body = await request.json();
-            return matchApi.removePlayer(storage, body.matchId, body.player);
-          } else if (request.method === "POST" && action === "update-player") {
-            const body = await request.json();
-            return matchApi.updatePlayer(storage, body.matchId, body.player);
-          } else if (request.method === "POST" && action === "add-temp-number") {
-            const body = await request.json();
-            return matchApi.addTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
-          } else if (request.method === "POST" && action === "update-temp-number") {
-            const body = await request.json();
-            return matchApi.updateTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
-          } else if (request.method === "POST" && action === "remove-temp-number") {
-            const body = await request.json();
-            return matchApi.removeTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
-          } else if (request.method === "POST" && action === "set-home-color") {
-            const body = await request.json();
-            return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
-          } else if (request.method === "POST" && action === "set-opp-color") {
-            const body = await request.json();
-            return matchApi.setOppColor(storage, body.matchId, body.jerseyColorOpp);
-          } else if (request.method === "POST" && action === "set-first-server") {
-            const body = await request.json();
-            return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
-          } else if (request.method === "POST" && action === "set-deleted") {
-            const body = await request.json();
-            return matchApi.setDeleted(storage, body.matchId, body.deleted);
-          } else if (request.method === "GET" && action === "get" && id) {
-            return matchApi.getMatch(storage, id);
-          } else if (request.method === "GET") {
-            return matchApi.getMatches(storage);
-          } else if (request.method === "DELETE" && action === "delete" && id) {
-            return matchApi.deleteMatch(storage, id);
-          }
-          break;
+    //   switch (resource) {
+    //     case "match":
+    //       if (request.method === "POST" && action === "create") {
+    //         return matchApi.createMatch(storage, request);
+    //       } else if (request.method === "POST" && action === "set-location") {
+    //         const body = await request.json();
+    //         return matchApi.setLocation(storage, body.matchId, body.location);
+    //       } else if (request.method === "POST" && action === "set-date-time") {
+    //         const body = await request.json();
+    //         return matchApi.setDateTime(storage, body.matchId, body.date);
+    //       } else if (request.method === "POST" && action === "set-opp-name") {
+    //         const body = await request.json();
+    //         return matchApi.setOppName(storage, body.matchId, body.opponent);
+    //       } else if (request.method === "POST" && action === "set-type") {
+    //         const body = await request.json();
+    //         return matchApi.setType(storage, body.matchId, body.types);
+    //       } else if (request.method === "POST" && action === "set-result") {
+    //         const body = await request.json();
+    //         return matchApi.setResult(storage, body.matchId, body.resultHome, body.resultOpp);
+    //       } else if (request.method === "POST" && action === "set-players") {
+    //         const body = await request.json();
+    //         return matchApi.setPlayers(storage, body.matchId, body.players);
+    //       } else if (request.method === "POST" && action === "add-player") {
+    //         const body = await request.json();
+    //         return matchApi.addPlayer(storage, body.matchId, body.player);
+    //       } else if (request.method === "POST" && action === "remove-player") {
+    //         const body = await request.json();
+    //         return matchApi.removePlayer(storage, body.matchId, body.player);
+    //       } else if (request.method === "POST" && action === "update-player") {
+    //         const body = await request.json();
+    //         return matchApi.updatePlayer(storage, body.matchId, body.player);
+    //       } else if (request.method === "POST" && action === "add-temp-number") {
+    //         const body = await request.json();
+    //         return matchApi.addTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
+    //       } else if (request.method === "POST" && action === "update-temp-number") {
+    //         const body = await request.json();
+    //         return matchApi.updateTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
+    //       } else if (request.method === "POST" && action === "remove-temp-number") {
+    //         const body = await request.json();
+    //         return matchApi.removeTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
+    //       } else if (request.method === "POST" && action === "set-home-color") {
+    //         const body = await request.json();
+    //         return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
+    //       } else if (request.method === "POST" && action === "set-opp-color") {
+    //         const body = await request.json();
+    //         return matchApi.setOppColor(storage, body.matchId, body.jerseyColorOpp);
+    //       } else if (request.method === "POST" && action === "set-first-server") {
+    //         const body = await request.json();
+    //         return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
+    //       } else if (request.method === "POST" && action === "set-deleted") {
+    //         const body = await request.json();
+    //         return matchApi.setDeleted(storage, body.matchId, body.deleted);
+    //       } else if (request.method === "GET" && action === "get" && id) {
+    //         return matchApi.getMatch(storage, id);
+    //       } else if (request.method === "GET") {
+    //         return matchApi.getMatches(storage);
+    //       } else if (request.method === "DELETE" && action === "delete" && id) {
+    //         return matchApi.deleteMatch(storage, id);
+    //       }
+    //       break;
 
-        case "player":
-          if (request.method === "POST" && action === "create") {
-            return playerApi.createPlayer(storage, request);
-          } else if (request.method === "POST" && action === "set-lname") {
-            const body = await request.json();
-            return playerApi.setPlayerLName(storage, body.playerId, body.lastName);
-          } else if (request.method === "POST" && action === "set-fname") {
-            const body = await request.json();
-            return playerApi.setPlayerFName(storage, body.playerId, body.initial);
-          } else if (request.method === "POST" && action === "set-number") {
-            const body = await request.json();
-            return playerApi.setPlayerNumber(storage, body.playerId, body.number);
-          } else if (request.method === "GET" && action === "get" && id) {
-            return playerApi.getPlayer(storage, id);
-          } else if (request.method === "GET") {
-            return playerApi.getPlayers(storage);
-          } else if (request.method === "DELETE" && action === "delete" && id) {
-            return playerApi.deletePlayer(storage, id);
-          }
-          break;
+    //     case "player":
+    //       if (request.method === "POST" && action === "create") {
+    //         return playerApi.createPlayer(storage, request);
+    //       } else if (request.method === "POST" && action === "set-lname") {
+    //         const body = await request.json();
+    //         return playerApi.setPlayerLName(storage, body.playerId, body.lastName);
+    //       } else if (request.method === "POST" && action === "set-fname") {
+    //         const body = await request.json();
+    //         return playerApi.setPlayerFName(storage, body.playerId, body.initial);
+    //       } else if (request.method === "POST" && action === "set-number") {
+    //         const body = await request.json();
+    //         return playerApi.setPlayerNumber(storage, body.playerId, body.number);
+    //       } else if (request.method === "GET" && action === "get" && id) {
+    //         return playerApi.getPlayer(storage, id);
+    //       } else if (request.method === "GET") {
+    //         return playerApi.getPlayers(storage);
+    //       } else if (request.method === "DELETE" && action === "delete" && id) {
+    //         return playerApi.deletePlayer(storage, id);
+    //       }
+    //       break;
 
-        case "set":
-          if (request.method === "POST" && action === "create") {
-            return setApi.createSet(storage, request);
-          } else if (request.method === "POST" && action === "set-home-score") {
-            const body = await request.json();
-            return setApi.setHomeScore(storage, body.setId, body.homeScore);
-          } else if (request.method === "POST" && action === "set-opp-score") {
-            const body = await request.json();
-            return setApi.setOppScore(storage, body.setId, body.oppScore);
-          } else if (request.method === "POST" && action === "set-home-timeout") {
-            const body = await request.json();
-            return setApi.setHomeTimeout(storage, body.setId, body.timeoutNumber, body.value);
-          } else if (request.method === "POST" && action === "set-opp-timeout") {
-            const body = await request.json();
-            return setApi.setOppTimeout(storage, body.setId, body.timeoutNumber, body.value);
-          } else if (request.method === "POST" && action === "set-is-final") {
-            const body = await request.json();
-            return setApi.setIsFinal(storage, body.matchId, body.finalizedSets);
-          } else if (request.method === "GET" && action === "get" && id) {
-            return setApi.getSet(storage, id);
-          } else if (request.method === "GET") {
-            const matchIdQuery = url.searchParams.get("matchId");
-            const parsedMatchId = matchIdQuery ? parseInt(matchIdQuery, 10) : undefined;
-            const matchIdParam = Number.isNaN(parsedMatchId ?? NaN) ? undefined : parsedMatchId;
-            return setApi.getSets(storage, matchIdParam);
-          } else if (request.method === "DELETE" && action === "delete" && id) {
-            return setApi.deleteSet(storage, id);
-          }
-          break;
-      }
+    //     case "set":
+    //       if (request.method === "POST" && action === "create") {
+    //         return setApi.createSet(storage, request);
+    //       } else if (request.method === "POST" && action === "set-home-score") {
+    //         const body = await request.json();
+    //         return setApi.setHomeScore(storage, body.setId, body.homeScore);
+    //       } else if (request.method === "POST" && action === "set-opp-score") {
+    //         const body = await request.json();
+    //         return setApi.setOppScore(storage, body.setId, body.oppScore);
+    //       } else if (request.method === "POST" && action === "set-home-timeout") {
+    //         const body = await request.json();
+    //         return setApi.setHomeTimeout(storage, body.setId, body.timeoutNumber, body.value);
+    //       } else if (request.method === "POST" && action === "set-opp-timeout") {
+    //         const body = await request.json();
+    //         return setApi.setOppTimeout(storage, body.setId, body.timeoutNumber, body.value);
+    //       } else if (request.method === "POST" && action === "set-is-final") {
+    //         const body = await request.json();
+    //         return setApi.setIsFinal(storage, body.matchId, body.finalizedSets);
+    //       } else if (request.method === "GET" && action === "get" && id) {
+    //         return setApi.getSet(storage, id);
+    //       } else if (request.method === "GET") {
+    //         const matchIdQuery = url.searchParams.get("matchId");
+    //         const parsedMatchId = matchIdQuery ? parseInt(matchIdQuery, 10) : undefined;
+    //         const matchIdParam = Number.isNaN(parsedMatchId ?? NaN) ? undefined : parsedMatchId;
+    //         return setApi.getSets(storage, matchIdParam);
+    //       } else if (request.method === "DELETE" && action === "delete" && id) {
+    //         return setApi.deleteSet(storage, id);
+    //       }
+    //       break;
+    //   }
 
-      return errorResponse("API endpoint not found", 404);  // Updated with responses.ts
-    }
+    //   return errorResponse("API endpoint not found", 404);  // Updated with responses.ts
+    // }
 
     return errorResponse("Method not allowed", 405);  // Updated with responses.ts
   }
@@ -913,7 +913,8 @@ export default {
     const doStub = (env as any)[doBindingName].get(doId);
 
     /* 4. Route /ws and /api/* to the Durable Object's fetch */
-    if (path.startsWith("/ws") || path.startsWith("/api/")) {
+//    if (path.startsWith("/ws") || path.startsWith("/api/")) {
+    if (path.startsWith("/ws")) {
       try {
         return await doStub.fetch(request);
       } catch (e) {
