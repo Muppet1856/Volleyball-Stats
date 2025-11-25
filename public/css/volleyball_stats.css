@@ -1,6 +1,17 @@
 :root {
   color-scheme: light dark;
 }
+#loader {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--loader-bg, var(--bs-body-bg));
+  color: var(--loader-fg, var(--bs-primary));
+  z-index: 9999;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
 
 html.score-modal-open,
 body.score-modal-open {
@@ -9,10 +20,14 @@ body.score-modal-open {
 
 [data-bs-theme="dark"] {
   color-scheme: dark;
+  --loader-bg: #0b111b;
+  --loader-fg: #9ec5ff;
 }
 
 [data-bs-theme="light"] {
   color-scheme: light;
+  --loader-bg: #f8f9fb;
+  --loader-fg: #0d6efd;
 }
 
 #playerList {
