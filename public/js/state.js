@@ -2,6 +2,7 @@
 export let state = {
   homeTeam: 'Home Team',
   opponent: 'Opponent',
+  matchId: null,
   matchWins: { home: 0, opp: 0 },
   overallWinner: null,
   players: [],
@@ -76,6 +77,9 @@ function sanitizeLoadedState() {
   } else {
     state.matchPlayers = normalizedExisting;
   }
+
+  const parsedMatchId = Number(state.matchId);
+  state.matchId = Number.isFinite(parsedMatchId) && parsedMatchId > 0 ? parsedMatchId : null;
 }
 
 export function updateState(partialState) {

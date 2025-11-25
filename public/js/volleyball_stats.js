@@ -4,8 +4,9 @@ import { initializeHomeTeam } from './init/homeTeam.js';
 import { setDefaultDate } from './init/date.js';
 import { enhanceJerseySelectsCustom } from './init/jerseyColors.js';
 import { swapConfig , mainSwap } from './ui/swap.js';
-import { debouncedOpponentUpdate , updateOpponentName} from './ui/opponentName.js';
 import { initSavedMatchesModal } from './api/matches.js';
+import { initMatchCreate } from './api/matchCreate.js';
+import { initMatchMetaAutosave, loadMatchFromUrl } from './api/matchMetaAutosave.js';
 import './ui/scoreModals.js';
 import './ui/finalizeButtons.js';
 import './ui/resultSummary.js';  // New import to load the result summary logic
@@ -15,10 +16,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initializeHomeTeam();
   await setDefaultDate();
   await enhanceJerseySelectsCustom();
-  const opponentInput = document.getElementById('opponent');
-  if (opponentInput) {
-    opponentInput.addEventListener('input', debouncedOpponentUpdate);
-  }
   const swapButton = document.getElementById('swapTeamsBtn');
   if (swapButton) {
     swapButton.addEventListener('click', () => {
@@ -41,7 +38,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   //await updateOpponentName();  // Add here for initial fallback render post-DOM
+  initMatchMetaAutosave();
+  await loadMatchFromUrl();
   initSavedMatchesModal();
+  initMatchCreate();
   document.getElementById('loader').style.display = 'none';
   document.getElementById('main-content').style.visibility = 'visible';
 });
