@@ -332,9 +332,20 @@ export async function getMatch(storage: any, matchId: number): Promise<Response>
 
 export async function deleteMatch(storage: any, matchId: number): Promise<Response> {
   const sql = storage.sql;
+  const parsedId = Number(matchId);
+  if (!Number.isInteger(parsedId) || parsedId < 1) {
+    return errorResponse("Invalid match id", 400);
+  }
   try {
+    const existing = sql.exec(`SELECT id FROM matches WHERE id = ?`, parsedId).toArray();
+    if (existing.length === 0) {
+      return errorResponse("Match not found", 404);
+    }
+
     storage.transactionSync(() => {
-      sql.exec(`DELETE FROM matches WHERE id = ?`, matchId);
+      // Delete child sets first to keep DB tidy even if FK constraints are off
+      sql.exec(`DELETE FROM sets WHERE match_id = ?`, parsedId);
+      sql.exec(`DELETE FROM matches WHERE id = ?`, parsedId);
     });
     return textResponse("Match deleted successfully", 200);
   } catch (error) {
