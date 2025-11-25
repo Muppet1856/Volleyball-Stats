@@ -1,6 +1,13 @@
 // js/api/matchLiveSync.js
 // Keeps the active match view in sync with server broadcasts.
-import { state, subscribe as subscribeToState, loadMatchPlayers, updateState } from '../state.js';
+import {
+  state,
+  subscribe as subscribeToState,
+  loadMatchPlayers,
+  updateState,
+  upsertMatchPlayer,
+  removeMatchPlayer,
+} from '../state.js';
 import { onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws.js';
 import { getActiveMatchId, hydrateMatchMeta } from './matchMetaAutosave.js';
 import { hydrateScores } from './scoring.js';
@@ -88,6 +95,18 @@ function parseMaybeJson(raw, fallback = []) {
   return fallback;
 }
 
+function parseDelta(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return typeof raw === 'object' ? raw : null;
+}
+
 function mergePlayersWithTemps(players = [], tempNumbers = []) {
   const parsedPlayers = parseMaybeJson(players, []);
   const parsedTemps = parseMaybeJson(tempNumbers, []);
@@ -120,6 +139,62 @@ function mergePlayersWithTemps(players = [], tempNumbers = []) {
   });
 
   return merged;
+}
+
+function applyPlayerDelta(rawDelta) {
+  const delta = parseDelta(rawDelta);
+  if (!delta) return false;
+
+  const playerId = delta.player_id ?? delta.playerId ?? delta.id;
+  if (typeof playerId !== 'number') return false;
+
+  const existing = state.matchPlayers.find((entry) => entry.playerId === playerId);
+  const removed = delta.deleted || delta.remove || delta.removed;
+  const appearedRaw = delta.appeared ?? delta.active ?? delta.selected;
+  const appeared = appearedRaw === undefined ? existing?.appeared ?? true : Boolean(appearedRaw);
+
+  const tempRaw = delta.temp_number ?? delta.tempNumber;
+  let tempNumber = existing?.tempNumber ?? null;
+  if (removed) {
+    removeMatchPlayer(playerId);
+    return true;
+  }
+  if (tempRaw !== undefined) {
+    tempNumber = tempRaw === null || tempRaw === '' ? null : Number(tempRaw);
+    if (tempNumber !== null && Number.isNaN(tempNumber)) {
+      tempNumber = existing?.tempNumber ?? null;
+    }
+  }
+
+  upsertMatchPlayer(playerId, tempNumber, appeared);
+  return true;
+}
+
+function applyTempDelta(rawDelta) {
+  const delta = parseDelta(rawDelta);
+  if (!delta) return false;
+  const playerId = delta.player_id ?? delta.playerId ?? delta.id;
+  if (typeof playerId !== 'number') return false;
+
+  const existing = state.matchPlayers.find((entry) => entry.playerId === playerId);
+  const removed = delta.deleted || delta.remove || delta.removed;
+  const tempRaw = delta.temp_number ?? delta.tempNumber;
+
+  if (removed || tempRaw === null) {
+    if (existing) {
+      const appeared = existing.appeared ?? true;
+      upsertMatchPlayer(playerId, null, appeared);
+    }
+    return true;
+  }
+
+  if (tempRaw === undefined) return false;
+  const tempNumber = Number(tempRaw);
+  if (Number.isNaN(tempNumber)) return false;
+
+  const appeared = existing?.appeared ?? true;
+  upsertMatchPlayer(playerId, tempNumber, appeared);
+  return true;
 }
 
 function handleUpdate(message) {
@@ -161,12 +236,25 @@ function applyMatchBroadcast(message) {
     updateState({ matchWins: { ...state.matchWins, ...nextWins } });
   }
 
-  const players = payload.players ?? null;
-  const temps = payload.temp_numbers ?? payload.tempNumbers ?? null;
-  if (players !== null || temps !== null) {
-    const merged = mergePlayersWithTemps(players ?? [], temps ?? []);
-    console.log('[matchLiveSync] merged players from broadcast', merged);
-    loadMatchPlayers(merged);
+  const playerDelta = payload.player_delta ?? payload.playerDelta ?? null;
+  const tempDelta = payload.temp_number_delta ?? payload.tempNumberDelta ?? payload.temp_delta ?? null;
+  let appliedDelta = false;
+
+  if (playerDelta) {
+    appliedDelta = applyPlayerDelta(playerDelta) || appliedDelta;
+  }
+  if (tempDelta) {
+    appliedDelta = applyTempDelta(tempDelta) || appliedDelta;
+  }
+
+  if (!appliedDelta) {
+    const players = payload.players ?? null;
+    const temps = payload.temp_numbers ?? payload.tempNumbers ?? null;
+    if (players !== null || temps !== null) {
+      const merged = mergePlayersWithTemps(players ?? [], temps ?? []);
+      console.log('[matchLiveSync] merged players from broadcast', merged);
+      loadMatchPlayers(merged);
+    }
   }
 }
 

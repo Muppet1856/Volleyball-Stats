@@ -603,19 +603,34 @@ export class MatchState {
           temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
         };
       case 'add-player':
-      case 'remove-player':
-      case 'update-player':
+      case 'update-player': {
+        const playerDelta = this.normalizePlayerDelta(data.player);
+        const tempDelta = this.normalizeTempDelta(data.player);
+        if (!playerDelta && !tempDelta) return null;
         return {
-          players: await this.getMatchColumn(matchId, 'players'),
-          temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
+          player_delta: playerDelta,
+          temp_number_delta: tempDelta ?? undefined,
         };
+      }
+      case 'remove-player': {
+        const playerDelta = this.normalizePlayerRemoval(data.player);
+        if (!playerDelta) return null;
+        return {
+          player_delta: playerDelta,
+          temp_number_delta: { player_id: playerDelta.player_id, deleted: true },
+        };
+      }
       case 'add-temp-number':
-      case 'update-temp-number':
-      case 'remove-temp-number':
-        return {
-          temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
-          players: await this.getMatchColumn(matchId, 'players'),
-        };
+      case 'update-temp-number': {
+        const tempDelta = this.normalizeTempDelta(data.tempNumber ?? data.temp_number ?? data.temp);
+        if (!tempDelta) return null;
+        return { temp_number_delta: tempDelta };
+      }
+      case 'remove-temp-number': {
+        const tempDelta = this.normalizeTempRemoval(data.tempNumber ?? data.temp_number ?? data.temp);
+        if (!tempDelta) return null;
+        return { temp_number_delta: tempDelta };
+      }
       case 'set-home-color':
         return { jersey_color_home: data.jerseyColorHome ?? null };
       case 'set-opp-color':
@@ -743,6 +758,63 @@ export class MatchState {
       return value ? 1 : 0;
     }
     return 0;
+  }
+
+  private parseJsonMaybe(raw: any): any {
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  }
+
+  private normalizePlayerDelta(raw: any): { player_id: number; appeared?: boolean; temp_number?: number | null } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    if (typeof playerId !== "number") return null;
+
+    const appearedRaw = parsed?.appeared ?? parsed?.active ?? parsed?.selected;
+    const appeared = appearedRaw === undefined ? undefined : !!appearedRaw;
+
+    const tempRaw = parsed?.temp_number ?? parsed?.tempNumber;
+    const tempParsed = tempRaw === undefined || tempRaw === null || tempRaw === "" ? null : Number(tempRaw);
+    const hasTemp = tempRaw !== undefined;
+
+    const payload: any = { player_id: playerId };
+    if (appeared !== undefined) payload.appeared = appeared;
+    if (hasTemp && !Number.isNaN(tempParsed)) {
+      payload.temp_number = tempParsed;
+    }
+    return payload;
+  }
+
+  private normalizePlayerRemoval(raw: any): { player_id: number; deleted: true } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    if (typeof playerId !== "number") return null;
+    return { player_id: playerId, deleted: true };
+  }
+
+  private normalizeTempDelta(raw: any): { player_id: number; temp_number: number | null } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    const tempRaw = parsed?.temp_number ?? parsed?.tempNumber;
+    if (typeof playerId !== "number" || tempRaw === undefined) return null;
+    const tempParsed = tempRaw === null || tempRaw === "" ? null : Number(tempRaw);
+    if (tempParsed === null || Number.isFinite(tempParsed)) {
+      return { player_id: playerId, temp_number: tempParsed };
+    }
+    return null;
+  }
+
+  private normalizeTempRemoval(raw: any): { player_id: number; deleted: true } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    if (typeof playerId !== "number") return null;
+    return { player_id: playerId, deleted: true };
   }
 
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)

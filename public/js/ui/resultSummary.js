@@ -1,26 +1,38 @@
 // js/ui/resultSummary.js
-import { state, updateState } from '../state.js';
+import { state, updateState, subscribe } from '../state.js';
 
-function syncMatchResults() {
+function syncMatchResults(matchWins = state.matchWins) {
   const homeSelect = document.getElementById('resultHome');
   const oppSelect = document.getElementById('resultOpp');
-  if (homeSelect) homeSelect.value = state.matchWins.home.toString();
-  if (oppSelect) oppSelect.value = state.matchWins.opp.toString();
+  const homeValue = Number(matchWins?.home) || 0;
+  const oppValue = Number(matchWins?.opp) || 0;
+  if (homeSelect) homeSelect.value = homeValue.toString();
+  if (oppSelect) oppSelect.value = oppValue.toString();
 }
 
-function checkOverallWinner() {
+function calculateOverallWinner(matchWins = state.matchWins) {
   let winner = null;
-  if (state.matchWins.home >= 3 && state.matchWins.opp < 3) {
+  const homeWins = Number(matchWins?.home) || 0;
+  const oppWins = Number(matchWins?.opp) || 0;
+
+  if (homeWins >= 3 && oppWins < 3) {
     winner = 'home';
-  } else if (state.matchWins.opp >= 3 && state.matchWins.home < 3) {
+  } else if (oppWins >= 3 && homeWins < 3) {
     winner = 'opp';
   }
-  updateState({ overallWinner: winner });
+  return winner;
+}
+
+function applyOverallWinner(matchWins = state.matchWins) {
+  const winner = calculateOverallWinner(matchWins);
+  if (state.overallWinner !== winner) {
+    updateState({ overallWinner: winner });
+  }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
   syncMatchResults();
-  checkOverallWinner(); // Initial check
+  applyOverallWinner(); // Initial check
 
   const homeSelect = document.getElementById('resultHome');
   const oppSelect = document.getElementById('resultOpp');
@@ -29,7 +41,6 @@ window.addEventListener('DOMContentLoaded', () => {
     homeSelect.addEventListener('change', () => {
       const value = parseInt(homeSelect.value, 10) || 0;
       updateState({ matchWins: { home: value } });
-      checkOverallWinner();
     });
   }
 
@@ -37,9 +48,13 @@ window.addEventListener('DOMContentLoaded', () => {
     oppSelect.addEventListener('change', () => {
       const value = parseInt(oppSelect.value, 10) || 0;
       updateState({ matchWins: { opp: value } });
-      checkOverallWinner();
     });
   }
+
+  subscribe((nextState) => {
+    syncMatchResults(nextState.matchWins);
+    applyOverallWinner(nextState.matchWins);
+  });
 });
 
 export { syncMatchResults };

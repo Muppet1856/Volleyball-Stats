@@ -326,7 +326,7 @@ export async function removePlayer(storage: any, matchId: number, playerJson: st
 }
 
 // ————————————————————————————————————————————————————————
-// 3. UPDATE PLAYER (replace the whole object — future-proof)
+// 3. UPDATE PLAYER (patch a single entry atomically)
 export async function updatePlayer(storage: any, matchId: number, playerJson: string): Promise<Response> {
   let playerId: number;
   let parsedPlayer: any;
@@ -344,15 +344,23 @@ export async function updatePlayer(storage: any, matchId: number, playerJson: st
         throw new Error("Match not found");
       }
       const normalized = parsePlayersField(rows[0]?.players);
+      const { player: playerPatch, temp } = normalizePlayerAndTemp(parsedPlayer);
+
+      let matched = false;
       const updated = normalized.map((p: any) => {
         if (p && p.player_id === playerId) {
-          const { player } = normalizePlayerAndTemp(parsedPlayer);
-          return player ?? p;
+          matched = true;
+          if (!playerPatch) return p;
+          // Merge to avoid losing existing fields when only part of the player record changes.
+          return { ...p, ...playerPatch };
         }
         return p;
       });
+      if (!matched && playerPatch) {
+        updated.push(playerPatch);
+      }
+
       const temps = parseTempNumbersField(rows[0]?.temp_numbers);
-      const { temp } = normalizePlayerAndTemp(parsedPlayer);
       const nextTemps = temp ? upsertTempNumber(temps, temp) : temps;
       storage.sql.exec(
         `UPDATE matches SET players = ?, temp_numbers = ? WHERE id = ?`,

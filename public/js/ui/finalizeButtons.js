@@ -11,34 +11,28 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     btn.addEventListener('click', () => {
-      const finalized = btn.classList.contains('active');
-      const scores = state.sets[setNumber].scores;
-      let winner = null;
+      // Derive desired state from our source of truth (state), not from Bootstrap's class toggling order.
+      const isCurrentlyFinalized = state.sets[setNumber].finalized;
+      const willFinalize = !isCurrentlyFinalized;
+      if (willFinalize) {
+        const scores = getValidatedScores(setNumber);
+        if (!scores) {
+          // Invalid attempt: keep the button unselected/unchanged.
+          setButtonState(btn, isCurrentlyFinalized);
+          return;
+        }
 
-      if (finalized) {
-        if (scores.home > scores.opp) {
-          winner = 'home';
-        } else if (scores.opp > scores.home) {
-          winner = 'opp';
-        }
-        // If tie, winner remains null, no increment
-        if (winner) {
-          updateState({
-            matchWins: { [winner]: state.matchWins[winner] + 1 }
-          });
-        }
+        const winner = scores.home > scores.opp ? 'home' : 'opp';
         updateState({
           sets: {
-            [setNumber]: { winner, finalized: true }
-          }
+            [setNumber]: {
+              scores,
+              winner,
+              finalized: true,
+            },
+          },
         });
       } else {
-        const prevWinner = state.sets[setNumber].winner;
-        if (prevWinner) {
-          updateState({
-            matchWins: { [prevWinner]: state.matchWins[prevWinner] - 1 }
-          });
-        }
         updateState({
           sets: {
             [setNumber]: { winner: null, finalized: false }
@@ -46,19 +40,22 @@ window.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      recalculateMatchWinsFromSets();
       applyFinalizedStyles(setNumber);
       updateSetAccess();  // Recompute access after change
+      setButtonState(btn, state.sets[setNumber].finalized);
     });
   });
 
   updateSetAccess();  // Initial access setup
+  recalculateMatchWinsFromSets(); // Ensure totals align with any pre-finalized sets on load
 });
 
 function updateSetAccess() {
-  let previousFinalized = true;  // Set 1 always unlocked
+  const currentSet = getCurrentSetNumber();
 
   for (let set = 1; set <= 5; set++) {
-    const unlocked = previousFinalized;
+    const isCurrent = currentSet === set;
     const finalized = state.sets[set].finalized;
 
     const row = document.querySelector(`#scoring-table tr:nth-child(${set + 1})`);
@@ -68,22 +65,16 @@ function updateSetAccess() {
     const oppInput = document.getElementById(`set${set}Opp`);
 
     if (row) {
-      row.classList.toggle('set-locked', !unlocked);
+      row.classList.toggle('set-locked', !isCurrent);
     }
 
-    if (unlocked) {
-      if (scoreBtn) scoreBtn.disabled = finalized;
-      if (homeInput) homeInput.disabled = finalized;
-      if (oppInput) oppInput.disabled = finalized;
-      if (finalizeBtn) finalizeBtn.disabled = false;
-    } else {
-      if (scoreBtn) scoreBtn.disabled = true;
-      if (homeInput) homeInput.disabled = true;
-      if (oppInput) oppInput.disabled = true;
-      if (finalizeBtn) finalizeBtn.disabled = true;
-    }
+    const disableScores = !isCurrent || finalized;
+    if (scoreBtn) scoreBtn.disabled = !isCurrent;
+    if (homeInput) homeInput.disabled = disableScores;
+    if (oppInput) oppInput.disabled = disableScores;
 
-    previousFinalized = finalized;
+    // Allow recalculation on finalized sets, but block future sets.
+    if (finalizeBtn) finalizeBtn.disabled = !isCurrent && !finalized;
   }
 }
 
@@ -111,4 +102,68 @@ function applyFinalizedStyles(setNumber) {
       homeCell.classList.add('set-loser');
     }
   }
+}
+
+function readScoreFromInput(setNumber, team) {
+  const input = document.getElementById(`set${setNumber}${team === 'home' ? 'Home' : 'Opp'}`);
+  if (!input) {
+    return { value: null, present: false, empty: true };
+  }
+  const raw = input.value;
+  if (raw === '') {
+    return { value: null, present: true, empty: true };
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed)
+    ? { value: parsed, present: true, empty: false }
+    : { value: null, present: true, empty: true };
+}
+
+function getValidatedScores(setNumber) {
+  const homeInput = readScoreFromInput(setNumber, 'home');
+  const oppInput = readScoreFromInput(setNumber, 'opp');
+  const stateScores = state.sets[setNumber]?.scores || {};
+
+  const homeScore = homeInput.value ?? stateScores.home;
+  const oppScore = oppInput.value ?? stateScores.opp;
+
+  const missing = (homeInput.present && homeInput.empty) || (oppInput.present && oppInput.empty);
+  const invalid = !Number.isFinite(homeScore) || !Number.isFinite(oppScore);
+
+  if (missing || invalid) {
+    window.alert('Enter a score for both teams before marking the set final.');
+    return null;
+  }
+
+  if (homeScore === oppScore) {
+    window.alert('Sets cannot end in a tie. Adjust the scores before marking final.');
+    return null;
+  }
+
+  return { home: Number(homeScore), opp: Number(oppScore) };
+}
+
+function getCurrentSetNumber() {
+  for (let set = 1; set <= 5; set++) {
+    if (!state.sets[set].finalized) {
+      return set;
+    }
+  }
+  return null;
+}
+
+function recalculateMatchWinsFromSets() {
+  const totals = { home: 0, opp: 0 };
+  for (let set = 1; set <= 5; set++) {
+    const setState = state.sets[set];
+    if (setState.finalized && setState.winner) {
+      totals[setState.winner] += 1;
+    }
+  }
+  updateState({ matchWins: totals });
+}
+
+function setButtonState(btn, isActive) {
+  btn.classList.toggle('active', isActive);
+  btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
 }
