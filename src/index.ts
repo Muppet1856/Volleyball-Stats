@@ -1,17 +1,28 @@
 // src/index.ts
+import { Hono } from 'hono'
+import { z } from 'zod'
+import { zValidator } from '@hono/zod-validator'
+import {
+  generateRegistrationOptions,
+  generateAuthenticationOptions,
+  verifyRegistrationResponse,
+  verifyAuthenticationResponse,
+} from '@simplewebauthn/server'
 import { initMatchTable, initPlayerTable, initSetTable } from "./utils/init";
-import { jsonResponse, errorResponse } from "./utils/responses";  // Add this import
+import { jsonResponse, errorResponse } from "./utils/responses";
 
 import * as matchApi from "./api/match";
 import * as playerApi from "./api/player";
 import * as setApi from "./api/set";
-import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
 export interface Env {
   ASSETS: any;
+  DB: D1Database;
+  MATCH_DO: DurableObjectNamespace;
+  RESEND_API_KEY: string;
+  APP_URL: string;
   debug?: string;
   HOME_TEAM?: string;
-  // Let the runtime find the DO
 }
 
 /* -------------------------------------------------
@@ -70,130 +81,7 @@ export class MatchState {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    /* ---------- /api/* routing ---------- */
-    // if (path.startsWith("/api/")) {
-    //   const parts = path.slice(5).split("/"); // remove "/api"
-    //   const resource = parts[0];
-    //   const action = parts[1] ?? "";
-    //   const id = parts[2] ? parseInt(parts[2]) : undefined;  // Optional ID for updates/gets
-
-    //   switch (resource) {
-    //     case "match":
-    //       if (request.method === "POST" && action === "create") {
-    //         return matchApi.createMatch(storage, request);
-    //       } else if (request.method === "POST" && action === "set-location") {
-    //         const body = await request.json();
-    //         return matchApi.setLocation(storage, body.matchId, body.location);
-    //       } else if (request.method === "POST" && action === "set-date-time") {
-    //         const body = await request.json();
-    //         return matchApi.setDateTime(storage, body.matchId, body.date);
-    //       } else if (request.method === "POST" && action === "set-opp-name") {
-    //         const body = await request.json();
-    //         return matchApi.setOppName(storage, body.matchId, body.opponent);
-    //       } else if (request.method === "POST" && action === "set-type") {
-    //         const body = await request.json();
-    //         return matchApi.setType(storage, body.matchId, body.types);
-    //       } else if (request.method === "POST" && action === "set-result") {
-    //         const body = await request.json();
-    //         return matchApi.setResult(storage, body.matchId, body.resultHome, body.resultOpp);
-    //       } else if (request.method === "POST" && action === "set-players") {
-    //         const body = await request.json();
-    //         return matchApi.setPlayers(storage, body.matchId, body.players);
-    //       } else if (request.method === "POST" && action === "add-player") {
-    //         const body = await request.json();
-    //         return matchApi.addPlayer(storage, body.matchId, body.player);
-    //       } else if (request.method === "POST" && action === "remove-player") {
-    //         const body = await request.json();
-    //         return matchApi.removePlayer(storage, body.matchId, body.player);
-    //       } else if (request.method === "POST" && action === "update-player") {
-    //         const body = await request.json();
-    //         return matchApi.updatePlayer(storage, body.matchId, body.player);
-    //       } else if (request.method === "POST" && action === "add-temp-number") {
-    //         const body = await request.json();
-    //         return matchApi.addTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
-    //       } else if (request.method === "POST" && action === "update-temp-number") {
-    //         const body = await request.json();
-    //         return matchApi.updateTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
-    //       } else if (request.method === "POST" && action === "remove-temp-number") {
-    //         const body = await request.json();
-    //         return matchApi.removeTempNumber(storage, body.matchId, body.tempNumber ?? body.temp_number ?? body.temp);
-    //       } else if (request.method === "POST" && action === "set-home-color") {
-    //         const body = await request.json();
-    //         return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
-    //       } else if (request.method === "POST" && action === "set-opp-color") {
-    //         const body = await request.json();
-    //         return matchApi.setOppColor(storage, body.matchId, body.jerseyColorOpp);
-    //       } else if (request.method === "POST" && action === "set-first-server") {
-    //         const body = await request.json();
-    //         return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
-    //       } else if (request.method === "POST" && action === "set-deleted") {
-    //         const body = await request.json();
-    //         return matchApi.setDeleted(storage, body.matchId, body.deleted);
-    //       } else if (request.method === "GET" && action === "get" && id) {
-    //         return matchApi.getMatch(storage, id);
-    //       } else if (request.method === "GET") {
-    //         return matchApi.getMatches(storage);
-    //       } else if (request.method === "DELETE" && action === "delete" && id) {
-    //         return matchApi.deleteMatch(storage, id);
-    //       }
-    //       break;
-
-    //     case "player":
-    //       if (request.method === "POST" && action === "create") {
-    //         return playerApi.createPlayer(storage, request);
-    //       } else if (request.method === "POST" && action === "set-lname") {
-    //         const body = await request.json();
-    //         return playerApi.setPlayerLName(storage, body.playerId, body.lastName);
-    //       } else if (request.method === "POST" && action === "set-fname") {
-    //         const body = await request.json();
-    //         return playerApi.setPlayerFName(storage, body.playerId, body.initial);
-    //       } else if (request.method === "POST" && action === "set-number") {
-    //         const body = await request.json();
-    //         return playerApi.setPlayerNumber(storage, body.playerId, body.number);
-    //       } else if (request.method === "GET" && action === "get" && id) {
-    //         return playerApi.getPlayer(storage, id);
-    //       } else if (request.method === "GET") {
-    //         return playerApi.getPlayers(storage);
-    //       } else if (request.method === "DELETE" && action === "delete" && id) {
-    //         return playerApi.deletePlayer(storage, id);
-    //       }
-    //       break;
-
-    //     case "set":
-    //       if (request.method === "POST" && action === "create") {
-    //         return setApi.createSet(storage, request);
-    //       } else if (request.method === "POST" && action === "set-home-score") {
-    //         const body = await request.json();
-    //         return setApi.setHomeScore(storage, body.setId, body.homeScore);
-    //       } else if (request.method === "POST" && action === "set-opp-score") {
-    //         const body = await request.json();
-    //         return setApi.setOppScore(storage, body.setId, body.oppScore);
-    //       } else if (request.method === "POST" && action === "set-home-timeout") {
-    //         const body = await request.json();
-    //         return setApi.setHomeTimeout(storage, body.setId, body.timeoutNumber, body.value);
-    //       } else if (request.method === "POST" && action === "set-opp-timeout") {
-    //         const body = await request.json();
-    //         return setApi.setOppTimeout(storage, body.setId, body.timeoutNumber, body.value);
-    //       } else if (request.method === "POST" && action === "set-is-final") {
-    //         const body = await request.json();
-    //         return setApi.setIsFinal(storage, body.matchId, body.finalizedSets);
-    //       } else if (request.method === "GET" && action === "get" && id) {
-    //         return setApi.getSet(storage, id);
-    //       } else if (request.method === "GET") {
-    //         const matchIdQuery = url.searchParams.get("matchId");
-    //         const parsedMatchId = matchIdQuery ? parseInt(matchIdQuery, 10) : undefined;
-    //         const matchIdParam = Number.isNaN(parsedMatchId ?? NaN) ? undefined : parsedMatchId;
-    //         return setApi.getSets(storage, matchIdParam);
-    //       } else if (request.method === "DELETE" && action === "delete" && id) {
-    //         return setApi.deleteSet(storage, id);
-    //       }
-    //       break;
-    //   }
-
-    //   return errorResponse("API endpoint not found", 404);  // Updated with responses.ts
-    // }
-
-    return errorResponse("Method not allowed", 405);  // Updated with responses.ts
+      return errorResponse("Method not allowed", 405);  // Updated with responses.ts
   }
 
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
