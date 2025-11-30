@@ -94,6 +94,12 @@ function applyServerSetRow(row) {
       normalizeTimeoutFlag(row.opp_timeout_2 ?? row.oppTimeout2 ?? row.opp_timeout_2),
     ],
   };
+  const rawTimeoutStartedAt = row.timeout_started_at ?? row.timeoutStartedAt ?? null;
+  const timeoutStartedAt = (() => {
+    if (!rawTimeoutStartedAt) return null;
+    const parsed = new Date(rawTimeoutStartedAt);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  })();
 
   updateLocalSet(setNumber, {
     id: setId,
@@ -102,6 +108,9 @@ function applyServerSetRow(row) {
       opp: oppScore ?? 0,
     },
     timeouts,
+    timeoutStartedAt,
+    timeoutActiveTeam: null,
+    timeoutActiveIndex: null,
   });
 
   // Sync visible inputs if present.

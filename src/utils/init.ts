@@ -120,10 +120,22 @@ export function initSetTable(sql: any): string {
         home_timeout_2 INTEGER NOT NULL DEFAULT 0 CHECK (home_timeout_2 IN (0, 1)),
         opp_timeout_1 INTEGER NOT NULL DEFAULT 0 CHECK (opp_timeout_1 IN (0, 1)),
         opp_timeout_2 INTEGER NOT NULL DEFAULT 0 CHECK (opp_timeout_2 IN (0, 1)),
+        timeout_started_at TEXT,
         FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
         UNIQUE (match_id, set_number)
       );
     `);
+  }
+
+  if (exists) {
+    const columnCursor = sql.exec("PRAGMA table_info('sets');");
+    const hasTimeoutStartedAt = columnCursor
+      .toArray()
+      .some((column: any) => column?.name === 'timeout_started_at');
+
+    if (!hasTimeoutStartedAt) {
+      sql.exec(`ALTER TABLE sets ADD COLUMN timeout_started_at TEXT;`);
+    }
   }
   
   return exists ? "Sets table already exists." : "Sets table created.";

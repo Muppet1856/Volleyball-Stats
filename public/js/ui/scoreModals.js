@@ -1,7 +1,7 @@
 // js/ui/scoreModals.js (updated)
 import { state, updateState } from '../state.js';  // Add this import
 import { saveScore } from '../api/scoring.js';
-import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js';
+import { resetTimeoutCountdown } from './timeOut.js';
 
 function padScore(score) {
   return String(score).padStart(2, '0');

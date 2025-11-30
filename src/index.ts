@@ -267,6 +267,7 @@ export class MatchState {
                 home_timeout_2: data.home_timeout_2 ?? data.homeTimeout2 ?? data.homeTimeout_2,
                 opp_timeout_1: data.opp_timeout_1 ?? data.oppTimeout1 ?? data.oppTimeout_1,
                 opp_timeout_2: data.opp_timeout_2 ?? data.oppTimeout2 ?? data.oppTimeout_2,
+                timeout_started_at: data.timeout_started_at ?? data.timeoutStartedAt ?? null,
               };
               const mockReq = {
                 json: async () => normalizedSetData,
@@ -282,14 +283,20 @@ export class MatchState {
               res = await setApi.setOppScore(storage, data.setId, data.oppScore);
               matchId = data.matchId;
               break;
-            case 'set-home-timeout':
-              res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value);
+            case 'set-home-timeout': {
+              const timeoutStartedAt = this.normalizeTimeoutTimestamp(data.value, data);
+              res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value, timeoutStartedAt);
+              data.timeoutStartedAt = timeoutStartedAt;
               matchId = data.matchId;
               break;
-            case 'set-opp-timeout':
-              res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value);
+            }
+            case 'set-opp-timeout': {
+              const timeoutStartedAt = this.normalizeTimeoutTimestamp(data.value, data);
+              res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value, timeoutStartedAt);
+              data.timeoutStartedAt = timeoutStartedAt;
               matchId = data.matchId;
               break;
+            }
             case 'set-is-final':
               res = await setApi.setIsFinal(storage, data.matchId, data.finalizedSets);
               matchId = data.matchId;
@@ -529,11 +536,17 @@ export class MatchState {
         return { opp_score: this.normalizeScore(data.oppScore) };
       case 'set-home-timeout': {
         const field = data.timeoutNumber === 2 || data.timeoutNumber === '2' ? 'home_timeout_2' : 'home_timeout_1';
-        return { [field]: this.normalizeTimeoutFlag(data.value) };
+        return {
+          [field]: this.normalizeTimeoutFlag(data.value),
+          timeout_started_at: this.normalizeTimeoutTimestamp(data.value, data),
+        };
       }
       case 'set-opp-timeout': {
         const field = data.timeoutNumber === 2 || data.timeoutNumber === '2' ? 'opp_timeout_2' : 'opp_timeout_1';
-        return { [field]: this.normalizeTimeoutFlag(data.value) };
+        return {
+          [field]: this.normalizeTimeoutFlag(data.value),
+          timeout_started_at: this.normalizeTimeoutTimestamp(data.value, data),
+        };
       }
       case 'set-is-final':
         return matchId ? { finalized_sets: data.finalizedSets } : null;
@@ -622,6 +635,27 @@ export class MatchState {
       return value ? 1 : 0;
     }
     return 0;
+  }
+
+  private normalizeTimeoutTimestamp(value: any, data?: any): string | null {
+    const normalizedValue = this.normalizeTimeoutFlag(value);
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const hasProvidedTimestamp = data && ("timeoutStartedAt" in data || "timeout_started_at" in data);
+    if (hasProvidedTimestamp) {
+      const rawTimestamp = data.timeoutStartedAt ?? data.timeout_started_at;
+      if (rawTimestamp === null || rawTimestamp === undefined) {
+        return null;
+      }
+      const parsed = new Date(rawTimestamp);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString();
+      }
+    }
+
+    return new Date().toISOString();
   }
 
   private parseJsonMaybe(raw: any): any {
