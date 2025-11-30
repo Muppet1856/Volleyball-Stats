@@ -11,6 +11,9 @@ import { hydrateScores, saveScore } from './api/scoring.js';
 import { getMatch, setIsFinal } from './api/ws.js';
 import { initMatchLiveSync } from './api/matchLiveSync.js';
 import { resetTimeoutCountdown } from './ui/timeOut.js';
+import { initSavedMatchesModal } from './api/matches.js';
+import { updateOpponentName } from './ui/opponentName.js';
+import { mainSwap, swapConfig } from './ui/swap.js';
 
 const SET_COUNT = 5;
 const DEFAULT_SET_STATE = {
@@ -26,37 +29,29 @@ let manualSelection = null;
 let isBootstrapping = true;
 
 const els = {
-  matchForm: null,
-  matchIdInput: null,
-  refreshBtn: null,
   status: null,
   setPills: null,
-  setStatusText: null,
   finalizeBtn: null,
   scoreModal: null,
   homeDisplay: null,
   oppDisplay: null,
   setMessage: null,
-  activeSetChip: null,
   homeName: null,
   oppName: null,
+  modalSwapBtn: null,
 };
 
 function cacheElements() {
-  els.matchForm = document.getElementById('scorekeeperMatchForm');
-  els.matchIdInput = document.getElementById('scorekeeperMatchId');
-  els.refreshBtn = document.getElementById('refreshScoresBtn');
   els.status = document.getElementById('scorekeeperStatus');
   els.setPills = document.getElementById('setPills');
-  els.setStatusText = document.getElementById('setStatusText');
   els.finalizeBtn = document.getElementById('finalizeSetBtn');
   els.scoreModal = document.getElementById('scoreGameModal');
   els.homeDisplay = document.getElementById('scoreGameHomeDisplay');
   els.oppDisplay = document.getElementById('scoreGameOppDisplay');
   els.setMessage = document.getElementById('setMessage');
-  els.activeSetChip = document.getElementById('activeSetChip');
   els.homeName = document.getElementById('scorekeeperHomeName');
   els.oppName = document.getElementById('scorekeeperOppName');
+  els.modalSwapBtn = document.getElementById('scoreModalSwapBtn');
 }
 
 function setStatus(message = '', tone = 'muted') {
@@ -123,11 +118,13 @@ function renderSetPills() {
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.dataset.set = String(set);
-    pill.className = 'set-pill btn';
-    if (set === activeSet) pill.classList.add('active');
+    pill.className = 'set-pill';
+    const isActive = set === activeSet;
+    if (isActive) pill.classList.add('active');
     if (setState.finalized) pill.classList.add('finalized');
+    pill.setAttribute('aria-pressed', isActive ? 'true' : 'false');
 
-    const statusLabel = setState.finalized ? 'Final' : set === activeSet ? 'Live' : 'Open';
+    const statusLabel = setState.finalized ? 'Final' : isActive ? 'Live' : 'Score';
     pill.innerHTML = `
       <span class="set-pill-label">Set ${set}</span>
       <span class="set-pill-score">${scoreDisplay}</span>
@@ -227,26 +224,10 @@ function renderBoard() {
     els.finalizeBtn.classList.toggle('btn-outline-warning', isFinal);
   }
 
-  if (els.setStatusText) {
-    if (isFinal) {
-      const winnerLabel = winner === 'home' ? state.homeTeam || 'Home' : winner === 'opp' ? state.opponent || 'Opponent' : 'Set';
-      els.setStatusText.textContent = `Set ${activeSet} final • ${winnerLabel} won`;
-    } else if (allFinal) {
-      els.setStatusText.textContent = 'All sets finalized';
-    } else {
-      els.setStatusText.textContent = `Set ${activeSet} in progress`;
-    }
-  }
-
-  if (els.activeSetChip) {
-    els.activeSetChip.textContent = allFinal ? 'Match complete' : `Set ${activeSet} • ${isFinal ? 'Final' : 'Live'}`;
-    els.activeSetChip.classList.toggle('chip-final', allFinal || isFinal);
-  }
-
   if (els.setMessage) {
     els.setMessage.textContent = isFinal
       ? 'Set is locked. Undo final to keep scoring.'
-      : 'Use the touch zones or keyboard to adjust the live score.';
+      : 'Use the touch zones to adjust the score.';
   }
 }
 
@@ -254,12 +235,13 @@ function renderAll() {
   syncNames();
   renderSetPills();
   renderBoard();
-  if (els.matchIdInput) {
-    const currentMatchId = getActiveMatchId() ?? state.matchId;
-    if (currentMatchId) {
-      els.matchIdInput.value = currentMatchId;
-    }
-  }
+  updateSwapButtonState();
+}
+
+function updateSwapButtonState() {
+  if (!els.modalSwapBtn) return;
+  const pressed = Boolean(state.isDisplaySwapped);
+  els.modalSwapBtn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
 }
 
 function changeScore(team, delta) {
@@ -382,6 +364,7 @@ async function loadMatch(matchId, { forceScores = false } = {}) {
       throw new Error('not found');
     }
     hydrateMatchMeta(response.body);
+    updateOpponentName();
     applyFinalizedMap(response.body.finalized_sets ?? response.body.finalizedSets);
     await hydrateScores(normalized, { force: forceScores });
     refreshActiveSetFromState();
@@ -395,29 +378,25 @@ async function loadMatch(matchId, { forceScores = false } = {}) {
 async function bootstrap() {
   cacheElements();
   wireScoreZones();
-  if (els.matchForm) {
-    els.matchForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const matchId = els.matchIdInput?.value;
-      loadMatch(matchId, { forceScores: true });
-    });
-  }
-  if (els.refreshBtn) {
-    els.refreshBtn.addEventListener('click', () => {
-      const matchId = getActiveMatchId() ?? state.matchId;
-      hydrateScores(matchId, { force: true });
-      setStatus('Scores refreshed from the server.', 'muted');
-    });
-  }
   if (els.finalizeBtn) {
     els.finalizeBtn.addEventListener('click', handleFinalizeClick);
   }
   if (els.setPills) {
     els.setPills.addEventListener('click', handleSetPillClick);
   }
+  const swapHandler = () => {
+    mainSwap(swapConfig);
+    updateSwapButtonState();
+  };
+
+  if (els.modalSwapBtn) {
+    els.modalSwapBtn.addEventListener('click', swapHandler);
+  }
+  updateSwapButtonState();
 
   await initializeHomeTeam();
   initMatchLiveSync();
+  initSavedMatchesModal();
 
   const initialMatch = await loadMatchFromUrl();
   if (initialMatch) {
@@ -427,6 +406,7 @@ async function bootstrap() {
   } else {
     await hydrateScores();
   }
+  updateOpponentName();
 
   refreshActiveSetFromState();
   renderAll();

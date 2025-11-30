@@ -199,8 +199,9 @@ function renderMatches(matches) {
     if (canLoad) {
       item.classList.add('match-list-link');
       item.tabIndex = 0;
+      const basePath = window.location.pathname || '/';
       const navigateToMatch = () => {
-        window.location.href = `?match=${encodeURIComponent(id)}`;
+        window.location.href = `${basePath}?match=${encodeURIComponent(id)}`;
       };
       item.addEventListener('click', navigateToMatch);
       item.addEventListener('keydown', (event) => {

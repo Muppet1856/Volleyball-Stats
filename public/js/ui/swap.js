@@ -10,6 +10,7 @@ export function mainSwap(config) {
 
 function swapColumnsGeneric(config) {
   const table = document.getElementById('scoring-table');
+  if (!table) return;
   const rows = table.rows;
   
   for (let i = 0; i < rows.length; i++) {
