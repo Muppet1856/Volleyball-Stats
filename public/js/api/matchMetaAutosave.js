@@ -11,7 +11,10 @@ import {
 } from './matchMetaWrite.js';
 import { debouncedOpponentUpdate, updateOpponentName } from '../ui/opponentName.js';
 import { state, updateState, loadMatchPlayers, setMatchPlayers } from '../state.js';
-import { getMatch } from './ws.js';
+import { collectMatchPayload } from './matchPayload.js';
+import { createMatch, getMatch } from './ws.js';
+import { updateUrlWithMatchId } from './matchUrl.js';
+import { setAutoSaveStatus } from '../ui/autoSaveStatus.js';
 
 function coerceMatchId(raw) {
   const parsed = Number(raw);
@@ -66,6 +69,42 @@ if (activeMatchId !== null) {
 }
 
 let suppressMetaWrites = false;
+let matchCreationPromise = null;
+
+async function ensureMatchExists() {
+  if (activeMatchId) {
+    return activeMatchId;
+  }
+  if (matchCreationPromise) {
+    return matchCreationPromise;
+  }
+
+  matchCreationPromise = (async () => {
+    setAutoSaveStatus('Creating match...', 'muted');
+    const response = await createMatch(collectMatchPayload());
+    if (!response || response.status >= 300 || !response.body) {
+      const message = response?.body?.message || 'Match creation failed';
+      throw new Error(message);
+    }
+    const matchId = coerceMatchId(response.body.id ?? response.body.match_id ?? response.body.matchId);
+    if (!matchId) {
+      throw new Error('Match ID missing from response');
+    }
+    setActiveMatchId(matchId);
+    updateUrlWithMatchId(matchId);
+    setAutoSaveStatus(`Match #${matchId} created.`, 'success');
+    return matchId;
+  })();
+
+  try {
+    return await matchCreationPromise;
+  } catch (_error) {
+    setAutoSaveStatus('Could not create match automatically. Please use the New Game button.', 'danger');
+    return null;
+  } finally {
+    matchCreationPromise = null;
+  }
+}
 
 export function setActiveMatchId(matchId) {
   activeMatchId = coerceMatchId(matchId);
@@ -77,40 +116,52 @@ export function getActiveMatchId() {
   return activeMatchId;
 }
 
-function handleLocationInput(event) {
+async function handleLocationInput(event) {
   if (suppressMetaWrites) return;
-  writeLocation(activeMatchId, event.target?.value);
+  const matchId = await ensureMatchExists();
+  if (!matchId) return;
+  writeLocation(matchId, event.target?.value);
 }
 
-function handleOpponentInput(event) {
+async function handleOpponentInput(event) {
   if (suppressMetaWrites) return;
   debouncedOpponentUpdate();
-  writeOpponent(activeMatchId, event.target?.value);
+  const matchId = await ensureMatchExists();
+  if (!matchId) return;
+  writeOpponent(matchId, event.target?.value);
 }
 
-function handleDateInput(event) {
+async function handleDateInput(event) {
   if (suppressMetaWrites) return;
-  writeDate(activeMatchId, event.target?.value);
+  const matchId = await ensureMatchExists();
+  if (!matchId) return;
+  writeDate(matchId, event.target?.value);
 }
 
-function handleTypeChange(event) {
+async function handleTypeChange(event) {
   if (suppressMetaWrites) return;
   if (!event.target?.checked) return;
-  writeType(activeMatchId, event.target.value);
+  const matchId = await ensureMatchExists();
+  if (!matchId) return;
+  writeType(matchId, event.target.value);
 }
 
-function handleFirstServerChange(event) {
+async function handleFirstServerChange(event) {
   if (suppressMetaWrites) return;
-  writeFirstServer(activeMatchId, event.target?.value);
+  const matchId = await ensureMatchExists();
+  if (!matchId) return;
+  writeFirstServer(matchId, event.target?.value);
 }
 
-function handleJerseyChange(event) {
+async function handleJerseyChange(event) {
   if (suppressMetaWrites) return;
+  const matchId = await ensureMatchExists();
+  if (!matchId) return;
   const { id, value } = event.target || {};
   if (id === 'jerseyColorHome') {
-    writeHomeJerseyColor(activeMatchId, value);
+    writeHomeJerseyColor(matchId, value);
   } else if (id === 'jerseyColorOpp') {
-    writeOppJerseyColor(activeMatchId, value);
+    writeOppJerseyColor(matchId, value);
   }
 }
 
