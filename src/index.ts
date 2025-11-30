@@ -683,6 +683,7 @@ export class MatchState {
 
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
   private broadcast(message: string, exclude?: WebSocket) {
+    console.log('websocket broadcast =>', message);
     let sentCount = 0;
     const total = this.state.getWebSockets()?.length ?? 0;
     const targetMatchId = this.extractMatchIdForBroadcast(message);

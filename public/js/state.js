@@ -26,6 +26,8 @@ export let state = {
   players: [],
   matchPlayers: [],
   sets: createDefaultSets(),
+  isDisplaySwapped: false,
+  isTimeoutColorSwapped: false,
 };
 
 const STORAGE_KEY = 'volleyball-stats-state';
@@ -119,6 +121,13 @@ function sanitizeLoadedState() {
 
   const parsedMatchId = Number(state.matchId);
   state.matchId = Number.isFinite(parsedMatchId) && parsedMatchId > 0 ? parsedMatchId : null;
+
+  if (state.isDisplaySwapped === undefined) {
+    state.isDisplaySwapped = false;
+  }
+  if (state.isTimeoutColorSwapped === undefined) {
+    state.isTimeoutColorSwapped = false;
+  }
 }
 
 export function updateState(partialState) {

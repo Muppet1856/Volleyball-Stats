@@ -1,16 +1,24 @@
 // js/ui/timeOut.js
-import { state, updateState } from '../state.js';  
+import { state, subscribe, updateState } from '../state.js';
+import { ensureSetIdForMatch } from '../api/scoring.js';
+import { getActiveMatchId } from '../api/matchMetaAutosave.js';
+import { setHomeTimeout, setOppTimeout } from '../api/ws.js';
 
 let countdownInterval = null;
 let currentActiveButton = null;
 
 function getTimeoutTeamColorMap() {
-  // Customize these based on your team themes (e.g., from jersey colors)
-  // Home: blue-ish, Opp: red-ish
-  return {
-    home: '#0d6efd',  // Bootstrap primary blue for home
-    opp: '#dc3545'     // Bootstrap danger red for opponent
+  const baseMap = {
+    home: '#0d6efd',
+    opp: '#dc3545',
   };
+  if (state.isTimeoutColorSwapped) {
+    return {
+      home: baseMap.opp,
+      opp: baseMap.home,
+    };
+  }
+  return baseMap;
 }
 
 function applyTimeoutTeamColor(team, colorMap) {
@@ -98,25 +106,8 @@ export function startTimeoutCountdown(button) {
 window.addEventListener('DOMContentLoaded', () => {
   const scoreGameModal = document.getElementById('scoreGameModal');
   if (scoreGameModal) {
-    scoreGameModal.addEventListener('show.bs.modal', (event) => {
-      const setNumber = parseInt(scoreGameModal.dataset.currentSet, 10);
-      if (!setNumber || !state.sets[setNumber]) return;
-
-      const timeouts = state.sets[setNumber].timeouts;
-      const timeoutBoxes = document.querySelectorAll('.timeout-box');
-
-      timeoutBoxes.forEach((box) => {
-        const team = box.dataset.team;
-        const index = parseInt(box.dataset.timeoutIndex);
-        const used = timeouts[team][index];
-        box.setAttribute('aria-pressed', used ? 'true' : 'false');
-        box.classList.toggle('used', used);
-        box.classList.toggle('available', !used);
-        box.classList.remove('active'); // Reset active
-        const teamName = team === 'home' ? state.homeTeam : state.opponent;
-        const ord = (index + 1 === 1) ? 'first' : 'second';
-        box.setAttribute('aria-label', `${teamName} ${ord} timeout ${used ? 'used' : 'available'}`);
-      });
+    scoreGameModal.addEventListener('show.bs.modal', () => {
+      refreshTimeoutBoxes();
     });
 
     scoreGameModal.addEventListener('hide.bs.modal', () => {
@@ -125,7 +116,36 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-function handleTimeoutClick(e) {
+function refreshTimeoutBoxes() {
+  const modal = document.getElementById('scoreGameModal');
+  const setNumber = modal ? parseInt(modal.dataset.currentSet, 10) : null;
+  if (!setNumber || !state.sets[setNumber]) return;
+
+  const timeouts = state.sets[setNumber].timeouts;
+  const timeoutBoxes = document.querySelectorAll('.timeout-box');
+
+  timeoutBoxes.forEach((box) => {
+    const team = box.dataset.team;
+    const index = parseInt(box.dataset.timeoutIndex);
+    const used = Boolean(timeouts?.[team]?.[index]);
+    box.setAttribute('aria-pressed', used ? 'true' : 'false');
+    box.classList.toggle('used', used);
+    box.classList.toggle('available', !used);
+    box.classList.remove('active'); // Reset active
+    const teamName = team === 'home' ? state.homeTeam : state.opponent;
+    const ord = (index + 1 === 1) ? 'first' : 'second';
+    box.setAttribute('aria-label', `${teamName} ${ord} timeout ${used ? 'used' : 'available'}`);
+  });
+}
+
+subscribe(() => {
+  const modal = document.getElementById('scoreGameModal');
+  if (modal && modal.classList.contains('show')) {
+    refreshTimeoutBoxes();
+  }
+});
+
+async function handleTimeoutClick(e) {
   const box = e.target.closest('.timeout-box');
   if (!box) return;  // Allow clicking used ones to deselect
 
@@ -137,9 +157,16 @@ function handleTimeoutClick(e) {
   const index = parseInt(box.dataset.timeoutIndex);
   const teamName = team === 'home' ? state.homeTeam : state.opponent;
   const ord = (index + 1 === 1) ? 'first' : 'second';
-  const isPressed = box.getAttribute('aria-pressed') === 'true';
+  const used = Boolean(state.sets?.[setNumber]?.timeouts?.[team]?.[index]);
+  const matchId = getActiveMatchId() ?? state.matchId;
+  const normalizedMatchId = Number(matchId);
+  const hasMatchId = Number.isFinite(normalizedMatchId) && normalizedMatchId > 0;
+  let setId = null;
+  if (hasMatchId) {
+    setId = await ensureSetIdForMatch(normalizedMatchId, setNumber);
+  }
 
-  if (isPressed) {
+  if (used) {
     // Deselect and reset
     box.setAttribute('aria-pressed', 'false');
     box.classList.remove('used', 'active');
@@ -148,13 +175,24 @@ function handleTimeoutClick(e) {
     box.setAttribute('aria-label', `${teamName} ${ord} timeout available`);
 
     // Sync to state
+    const nextTimeouts = [...state.sets[setNumber].timeouts[team]];
+    nextTimeouts[index] = false;
     updateState({
       sets: {
         [setNumber]: {
-          timeouts: { [team]: [...state.sets[setNumber].timeouts[team].slice(0, index), false, ...state.sets[setNumber].timeouts[team].slice(index + 1)] }
+          timeouts: { [team]: nextTimeouts }
         }
       }
     });
+
+    const value = 0;
+    if (hasMatchId && setId) {
+      if (team === 'home') {
+        setHomeTimeout(setId, index + 1, value, normalizedMatchId);
+      } else {
+        setOppTimeout(setId, index + 1, value, normalizedMatchId);
+      }
+    }
   } else if (box.classList.contains('available')) {
     // Select and start only if available
     document.querySelectorAll('.timeout-box').forEach(b => {
@@ -167,13 +205,24 @@ function handleTimeoutClick(e) {
     box.setAttribute('aria-label', `${teamName} ${ord} timeout used`);
 
     // Sync to state
+    const nextTimeouts = [...state.sets[setNumber].timeouts[team]];
+    nextTimeouts[index] = true;
     updateState({
       sets: {
         [setNumber]: {
-          timeouts: { [team]: [...state.sets[setNumber].timeouts[team].slice(0, index), true, ...state.sets[setNumber].timeouts[team].slice(index + 1)] }
+          timeouts: { [team]: nextTimeouts }
         }
       }
     });
+
+    const value = 1;
+    if (hasMatchId && setId) {
+      if (team === 'home') {
+        setHomeTimeout(setId, index + 1, value, normalizedMatchId);
+      } else {
+        setOppTimeout(setId, index + 1, value, normalizedMatchId);
+      }
+    }
   }
 }
 

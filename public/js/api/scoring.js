@@ -32,6 +32,15 @@ function normalizeScore(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeTimeoutFlag(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string' && value.trim() === '') return false;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return Boolean(value);
+  return Boolean(parsed);
+}
+
 function getSetState(setNumber) {
   return state.sets?.[setNumber] || { scores: {}, timeouts: { home: [], opp: [] } };
 }
@@ -75,6 +84,16 @@ function applyServerSetRow(row) {
   const homeScore = normalizeScore(row.home_score ?? row.homeScore);
   const oppScore = normalizeScore(row.opp_score ?? row.oppScore);
   const setId = row.id ?? row.set_id ?? row.setId ?? null;
+  const timeouts = {
+    home: [
+      normalizeTimeoutFlag(row.home_timeout_1 ?? row.homeTimeout1 ?? row.home_timeout_1),
+      normalizeTimeoutFlag(row.home_timeout_2 ?? row.homeTimeout2 ?? row.home_timeout_2),
+    ],
+    opp: [
+      normalizeTimeoutFlag(row.opp_timeout_1 ?? row.oppTimeout1 ?? row.opp_timeout_1),
+      normalizeTimeoutFlag(row.opp_timeout_2 ?? row.oppTimeout2 ?? row.opp_timeout_2),
+    ],
+  };
 
   updateLocalSet(setNumber, {
     id: setId,
@@ -82,6 +101,7 @@ function applyServerSetRow(row) {
       home: homeScore ?? 0,
       opp: oppScore ?? 0,
     },
+    timeouts,
   });
 
   // Sync visible inputs if present.
@@ -193,7 +213,12 @@ export async function hydrateScores(matchId = null, { force = false } = {}) {
   return hydrateSetsForMatch(targetMatchId, { force });
 }
 
+export async function ensureSetIdForMatch(matchId, setNumber) {
+  return ensureSetId(matchId, setNumber);
+}
+
 export default {
   hydrateScores,
   saveScore,
+  ensureSetIdForMatch,
 };

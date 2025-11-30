@@ -197,6 +197,72 @@ function applyTempDelta(rawDelta) {
   return true;
 }
 
+function normalizeTimeoutFlag(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value.trim() === '') return false;
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed)) {
+      return Boolean(parsed);
+    }
+    return Boolean(value);
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  return Boolean(value);
+}
+
+function findSetNumberById(setId) {
+  for (let set = 1; set <= 5; set++) {
+    if (state.sets?.[set]?.id === setId) {
+      return set;
+    }
+  }
+  return null;
+}
+
+function applyTimeoutChanges(setId, changes) {
+  if (!setId || !changes) return false;
+  const setNumber = findSetNumberById(setId);
+  if (!setNumber) return false;
+
+  const setState = state.sets?.[setNumber];
+  const baseTimeouts = setState?.timeouts || { home: [false, false], opp: [false, false] };
+  const updated = {
+    home: [...baseTimeouts.home],
+    opp: [...baseTimeouts.opp],
+  };
+  let mutated = false;
+
+  const applyChange = (team, index, key) => {
+    if (!Object.prototype.hasOwnProperty.call(changes, key)) return;
+    const nextValue = normalizeTimeoutFlag(changes[key]);
+    if (updated[team][index] !== nextValue) {
+      updated[team][index] = nextValue;
+      mutated = true;
+    }
+  };
+
+  applyChange('home', 0, 'home_timeout_1');
+  applyChange('home', 1, 'home_timeout_2');
+  applyChange('opp', 0, 'opp_timeout_1');
+  applyChange('opp', 1, 'opp_timeout_2');
+
+  if (mutated) {
+    updateState({
+      sets: {
+        [setNumber]: {
+          timeouts: updated,
+        },
+      },
+    });
+  }
+
+  return mutated;
+}
+
 function handleUpdate(message) {
   if (!message || message.type !== 'update') return;
 
@@ -212,8 +278,17 @@ function handleUpdate(message) {
     return;
   }
 
-  if (message.resource === 'set' || message.resource === 'sets') {
+  if (message.resource === 'set') {
+    const applied = applyTimeoutChanges(message.id ?? message.data?.id ?? null, message.changes ?? message.data ?? {});
+    if (!applied) {
+      scheduleScoreHydrate(activeMatchId);
+    }
+    return;
+  }
+
+  if (message.resource === 'sets') {
     scheduleScoreHydrate(activeMatchId);
+    return;
   }
 }
 
