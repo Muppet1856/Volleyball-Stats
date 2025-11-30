@@ -142,10 +142,10 @@ export const setHomeScore = (setId, homeScore, matchId) =>
   sendRequest('set', 'set-home-score', { setId, homeScore, matchId });
 export const setOppScore = (setId, oppScore, matchId) =>
   sendRequest('set', 'set-opp-score', { setId, oppScore, matchId });
-export const setHomeTimeout = (setId, timeoutNumber, value, matchId) =>
-  sendRequest('set', 'set-home-timeout', { setId, timeoutNumber, value, matchId });
-export const setOppTimeout = (setId, timeoutNumber, value, matchId) =>
-  sendRequest('set', 'set-opp-timeout', { setId, timeoutNumber, value, matchId });
+export const setHomeTimeout = (setId, timeoutNumber, value, matchId, timeoutStartedAt) =>
+  sendRequest('set', 'set-home-timeout', { setId, timeoutNumber, value, matchId, timeoutStartedAt });
+export const setOppTimeout = (setId, timeoutNumber, value, matchId, timeoutStartedAt) =>
+  sendRequest('set', 'set-opp-timeout', { setId, timeoutNumber, value, matchId, timeoutStartedAt });
 export const setIsFinal = (matchId, finalizedSets) =>
   sendRequest('set', 'set-is-final', { matchId, finalizedSets });
 export const getSet = (id) => sendRequest('set', 'get', { id });

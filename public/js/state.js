@@ -4,6 +4,9 @@ function createDefaultSetState() {
     id: null,
     scores: { home: 0, opp: 0 },
     timeouts: { home: [false, false], opp: [false, false] },
+    timeoutStartedAt: null,
+    timeoutActiveTeam: null,
+    timeoutActiveIndex: null,
     finalized: false,
     winner: null,
   };
@@ -78,6 +81,9 @@ function sanitizeLoadedState() {
       setState.timeouts.home = Array.isArray(setState.timeouts.home) ? setState.timeouts.home : [false, false];
       setState.timeouts.opp = Array.isArray(setState.timeouts.opp) ? setState.timeouts.opp : [false, false];
     }
+    if (setState.timeoutStartedAt === undefined) setState.timeoutStartedAt = null;
+    if (setState.timeoutActiveTeam === undefined) setState.timeoutActiveTeam = null;
+    if (setState.timeoutActiveIndex === undefined) setState.timeoutActiveIndex = null;
     if (setState.finalized === undefined) setState.finalized = false;
     if (setState.winner === undefined) setState.winner = null;
   }

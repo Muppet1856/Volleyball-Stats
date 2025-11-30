@@ -20,6 +20,9 @@ const DEFAULT_SET_STATE = {
   id: null,
   scores: { home: 0, opp: 0 },
   timeouts: { home: [false, false], opp: [false, false] },
+  timeoutStartedAt: null,
+  timeoutActiveTeam: null,
+  timeoutActiveIndex: null,
   finalized: false,
   winner: null,
 };

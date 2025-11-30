@@ -235,6 +235,25 @@ function applyTimeoutChanges(setId, changes) {
     opp: [...baseTimeouts.opp],
   };
   let mutated = false;
+  const normalizeTimestamp = (value) => {
+    if (value === null || value === undefined) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  };
+
+  let nextTimeoutStartedAt = setState?.timeoutStartedAt ?? null;
+  let nextTimeoutActiveTeam = setState?.timeoutActiveTeam ?? null;
+  let nextTimeoutActiveIndex = setState?.timeoutActiveIndex ?? null;
+  const hasStartedAtChange =
+    Object.prototype.hasOwnProperty.call(changes, 'timeout_started_at') ||
+    Object.prototype.hasOwnProperty.call(changes, 'timeoutStartedAt');
+  if (hasStartedAtChange) {
+    nextTimeoutStartedAt = normalizeTimestamp(changes.timeout_started_at ?? changes.timeoutStartedAt);
+    if (!nextTimeoutStartedAt) {
+      nextTimeoutActiveTeam = null;
+      nextTimeoutActiveIndex = null;
+    }
+  }
 
   const applyChange = (team, index, key) => {
     if (!Object.prototype.hasOwnProperty.call(changes, key)) return;
@@ -243,6 +262,11 @@ function applyTimeoutChanges(setId, changes) {
       updated[team][index] = nextValue;
       mutated = true;
     }
+
+    if (nextTimeoutStartedAt && Object.prototype.hasOwnProperty.call(changes, key)) {
+      nextTimeoutActiveTeam = team;
+      nextTimeoutActiveIndex = index;
+    }
   };
 
   applyChange('home', 0, 'home_timeout_1');
@@ -250,17 +274,25 @@ function applyTimeoutChanges(setId, changes) {
   applyChange('opp', 0, 'opp_timeout_1');
   applyChange('opp', 1, 'opp_timeout_2');
 
-  if (mutated) {
+  const timestampChanged =
+    nextTimeoutStartedAt !== (setState?.timeoutStartedAt ?? null) ||
+    nextTimeoutActiveTeam !== (setState?.timeoutActiveTeam ?? null) ||
+    nextTimeoutActiveIndex !== (setState?.timeoutActiveIndex ?? null);
+
+  if (mutated || timestampChanged) {
     updateState({
       sets: {
         [setNumber]: {
           timeouts: updated,
+          timeoutStartedAt: nextTimeoutStartedAt,
+          timeoutActiveTeam: nextTimeoutActiveTeam,
+          timeoutActiveIndex: nextTimeoutActiveIndex,
         },
       },
     });
   }
 
-  return mutated;
+  return mutated || timestampChanged;
 }
 
 function handleUpdate(message) {

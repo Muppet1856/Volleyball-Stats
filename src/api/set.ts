@@ -33,6 +33,21 @@ function normalizeTimeout(value: any): number {
   return 0;
 }
 
+function normalizeTimestamp(value: any): string | null {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return null;
+}
+
 const SET_NOT_FOUND_ERROR = "SET_NOT_FOUND";
 
 function parseFinalizedSetsColumn(value: any): Record<number, boolean> {
@@ -141,8 +156,8 @@ export async function createSet(storage: any, request: Request): Promise<Respons
   try {
     const newId = storage.transactionSync(() => {
       sql.exec(`
-        INSERT INTO sets (match_id, set_number, home_score, opp_score, home_timeout_1, home_timeout_2, opp_timeout_1, opp_timeout_2)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sets (match_id, set_number, home_score, opp_score, home_timeout_1, home_timeout_2, opp_timeout_1, opp_timeout_2, timeout_started_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         matchId,
         setNumber,
@@ -151,7 +166,8 @@ export async function createSet(storage: any, request: Request): Promise<Respons
         normalizeTimeout(body.home_timeout_1),
         normalizeTimeout(body.home_timeout_2),
         normalizeTimeout(body.opp_timeout_1),
-        normalizeTimeout(body.opp_timeout_2)
+        normalizeTimeout(body.opp_timeout_2),
+        normalizeTimestamp(body.timeout_started_at)
       );
       return sql.exec(`SELECT last_insert_rowid() AS id`).toArray()[0].id;
     });
@@ -183,12 +199,27 @@ export async function setOppScore(storage: any, setId: number, oppScore: number 
   );
 }
 
-export async function setHomeTimeout(storage: any, setId: number, timeoutNumber: 1 | 2, value: 0 | 1): Promise<Response> {
+export async function setHomeTimeout(
+  storage: any,
+  setId: number,
+  timeoutNumber: 1 | 2,
+  value: 0 | 1,
+  timeoutStartedAt?: string | null
+): Promise<Response> {
   const sql = storage.sql;
   const field = timeoutNumber === 1 ? 'home_timeout_1' : 'home_timeout_2';
+  const normalizedValue = normalizeTimeout(value);
+  const normalizedTimestamp = normalizedValue
+    ? (timeoutStartedAt === undefined ? new Date().toISOString() : normalizeTimestamp(timeoutStartedAt))
+    : null;
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET ${field} = ? WHERE id = ?`, normalizeTimeout(value), setId);
+      sql.exec(
+        `UPDATE sets SET ${field} = ?, timeout_started_at = ? WHERE id = ?`,
+        normalizedValue,
+        normalizedTimestamp,
+        setId
+      );
     });
     return textResponse("Home timeout updated successfully", 200);
   } catch (error) {
@@ -196,12 +227,27 @@ export async function setHomeTimeout(storage: any, setId: number, timeoutNumber:
   }
 }
 
-export async function setOppTimeout(storage: any, setId: number, timeoutNumber: 1 | 2, value: 0 | 1): Promise<Response> {
+export async function setOppTimeout(
+  storage: any,
+  setId: number,
+  timeoutNumber: 1 | 2,
+  value: 0 | 1,
+  timeoutStartedAt?: string | null
+): Promise<Response> {
   const sql = storage.sql;
   const field = timeoutNumber === 1 ? 'opp_timeout_1' : 'opp_timeout_2';
+  const normalizedValue = normalizeTimeout(value);
+  const normalizedTimestamp = normalizedValue
+    ? (timeoutStartedAt === undefined ? new Date().toISOString() : normalizeTimestamp(timeoutStartedAt))
+    : null;
   try {
     storage.transactionSync(() => {
-      sql.exec(`UPDATE sets SET ${field} = ? WHERE id = ?`, normalizeTimeout(value), setId);
+      sql.exec(
+        `UPDATE sets SET ${field} = ?, timeout_started_at = ? WHERE id = ?`,
+        normalizedValue,
+        normalizedTimestamp,
+        setId
+      );
     });
     return textResponse("Opponent timeout updated successfully", 200);
   } catch (error) {
