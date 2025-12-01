@@ -1,9 +1,12 @@
 // js/ui/swap.js
 import './timeOut.js';
-import { state } from '../state.js';
+import { state, updateState } from '../state.js';
 export function mainSwap(config) {
-  state.isDisplaySwapped = !state.isDisplaySwapped;
-  state.isTimeoutColorSwapped = state.isDisplaySwapped;
+  const nextIsSwapped = !state.isDisplaySwapped;
+  updateState({
+    isDisplaySwapped: nextIsSwapped,
+    isTimeoutColorSwapped: nextIsSwapped,
+  });
   swapColumnsGeneric(config);
   swapModal();
 }
