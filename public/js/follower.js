@@ -225,6 +225,8 @@ function updateTimeoutBoxes(setState) {
     const isActive =
       setState.timeoutActiveTeam === team && Number(setState.timeoutActiveIndex) === index && Boolean(setState.timeoutStartedAt);
     box.setAttribute('aria-pressed', used ? 'true' : 'false');
+    box.setAttribute('aria-disabled', 'true');
+    box.setAttribute('tabindex', '-1');
     box.classList.toggle('used', used);
     box.classList.toggle('available', !used);
     box.classList.toggle('active', isActive);

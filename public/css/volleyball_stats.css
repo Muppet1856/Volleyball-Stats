@@ -1044,10 +1044,20 @@ body.score-modal-open {
   color: #fff;
 }
 
-.score-modal .timeout-container.right-timeout .timeout-box {
+.score-modal .timeout-container.right-timeout .timeout-box { 
   background-color: #dc3545;
   border-color: rgba(255, 255, 255, 0.9);
   color: #fff;
+}
+
+.follower-page .score-modal .timeout-box {
+  pointer-events: none;
+  cursor: default;
+  user-select: none;
+}
+
+.follower-page .score-modal .timeout-box:focus-visible {
+  outline: none;
 }
 
 .score-modal .timeout-container.left-timeout .timeout-box:hover,
