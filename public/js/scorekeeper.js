@@ -39,6 +39,7 @@ let activeSet = 1;
 let manualSelection = null;
 let isBootstrapping = true;
 let carouselScrollTimeout = null;
+let pendingCarouselScrollOptions = null;
 
 const els = {
   status: null,
@@ -225,6 +226,10 @@ function getClosestSetItem() {
   return closest;
 }
 
+function queueScrollToActiveSet(options = {}) {
+  pendingCarouselScrollOptions = { animate: true, ...pendingCarouselScrollOptions, ...options };
+}
+
 function renderSetCarousel() {
   if (!els.setCarouselTrack) return;
   els.setCarouselTrack.innerHTML = '';
@@ -258,14 +263,18 @@ function renderSetCarousel() {
     }
   }
 
+  const scrollOptions = pendingCarouselScrollOptions ?? { animate: false };
+  pendingCarouselScrollOptions = null;
+
   requestAnimationFrame(() => {
-    scrollToSet(activeSet, { animate: false });
+    scrollToSet(activeSet, scrollOptions);
     syncCarouselActiveState();
   });
 }
 
 function updateActiveSet(nextSet, { manual = false } = {}) {
   const normalized = normalizeSetNumber(nextSet) ?? computeFirstOpenSet();
+  const changed = normalized !== activeSet;
   activeSet = normalized;
   if (manual) {
     manualSelection = normalized;
@@ -275,26 +284,28 @@ function updateActiveSet(nextSet, { manual = false } = {}) {
     // Reuse timeout UI hydration hook
     els.scoreModal.dispatchEvent(new Event('show.bs.modal'));
   }
+
+  return changed;
 }
 
 function refreshActiveSetFromState() {
   const fallback = computeFirstOpenSet();
-  if (manualSelection === null) {
-    updateActiveSet(fallback);
-    return;
+  let targetSet = manualSelection ?? fallback;
+
+  if (manualSelection !== null) {
+    const manualState = getSetState(manualSelection);
+    const shouldFallback = !manualState || (manualState.finalized && fallback !== manualSelection);
+    if (shouldFallback) {
+      manualSelection = null;
+      targetSet = fallback;
+    }
   }
-  const manualState = getSetState(manualSelection);
-  if (!manualState) {
-    manualSelection = null;
-    updateActiveSet(fallback);
-    return;
+
+  const changed = updateActiveSet(targetSet, { manual: manualSelection !== null });
+
+  if (changed && manualSelection === null) {
+    queueScrollToActiveSet({ animate: true });
   }
-  if (manualState.finalized && fallback !== manualSelection) {
-    manualSelection = null;
-    updateActiveSet(fallback);
-    return;
-  }
-  updateActiveSet(manualSelection);
 }
 
 function recalcMatchWins() {
@@ -433,7 +444,11 @@ async function handleFinalizeClick() {
     recalcMatchWins();
     await persistFinalizedSets();
     manualSelection = null;
+    const previousActiveSet = activeSet;
     refreshActiveSetFromState();
+    if (previousActiveSet !== activeSet) {
+      queueScrollToActiveSet({ animate: true });
+    }
     setStatus(`Set ${activeSet} finalized.`, 'success');
   } else {
     updateState({ sets: { [activeSet]: { finalized: false, winner: null } } });
@@ -447,8 +462,8 @@ async function handleFinalizeClick() {
 }
 
 function rerenderAndCenterSet({ animate = true } = {}) {
+  queueScrollToActiveSet({ animate });
   renderAll();
-  requestAnimationFrame(() => scrollToSet(activeSet, { animate }));
 }
 
 function handleSetCarouselClick(event) {
