@@ -57,6 +57,8 @@ const els = {
   wsIndicator: null,
 };
 
+let finalizePopover = null;
+
 function cacheElements() {
   els.setCarouselTrack = document.getElementById('setCarouselTrack');
   els.setCarouselViewport = document.getElementById('setCarouselViewport');
@@ -71,6 +73,17 @@ function cacheElements() {
   els.oppName = document.getElementById('scorekeeperOppName');
   els.modalSwapBtn = document.getElementById('scoreModalSwapBtn');
   els.wsIndicator = document.getElementById('wsConnectionIndicator');
+}
+
+function initFinalizePopover() {
+  const Popover = window.bootstrap?.Popover;
+  if (!Popover || !els.finalizeBtn) return;
+  finalizePopover = Popover.getOrCreateInstance(els.finalizeBtn, { trigger: 'manual' });
+}
+
+function hideFinalizePopover() {
+  if (!finalizePopover) return;
+  finalizePopover.hide();
 }
 
 function hasMatchQueryParam() {
@@ -342,6 +355,10 @@ function renderBoard() {
   const winner = setState.winner;
   const allFinal = Array.from({ length: SET_COUNT }).every((_, idx) => state.sets?.[idx + 1]?.finalized);
 
+  if (finalizePopover && homeScore !== oppScore) {
+    hideFinalizePopover();
+  }
+
   if (els.homeDisplay) els.homeDisplay.textContent = padScore(homeScore);
   if (els.oppDisplay) els.oppDisplay.textContent = padScore(oppScore);
 
@@ -414,7 +431,17 @@ async function handleFinalizeClick() {
   const homeScore = Number(setState.scores?.home);
   const oppScore = Number(setState.scores?.opp);
 
-  if (!Number.isFinite(homeScore) || !Number.isFinite(oppScore) || homeScore === oppScore) {
+  if (homeScore !== oppScore) {
+    hideFinalizePopover();
+  }
+
+  if (!Number.isFinite(homeScore) || !Number.isFinite(oppScore)) {
+    return;
+  }
+
+  if (homeScore === oppScore) {
+    initFinalizePopover();
+    finalizePopover?.show();
     return;
   }
 
@@ -543,6 +570,14 @@ async function bootstrap() {
   onConnectionStateChange(setWsIndicator);
   connect().catch(() => setWsIndicator('disconnected'));
   wireScoreZones();
+  if (els.scoreModal) {
+    els.scoreModal.addEventListener('show.bs.modal', initFinalizePopover);
+    els.scoreModal.addEventListener('hide.bs.modal', hideFinalizePopover);
+    els.scoreModal.addEventListener('hidden.bs.modal', () => {
+      finalizePopover?.dispose?.();
+      finalizePopover = null;
+    });
+  }
   if (els.finalizeBtn) {
     els.finalizeBtn.addEventListener('click', handleFinalizeClick);
   }
