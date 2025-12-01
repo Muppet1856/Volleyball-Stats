@@ -4,7 +4,7 @@ import { state, subscribe } from './state.js';
 import { loadMatchFromUrl, getActiveMatchId } from './api/matchMetaAutosave.js';
 import { hydrateScores } from './api/scoring.js';
 import { initMatchLiveSync } from './api/matchLiveSync.js';
-import { connect, getConnectionState, onConnectionStateChange } from './api/ws.js';
+import { connect, getConnectionState, onConnectionStateChange, restartConnection } from './api/ws.js';
 import { initSavedMatchesModal } from './api/matches.js';
 
 const SET_COUNT = 5;
@@ -74,18 +74,37 @@ function setWsIndicator(state = 'disconnected') {
       iconWrapper?.classList.add('pulse');
       icon?.classList.add('bi-arrow-left-right');
       label && (label.textContent = 'Connected');
+      els.wsIndicator?.setAttribute('aria-label', 'WebSocket connected');
       break;
     case 'reconnecting':
       iconWrapper?.classList.add('spin');
       icon?.classList.add('bi-arrow-repeat');
       label && (label.textContent = 'Retrying...');
+      els.wsIndicator?.setAttribute('aria-label', 'WebSocket reconnecting');
       break;
     default:
       iconWrapper?.classList.add('pulse');
       icon?.classList.add('bi-dash-circle');
       label && (label.textContent = 'Disconnected');
+      els.wsIndicator?.setAttribute('aria-label', 'WebSocket disconnected. Select to retry.');
       break;
   }
+}
+
+function enableWsIndicatorRetry() {
+  if (!els.wsIndicator) return;
+
+  const handleActivate = (event) => {
+    if (getConnectionState() !== 'disconnected') return;
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    restartConnection();
+  };
+
+  els.wsIndicator.setAttribute('tabindex', '0');
+  els.wsIndicator.setAttribute('role', 'button');
+  els.wsIndicator.addEventListener('click', handleActivate);
+  els.wsIndicator.addEventListener('keydown', handleActivate);
 }
 
 function padScore(score) {
@@ -417,6 +436,7 @@ async function bootstrap() {
   cacheElements();
   setWsIndicator(getConnectionState());
   onConnectionStateChange(setWsIndicator);
+  enableWsIndicatorRetry();
 
   els.setCarouselPrev?.addEventListener('click', () => handleCarouselNav(-1));
   els.setCarouselNext?.addEventListener('click', () => handleCarouselNav(1));

@@ -13,6 +13,7 @@ import {
   getConnectionState,
   getMatch,
   onConnectionStateChange,
+  restartConnection,
   setIsFinal,
 } from './api/ws.js';
 import { initMatchLiveSync } from './api/matchLiveSync.js';
@@ -123,18 +124,37 @@ function setWsIndicator(state = 'disconnected') {
       iconWrapper?.classList.add('pulse');
       icon?.classList.add('bi-arrow-left-right');
       if (label) label.textContent = 'Connected';
+      els.wsIndicator?.setAttribute('aria-label', 'WebSocket connected');
       break;
     case 'reconnecting':
       iconWrapper?.classList.add('spin');
       icon?.classList.add('bi-arrow-repeat');
       if (label) label.textContent = 'Retrying...';
+      els.wsIndicator?.setAttribute('aria-label', 'WebSocket reconnecting');
       break;
     default:
       iconWrapper?.classList.add('pulse');
       icon?.classList.add('bi-dash-circle');
       if (label) label.textContent = 'Disconnected';
+      els.wsIndicator?.setAttribute('aria-label', 'WebSocket disconnected. Select to retry.');
       break;
   }
+}
+
+function enableWsIndicatorRetry() {
+  if (!els.wsIndicator) return;
+
+  const handleActivate = (event) => {
+    if (getConnectionState() !== 'disconnected') return;
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    restartConnection();
+  };
+
+  els.wsIndicator.setAttribute('tabindex', '0');
+  els.wsIndicator.setAttribute('role', 'button');
+  els.wsIndicator.addEventListener('click', handleActivate);
+  els.wsIndicator.addEventListener('keydown', handleActivate);
 }
 
 function padScore(score) {
@@ -533,6 +553,7 @@ async function bootstrap() {
   cacheElements();
   setWsIndicator(getConnectionState());
   onConnectionStateChange(setWsIndicator);
+  enableWsIndicatorRetry();
   connect().catch(() => setWsIndicator('disconnected'));
   wireScoreZones();
   if (els.scoreModal) {

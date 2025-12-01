@@ -8,7 +8,7 @@ import {
   upsertMatchPlayer,
   removeMatchPlayer,
 } from '../state.js';
-import { getMatch, onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws.js';
+import { getMatch, onReconnected, onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws.js';
 import { getActiveMatchId, hydrateMatchMeta } from './matchMetaAutosave.js';
 import { hydrateScores } from './scoring.js';
 import { applyFinalizedMap } from '../ui/finalizedSets.js';
@@ -19,6 +19,7 @@ const HYDRATE_DEBOUNCE_MS = 150;
 let subscribedMatchId = null;
 let unsubscribeUpdate = null;
 let unsubscribeState = null;
+let unsubscribeReconnect = null;
 let scoreHydrateTimer = null;
 
 function normalizeMatchId(raw) {
@@ -191,6 +192,27 @@ function applyPlayerDelta(rawDelta) {
 
   upsertMatchPlayer(playerId, tempNumber, appeared);
   return true;
+}
+
+async function refreshActiveMatchState() {
+  const matchId = getCurrentMatchId();
+  if (!matchId) return;
+
+  try {
+    const response = await getMatch(matchId);
+    const match = response?.body;
+    if (!match) return;
+
+    hydrateMatchMeta(match);
+    const mergedPlayers = mergePlayersWithTemps(match.players ?? [], match.temp_numbers ?? match.tempNumbers);
+    loadMatchPlayers(mergedPlayers);
+    applyMatchResult(match);
+    await syncFinalizedSets(matchId, match);
+  } catch (_error) {
+    // noop
+  }
+
+  await hydrateScores(matchId, { force: true });
 }
 
 function applyTempDelta(rawDelta) {
@@ -423,13 +445,20 @@ export function initMatchLiveSync() {
 
   // Listen for broadcast updates.
   unsubscribeUpdate = onUpdate(handleUpdate);
+
+  // Refresh state after reconnects to avoid missed updates.
+  unsubscribeReconnect = onReconnected(() => {
+    refreshActiveMatchState();
+  });
 }
 
 export function teardownMatchLiveSync() {
   if (unsubscribeUpdate) unsubscribeUpdate();
   if (unsubscribeState) unsubscribeState();
+  if (unsubscribeReconnect) unsubscribeReconnect();
   if (scoreHydrateTimer) clearTimeout(scoreHydrateTimer);
   scoreHydrateTimer = null;
   unsubscribeUpdate = null;
   unsubscribeState = null;
+  unsubscribeReconnect = null;
 }
