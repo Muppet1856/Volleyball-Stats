@@ -739,40 +739,98 @@ body.score-modal-open {
   margin-top: 1.5rem;
 }
 
-.set-pill-grid {
+.set-carousel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.set-carousel-viewport {
+  flex: 1 1 0;
+  overflow-x: auto;
+  padding: 0.35rem 0.35rem 0.75rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.set-carousel-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.set-carousel-track {
   display: flex;
   gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  width: 100%;
+  align-items: stretch;
+  min-width: 100%;
+  padding: 0.1rem 0.25rem;
+}
+
+.set-carousel::before,
+.set-carousel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.set-carousel::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--bs-body-bg, #fff), transparent);
+}
+
+.set-carousel::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--bs-body-bg, #fff), transparent);
+}
+
+.set-carousel-nav {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.set-carousel-hint {
+  flex: 1 1 100%;
 }
 
 .set-pill {
-  flex: 1 1 calc(20% - 0.75rem);
-  min-width: 120px;
+  flex: 0 0 72%;
+  min-width: 180px;
+  max-width: 240px;
   border-radius: 0.85rem;
   padding: 0.9rem 1.1rem;
   border: 1px solid var(--bs-border-color, #dee2e6);
   background-color: var(--bs-body-bg, #fff);
   color: inherit;
-  text-align: left;
+  text-align: center;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  scroll-snap-align: center;
 }
 
 .set-pill-label,
 .set-pill-state {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--bs-secondary-color);
 }
 
 .set-pill-score {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1.2rem;
+  font-weight: 700;
 }
 
 .set-pill:focus-visible {
@@ -789,15 +847,9 @@ body.score-modal-open {
   border-color: var(--bs-success, #198754);
 }
 
-@media (max-width: 768px) {
+@media (min-width: 768px) {
   .set-pill {
-    flex: 1 1 45%;
-  }
-}
-
-@media (max-width: 576px) {
-  .set-pill {
-    flex: 1 1 100%;
+    flex: 0 0 200px;
   }
 }
 

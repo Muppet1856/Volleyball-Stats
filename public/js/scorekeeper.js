@@ -16,6 +16,8 @@ import { updateOpponentName } from './ui/opponentName.js';
 import { mainSwap, swapConfig } from './ui/swap.js';
 
 const SET_COUNT = 5;
+const CAROUSEL_LOOP_COUNT = 3;
+const MIDDLE_LOOP_INDEX = Math.floor(CAROUSEL_LOOP_COUNT / 2);
 const DEFAULT_SET_STATE = {
   id: null,
   scores: { home: 0, opp: 0 },
@@ -30,10 +32,14 @@ const DEFAULT_SET_STATE = {
 let activeSet = 1;
 let manualSelection = null;
 let isBootstrapping = true;
+let carouselScrollTimeout = null;
 
 const els = {
   status: null,
-  setPills: null,
+  setCarouselTrack: null,
+  setCarouselViewport: null,
+  setCarouselPrev: null,
+  setCarouselNext: null,
   finalizeBtn: null,
   scoreModal: null,
   homeDisplay: null,
@@ -46,7 +52,10 @@ const els = {
 
 function cacheElements() {
   els.status = document.getElementById('scorekeeperStatus');
-  els.setPills = document.getElementById('setPills');
+  els.setCarouselTrack = document.getElementById('setCarouselTrack');
+  els.setCarouselViewport = document.getElementById('setCarouselViewport');
+  els.setCarouselPrev = document.getElementById('setCarouselPrev');
+  els.setCarouselNext = document.getElementById('setCarouselNext');
   els.finalizeBtn = document.getElementById('finalizeSetBtn');
   els.scoreModal = document.getElementById('scoreGameModal');
   els.homeDisplay = document.getElementById('scoreGameHomeDisplay');
@@ -124,32 +133,92 @@ function syncNames() {
   if (els.oppName) els.oppName.textContent = opp;
 }
 
-function renderSetPills() {
-  if (!els.setPills) return;
-  els.setPills.innerHTML = '';
+function getCarouselItems() {
+  if (!els.setCarouselTrack) return [];
+  return Array.from(els.setCarouselTrack.querySelectorAll('[data-set]'));
+}
 
-  for (let set = 1; set <= SET_COUNT; set++) {
-    const setState = getSetState(set);
-    const homeScore = Number(setState.scores?.home) || 0;
-    const oppScore = Number(setState.scores?.opp) || 0;
-    const scoreDisplay = homeScore === 0 && oppScore === 0 && !setState.finalized ? '—' : `${homeScore} - ${oppScore}`;
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.dataset.set = String(set);
-    pill.className = 'set-pill';
-    const isActive = set === activeSet;
-    if (isActive) pill.classList.add('active');
-    if (setState.finalized) pill.classList.add('finalized');
-    pill.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+function findCarouselItem(setNumber, loopIndex = MIDDLE_LOOP_INDEX) {
+  const items = getCarouselItems();
+  return (
+    items.find((item) => Number(item.dataset.set) === setNumber && Number(item.dataset.loopIndex) === loopIndex) ||
+    items.find((item) => Number(item.dataset.set) === setNumber)
+  );
+}
 
-    const statusLabel = setState.finalized ? 'Final' : isActive ? 'Live' : 'Score';
-    pill.innerHTML = `
-      <span class="set-pill-label">Set ${set}</span>
-      <span class="set-pill-score">${scoreDisplay}</span>
-      <span class="set-pill-state">${statusLabel}</span>
-    `;
-    els.setPills.appendChild(pill);
+function scrollToSet(setNumber, { animate = true } = {}) {
+  if (!els.setCarouselViewport) return;
+  const target = findCarouselItem(setNumber);
+  if (!target) return;
+  target.scrollIntoView({ behavior: animate ? 'smooth' : 'auto', block: 'nearest', inline: 'center' });
+}
+
+function syncCarouselActiveState() {
+  const items = getCarouselItems();
+  items.forEach((item) => {
+    const isActive = Number(item.dataset.set) === activeSet && Number(item.dataset.loopIndex) === MIDDLE_LOOP_INDEX;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function getClosestSetItem() {
+  if (!els.setCarouselViewport) return null;
+  const viewportRect = els.setCarouselViewport.getBoundingClientRect();
+  const viewportCenter = viewportRect.left + viewportRect.width / 2;
+  let closest = null;
+  let minDistance = Infinity;
+
+  getCarouselItems().forEach((item) => {
+    const rect = item.getBoundingClientRect();
+    const itemCenter = rect.left + rect.width / 2;
+    const distance = Math.abs(itemCenter - viewportCenter);
+    if (distance < minDistance) {
+      closest = item;
+      minDistance = distance;
+    }
+  });
+
+  return closest;
+}
+
+function renderSetCarousel() {
+  if (!els.setCarouselTrack) return;
+  els.setCarouselTrack.innerHTML = '';
+
+  for (let loop = 0; loop < CAROUSEL_LOOP_COUNT; loop++) {
+    for (let set = 1; set <= SET_COUNT; set++) {
+      const setState = getSetState(set);
+      const homeScore = Number(setState.scores?.home) || 0;
+      const oppScore = Number(setState.scores?.opp) || 0;
+      const scoreDisplay =
+        homeScore === 0 && oppScore === 0 && !setState.finalized ? '—' : `${homeScore} - ${oppScore}`;
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.dataset.set = String(set);
+      pill.dataset.loopIndex = String(loop);
+      pill.className = 'set-pill';
+      if (setState.finalized) pill.classList.add('finalized');
+
+      const isActive = set === activeSet && loop === MIDDLE_LOOP_INDEX;
+      if (isActive) pill.classList.add('active');
+      pill.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      pill.setAttribute('role', 'option');
+
+      const statusLabel = setState.finalized ? 'Final' : isActive ? 'Live' : 'Score';
+      pill.innerHTML = `
+        <span class="set-pill-label">Set ${set}</span>
+        <span class="set-pill-score">${scoreDisplay}</span>
+        <span class="set-pill-state">${statusLabel}</span>
+      `;
+      els.setCarouselTrack.appendChild(pill);
+    }
   }
+
+  requestAnimationFrame(() => {
+    scrollToSet(activeSet, { animate: false });
+    syncCarouselActiveState();
+  });
 }
 
 function updateActiveSet(nextSet, { manual = false } = {}) {
@@ -251,7 +320,7 @@ function renderBoard() {
 
 function renderAll() {
   syncNames();
-  renderSetPills();
+  renderSetCarousel();
   renderBoard();
   updateSwapButtonState();
 }
@@ -334,13 +403,48 @@ async function handleFinalizeClick() {
   renderAll();
 }
 
-function handleSetPillClick(event) {
+function rerenderAndCenterSet({ animate = true } = {}) {
+  renderAll();
+  requestAnimationFrame(() => scrollToSet(activeSet, { animate }));
+}
+
+function handleSetCarouselClick(event) {
   const button = event.target.closest('[data-set]');
   if (!button) return;
   const setNumber = normalizeSetNumber(button.dataset.set);
   if (!setNumber) return;
   updateActiveSet(setNumber, { manual: true });
-  renderAll();
+  rerenderAndCenterSet();
+}
+
+function handleSetCarouselScroll() {
+  if (carouselScrollTimeout) {
+    clearTimeout(carouselScrollTimeout);
+  }
+
+  carouselScrollTimeout = window.setTimeout(() => {
+    const closest = getClosestSetItem();
+    if (!closest) return;
+    const setNumber = normalizeSetNumber(closest.dataset.set);
+    if (!setNumber) return;
+    const loopIndex = Number(closest.dataset.loopIndex);
+    if (setNumber === activeSet && loopIndex === MIDDLE_LOOP_INDEX) {
+      syncCarouselActiveState();
+      return;
+    }
+    updateActiveSet(setNumber, { manual: true });
+    renderAll();
+    if (loopIndex !== MIDDLE_LOOP_INDEX) {
+      requestAnimationFrame(() => scrollToSet(setNumber, { animate: false }));
+    }
+  }, 120);
+}
+
+function handleCarouselNav(direction) {
+  const nextSet = normalizeSetNumber(((activeSet - 1 + direction + SET_COUNT) % SET_COUNT) + 1);
+  if (!nextSet) return;
+  updateActiveSet(nextSet, { manual: true });
+  rerenderAndCenterSet();
 }
 
 function handleScoreZone(event) {
@@ -399,8 +503,17 @@ async function bootstrap() {
   if (els.finalizeBtn) {
     els.finalizeBtn.addEventListener('click', handleFinalizeClick);
   }
-  if (els.setPills) {
-    els.setPills.addEventListener('click', handleSetPillClick);
+  if (els.setCarouselTrack) {
+    els.setCarouselTrack.addEventListener('click', handleSetCarouselClick);
+  }
+  if (els.setCarouselViewport) {
+    els.setCarouselViewport.addEventListener('scroll', handleSetCarouselScroll);
+  }
+  if (els.setCarouselPrev) {
+    els.setCarouselPrev.addEventListener('click', () => handleCarouselNav(-1));
+  }
+  if (els.setCarouselNext) {
+    els.setCarouselNext.addEventListener('click', () => handleCarouselNav(1));
   }
   const swapHandler = () => {
     mainSwap(swapConfig);
