@@ -12,6 +12,7 @@ const TIMEOUT_DURATION_SECONDS = 60;
 
 let activeSet = 1;
 let manualSelection = null;
+let suppressedManualSelection = null;
 let countdownInterval = null;
 let countdownKey = null;
 
@@ -106,12 +107,28 @@ function getSetState(setNumber) {
   };
 }
 
+function hasNonNullScores(setState) {
+  if (!setState || typeof setState !== 'object') return false;
+  const homeScore = setState.scores?.home;
+  const oppScore = setState.scores?.opp;
+  return homeScore !== null && homeScore !== undefined && oppScore !== null && oppScore !== undefined;
+}
+
 function computePreferredSet() {
-  for (let set = 1; set <= SET_COUNT; set++) {
-    if (!state.sets?.[set]?.finalized) {
+  for (let set = SET_COUNT; set >= 1; set--) {
+    const setState = state.sets?.[set];
+    if (setState && !setState.finalized && hasNonNullScores(setState)) {
       return set;
     }
   }
+
+  for (let set = SET_COUNT; set >= 1; set--) {
+    const setState = state.sets?.[set];
+    if (setState && !setState.finalized) {
+      return set;
+    }
+  }
+
   return SET_COUNT;
 }
 
@@ -134,11 +151,23 @@ function refreshActiveSetFromState() {
   let targetSet = manualSelection ?? fallback;
 
   if (manualSelection !== null) {
-    const manualState = getSetState(manualSelection);
+    const manualState = state.sets?.[manualSelection];
     const shouldFallback = !manualState || (manualState.finalized && fallback !== manualSelection);
     if (shouldFallback) {
+      if (manualState?.finalized) {
+        suppressedManualSelection = manualSelection;
+      } else {
+        suppressedManualSelection = null;
+      }
       manualSelection = null;
       targetSet = fallback;
+    }
+  } else if (suppressedManualSelection !== null) {
+    const suppressedState = state.sets?.[suppressedManualSelection];
+    if (suppressedState && !suppressedState.finalized) {
+      manualSelection = suppressedManualSelection;
+      suppressedManualSelection = null;
+      targetSet = manualSelection;
     }
   }
 
