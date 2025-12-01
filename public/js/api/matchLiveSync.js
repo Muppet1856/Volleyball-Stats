@@ -12,6 +12,7 @@ import { getMatch, onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws
 import { getActiveMatchId, hydrateMatchMeta } from './matchMetaAutosave.js';
 import { hydrateScores } from './scoring.js';
 import { applyFinalizedMap } from '../ui/finalizedSets.js';
+import { updateOpponentName } from '../ui/opponentName.js';
 
 const HYDRATE_DEBOUNCE_MS = 150;
 
@@ -369,8 +370,25 @@ function applyMatchBroadcast(message) {
     const parsedOpp = normalizeScore(resultOpp);
     if (parsedOpp !== null) nextWins.opp = parsedOpp;
   }
+
+  const opponentProvided =
+    Object.prototype.hasOwnProperty.call(payload, 'opponent') ||
+    Object.prototype.hasOwnProperty.call(payload, 'opponent_name') ||
+    Object.prototype.hasOwnProperty.call(payload, 'opponentName');
+  const updates = {};
   if (Object.keys(nextWins).length) {
-    updateState({ matchWins: { ...state.matchWins, ...nextWins } });
+    updates.matchWins = { ...state.matchWins, ...nextWins };
+  }
+  if (opponentProvided) {
+    const rawOpponent = payload.opponent ?? payload.opponent_name ?? payload.opponentName;
+    const trimmedOpponent = typeof rawOpponent === 'string' ? rawOpponent.trim() : '';
+    updates.opponent = trimmedOpponent || null;
+  }
+  if (Object.keys(updates).length) {
+    updateState(updates);
+  }
+  if (opponentProvided) {
+    updateOpponentName();
   }
 
   const playerDelta = payload.player_delta ?? payload.playerDelta ?? null;
