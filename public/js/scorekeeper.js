@@ -42,7 +42,6 @@ let carouselScrollTimeout = null;
 let pendingCarouselScrollOptions = null;
 
 const els = {
-  status: null,
   setCarouselTrack: null,
   setCarouselViewport: null,
   setCarouselPrev: null,
@@ -59,7 +58,6 @@ const els = {
 };
 
 function cacheElements() {
-  els.status = document.getElementById('scorekeeperStatus');
   els.setCarouselTrack = document.getElementById('setCarouselTrack');
   els.setCarouselViewport = document.getElementById('setCarouselViewport');
   els.setCarouselPrev = document.getElementById('setCarouselPrev');
@@ -88,14 +86,6 @@ function openMatchSelectModal() {
 
   const modal = bootstrapModal.getOrCreateInstance(modalEl);
   modal.show();
-}
-
-function setStatus(message = '', tone = 'muted') {
-  if (!els.status) return;
-  els.status.textContent = message;
-  els.status.classList.remove('text-muted', 'text-success', 'text-danger');
-  const toneClass = tone === 'success' ? 'text-success' : tone === 'danger' ? 'text-danger' : 'text-muted';
-  els.status.classList.add(toneClass);
 }
 
 function setWsIndicator(state = 'disconnected') {
@@ -415,7 +405,6 @@ async function persistFinalizedSets() {
   try {
     await setIsFinal(normalized, JSON.stringify(finalizedSets));
   } catch (_err) {
-    setStatus('Set marked final locally. Sync will retry when connection is available.', 'danger');
   }
 }
 
@@ -426,7 +415,6 @@ async function handleFinalizeClick() {
   const oppScore = Number(setState.scores?.opp);
 
   if (!Number.isFinite(homeScore) || !Number.isFinite(oppScore) || homeScore === oppScore) {
-    setStatus('Enter valid, non-tied scores before finalizing.', 'danger');
     return;
   }
 
@@ -449,12 +437,10 @@ async function handleFinalizeClick() {
     if (previousActiveSet !== activeSet) {
       queueScrollToActiveSet({ animate: true });
     }
-    setStatus(`Set ${activeSet} finalized.`, 'success');
   } else {
     updateState({ sets: { [activeSet]: { finalized: false, winner: null } } });
     recalcMatchWins();
     await persistFinalizedSets();
-    setStatus(`Set ${activeSet} reopened.`, 'muted');
   }
 
   resetTimeoutCountdown();
@@ -530,13 +516,11 @@ function wireScoreZones() {
 async function loadMatch(matchId, { forceScores = false } = {}) {
   const normalized = Number(matchId);
   if (!Number.isFinite(normalized) || normalized <= 0) {
-    setStatus('Enter a valid match ID to sync scoring.', 'danger');
     return;
   }
 
   setActiveMatchId(normalized);
   updateUrlMatchParam(normalized);
-  setStatus(`Loading match #${normalized}...`, 'muted');
 
   try {
     const response = await getMatch(normalized);
@@ -549,9 +533,7 @@ async function loadMatch(matchId, { forceScores = false } = {}) {
     await hydrateScores(normalized, { force: forceScores });
     refreshActiveSetFromState();
     renderAll();
-    setStatus(`Match #${normalized} loaded.`, 'success');
   } catch (_err) {
-    setStatus('Could not load that match. Check the ID and try again.', 'danger');
   }
 }
 
@@ -595,7 +577,6 @@ async function bootstrap() {
   if (initialMatch) {
     applyFinalizedMap(initialMatch.finalized_sets ?? initialMatch.finalizedSets);
     await hydrateScores(initialMatch.id, { force: true });
-    setStatus(`Loaded match #${initialMatch.id}.`, 'success');
   } else {
     await hydrateScores();
     if (hadMatchQueryParam) {
