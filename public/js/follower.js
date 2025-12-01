@@ -15,6 +15,7 @@ let manualSelection = null;
 let suppressedManualSelection = null;
 let countdownInterval = null;
 let countdownKey = null;
+let matchModalInstance = null;
 
 const els = {
   wsIndicator: null,
@@ -360,6 +361,34 @@ function handleSwapToggle() {
   renderAll();
 }
 
+function configureMatchSelectionModal({ dismissible }) {
+  const modalEl = document.getElementById('matchIndexModal');
+  const bootstrapModal = window.bootstrap?.Modal;
+  if (!modalEl || !bootstrapModal) return null;
+
+  const closeBtn = modalEl.querySelector('.btn-close');
+  if (closeBtn) {
+    closeBtn.classList.toggle('d-none', !dismissible);
+    if (dismissible) {
+      closeBtn.setAttribute('data-bs-dismiss', 'modal');
+      closeBtn.removeAttribute('aria-hidden');
+      closeBtn.removeAttribute('tabindex');
+    } else {
+      closeBtn.removeAttribute('data-bs-dismiss');
+      closeBtn.setAttribute('aria-hidden', 'true');
+      closeBtn.setAttribute('tabindex', '-1');
+    }
+  }
+
+  matchModalInstance?.dispose();
+  matchModalInstance = new bootstrapModal(modalEl, {
+    backdrop: dismissible ? true : 'static',
+    keyboard: dismissible,
+  });
+
+  return matchModalInstance;
+}
+
 function renderAll() {
   updateNames();
   updateScores();
@@ -388,6 +417,10 @@ async function bootstrap() {
 
   await connect();
   const match = await loadMatchFromUrl();
+  const modal = configureMatchSelectionModal({ dismissible: Boolean(match) });
+  if (!match) {
+    modal?.show();
+  }
   await hydrateScores(getActiveMatchId());
   initMatchLiveSync();
   refreshActiveSetFromState();
