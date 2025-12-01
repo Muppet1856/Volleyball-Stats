@@ -24,6 +24,7 @@ const els = {
   oppLabel: null,
   homeScore: null,
   oppScore: null,
+  swapBtn: null,
   setMessage: null,
   timeoutBoxes: null,
   timeoutDisplay: null,
@@ -41,6 +42,7 @@ function cacheElements() {
   els.oppLabel = document.getElementById('followerOppLabel');
   els.homeScore = document.getElementById('scoreGameHomeDisplay');
   els.oppScore = document.getElementById('scoreGameOppDisplay');
+  els.swapBtn = document.getElementById('scoreModalSwapBtn');
   els.setMessage = document.getElementById('setMessage');
   els.timeoutBoxes = document.querySelectorAll('.timeout-box');
   els.timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
@@ -314,11 +316,25 @@ function renderTimeouts() {
   syncCountdown(activeSet, setState);
 }
 
+function updateSwapButtonState() {
+  if (!els.swapBtn) return;
+  const pressed = Boolean(state.isDisplaySwapped);
+  els.swapBtn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+}
+
+function handleSwapToggle() {
+  state.isDisplaySwapped = !state.isDisplaySwapped;
+  state.isTimeoutColorSwapped = state.isDisplaySwapped;
+  updateSwapButtonState();
+  renderAll();
+}
+
 function renderAll() {
   updateNames();
   updateScores();
   renderSetCarousel();
   renderTimeouts();
+  updateSwapButtonState();
 }
 
 function handleCarouselNav(direction) {
@@ -335,6 +351,7 @@ async function bootstrap() {
 
   els.setCarouselPrev?.addEventListener('click', () => handleCarouselNav(-1));
   els.setCarouselNext?.addEventListener('click', () => handleCarouselNav(1));
+  els.swapBtn?.addEventListener('click', handleSwapToggle);
 
   initSavedMatchesModal({ readOnly: true });
 
