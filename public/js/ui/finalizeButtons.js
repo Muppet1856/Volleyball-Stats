@@ -1,5 +1,7 @@
 // js/ui/finalizeButtons.js
 import { state, subscribe, updateState } from '../state.js';
+import { getActiveMatchId } from '../api/matchMetaAutosave.js';
+import { setIsFinal } from '../api/ws.js';
 
 function syncFinalizeUiFromState() {
   document.querySelectorAll('.finalize-button').forEach((btn) => {
@@ -17,7 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.finalize-button').forEach(btn => {
     const setNumber = btn.dataset.set;
 
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       // Derive desired state from our source of truth (state), not from Bootstrap's class toggling order.
       const isCurrentlyFinalized = state.sets[setNumber].finalized;
       const willFinalize = !isCurrentlyFinalized;
@@ -51,6 +53,8 @@ window.addEventListener('DOMContentLoaded', () => {
       applyFinalizedStyles(setNumber);
       updateSetAccess();  // Recompute access after change
       setButtonState(btn, state.sets[setNumber].finalized);
+
+      await persistFinalizedSets();
     });
   });
 
@@ -169,6 +173,23 @@ function recalculateMatchWinsFromSets() {
     }
   }
   updateState({ matchWins: totals });
+}
+
+async function persistFinalizedSets() {
+  const matchId = getActiveMatchId() ?? state.matchId;
+  const normalized = Number(matchId);
+  if (!Number.isFinite(normalized) || normalized <= 0) return;
+
+  const finalizedSets = {};
+  for (let set = 1; set <= 5; set++) {
+    finalizedSets[set] = Boolean(state.sets?.[set]?.finalized);
+  }
+
+  try {
+    await setIsFinal(normalized, JSON.stringify(finalizedSets));
+  } catch (_err) {
+    // noop
+  }
 }
 
 function setButtonState(btn, isActive) {
