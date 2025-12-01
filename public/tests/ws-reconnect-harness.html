@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WS Reconnect Harness</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    pre { background: #f5f5f5; padding: 1rem; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Reconnect Harness</h1>
+  <p>This page exercises the reconnect logic in <code>public/js/api/ws.js</code> without needing a live server.</p>
+  <pre id="log"></pre>
+  <script type="module">
+    const logEl = document.getElementById('log');
+    const log = (line) => {
+      // eslint-disable-next-line no-console
+      console.log(line);
+      logEl.textContent += `${line}\n`;
+    };
+
+    class MockWebSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      constructor(url) {
+        super();
+        this.url = url;
+        this.readyState = MockWebSocket.CONNECTING;
+        window.__mockSockets.push(this);
+      }
+
+      send(message) {
+        this.lastSent = message;
+        log(`send: ${message}`);
+      }
+
+      triggerOpen() {
+        this.readyState = MockWebSocket.OPEN;
+        this.dispatchEvent(new Event('open'));
+      }
+
+      triggerClose() {
+        this.readyState = MockWebSocket.CLOSED;
+        this.dispatchEvent(new Event('close'));
+      }
+
+      triggerError() {
+        this.dispatchEvent(new Event('error'));
+      }
+    }
+
+    window.__mockSockets = [];
+    window.WebSocket = MockWebSocket;
+
+    const wsApi = await import('../js/api/ws.js');
+
+    wsApi.onReconnecting(() => log('reconnecting...'));
+    wsApi.onReconnected(() => log('reconnected'));
+
+    const ready = wsApi.connect('ws://example.test');
+    const [firstSocket] = window.__mockSockets;
+    firstSocket.triggerOpen();
+    await ready;
+    log('initial connection open');
+
+    const subscribePromise = wsApi.subscribeToMatch('match-123');
+    firstSocket.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ resource: 'match', action: 'subscribe', status: 'ok' }),
+    }));
+    await subscribePromise;
+    log('initial subscribe acknowledged');
+
+    firstSocket.triggerClose();
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const [, secondSocket] = window.__mockSockets;
+    secondSocket.triggerOpen();
+    await wsApi.connect();
+
+    secondSocket.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ resource: 'match', action: 'subscribe', status: 'ok' }),
+    }));
+    log('resubscribe acknowledged after reconnect');
+
+    log('Harness complete. Inspect the logs above to verify reconnect + resubscribe behavior.');
+  </script>
+</body>
+</html>
