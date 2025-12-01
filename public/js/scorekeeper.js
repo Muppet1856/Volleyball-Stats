@@ -57,6 +57,21 @@ function cacheElements() {
   els.modalSwapBtn = document.getElementById('scoreModalSwapBtn');
 }
 
+function hasMatchQueryParam() {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return ['match', 'matchId', 'matchid'].some((key) => params.has(key));
+}
+
+function openMatchSelectModal() {
+  const modalEl = document.getElementById('matchIndexModal');
+  const bootstrapModal = window.bootstrap?.Modal;
+  if (!modalEl || !bootstrapModal) return;
+
+  const modal = bootstrapModal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+
 function setStatus(message = '', tone = 'muted') {
   if (!els.status) return;
   els.status.textContent = message;
@@ -408,6 +423,9 @@ async function bootstrap() {
     setStatus(`Loaded match #${initialMatch.id}.`, 'success');
   } else {
     await hydrateScores();
+    if (!hasMatchQueryParam()) {
+      openMatchSelectModal();
+    }
   }
   updateOpponentName();
 
