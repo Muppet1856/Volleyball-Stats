@@ -1,5 +1,5 @@
 // js/ui/scoreModals.js (updated)
-import { state, updateState } from '../state.js';  // Add this import
+import { state, subscribe, updateState } from '../state.js';  // Add this import
 import { saveScore } from '../api/scoring.js';
 import { resetTimeoutCountdown } from './timeOut.js';
 
@@ -69,6 +69,21 @@ if (scoreGameModal) {
   scoreGameModal.addEventListener('hide.bs.modal', () => {
     resetTimeoutCountdown();
   });
+}
+
+function hideScoreModalIfFinalized() {
+  const modal = document.getElementById('scoreGameModal');
+  if (!modal || !modal.classList.contains('show')) return;
+
+  const setNumber = modal.dataset.currentSet;
+  const setState = setNumber ? state.sets?.[setNumber] : null;
+  if (!setNumber || !setState?.finalized) return;
+
+  const bootstrapModal = window.bootstrap?.Modal;
+  if (!bootstrapModal) return;
+
+  const instance = bootstrapModal.getOrCreateInstance(modal);
+  instance.hide();
 }
 
 function handleScoreChange(event) {
@@ -156,4 +171,6 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  subscribe(hideScoreModalIfFinalized);
 });

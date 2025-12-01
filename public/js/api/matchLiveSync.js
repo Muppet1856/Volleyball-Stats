@@ -8,9 +8,10 @@ import {
   upsertMatchPlayer,
   removeMatchPlayer,
 } from '../state.js';
-import { onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws.js';
+import { getMatch, onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws.js';
 import { getActiveMatchId, hydrateMatchMeta } from './matchMetaAutosave.js';
 import { hydrateScores } from './scoring.js';
+import { applyFinalizedMap } from '../ui/finalizedSets.js';
 
 const HYDRATE_DEBOUNCE_MS = 150;
 
@@ -73,6 +74,27 @@ function applyMatchResult(match) {
   if (Object.keys(next).length) {
     updateState({ matchWins: { ...state.matchWins, ...next } });
   }
+}
+
+async function syncFinalizedSets(matchId, payload = {}) {
+  const finalizedRaw = payload.finalized_sets ?? payload.finalizedSets;
+  if (finalizedRaw !== undefined) {
+    applyFinalizedMap(finalizedRaw);
+    return true;
+  }
+
+  try {
+    const response = await getMatch(matchId);
+    const finalizedMap = response?.body?.finalized_sets ?? response?.body?.finalizedSets;
+    if (finalizedMap !== undefined) {
+      applyFinalizedMap(finalizedMap);
+      return true;
+    }
+  } catch (_error) {
+    // noop
+  }
+
+  return false;
 }
 
 function normalizeScore(value) {
@@ -295,7 +317,7 @@ function applyTimeoutChanges(setId, changes) {
   return mutated || timestampChanged;
 }
 
-function handleUpdate(message) {
+async function handleUpdate(message) {
   if (!message || message.type !== 'update') return;
 
   const activeMatchId = getCurrentMatchId();
@@ -311,6 +333,12 @@ function handleUpdate(message) {
   }
 
   if (message.resource === 'set') {
+    if (message.action === 'set-is-final') {
+      await syncFinalizedSets(activeMatchId, message.data ?? message.changes ?? {});
+      scheduleScoreHydrate(activeMatchId);
+      return;
+    }
+
     const applied = applyTimeoutChanges(message.id ?? message.data?.id ?? null, message.changes ?? message.data ?? {});
     if (!applied) {
       scheduleScoreHydrate(activeMatchId);
@@ -319,6 +347,9 @@ function handleUpdate(message) {
   }
 
   if (message.resource === 'sets') {
+    if (message.action === 'set-is-final') {
+      await syncFinalizedSets(activeMatchId, message.data ?? message.changes ?? {});
+    }
     scheduleScoreHydrate(activeMatchId);
     return;
   }

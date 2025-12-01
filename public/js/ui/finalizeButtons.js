@@ -1,16 +1,25 @@
 // js/ui/finalizeButtons.js
-import { state, updateState } from '../state.js';
+import { state, subscribe, updateState } from '../state.js';
+import { getActiveMatchId } from '../api/matchMetaAutosave.js';
+import { setIsFinal } from '../api/ws.js';
+
+function syncFinalizeUiFromState() {
+  document.querySelectorAll('.finalize-button').forEach((btn) => {
+    const setNumber = btn.dataset.set;
+    const isFinalized = Boolean(state.sets?.[setNumber]?.finalized);
+
+    applyFinalizedStyles(setNumber);
+    setButtonState(btn, isFinalized);
+  });
+
+  updateSetAccess();
+}
 
 window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.finalize-button').forEach(btn => {
     const setNumber = btn.dataset.set;
-    // Initial state sync (if loaded from saved match)
-    if (state.sets[setNumber].finalized) {
-      btn.classList.add('active');
-      applyFinalizedStyles(setNumber);
-    }
 
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       // Derive desired state from our source of truth (state), not from Bootstrap's class toggling order.
       const isCurrentlyFinalized = state.sets[setNumber].finalized;
       const willFinalize = !isCurrentlyFinalized;
@@ -44,11 +53,14 @@ window.addEventListener('DOMContentLoaded', () => {
       applyFinalizedStyles(setNumber);
       updateSetAccess();  // Recompute access after change
       setButtonState(btn, state.sets[setNumber].finalized);
+
+      await persistFinalizedSets();
     });
   });
 
-  updateSetAccess();  // Initial access setup
   recalculateMatchWinsFromSets(); // Ensure totals align with any pre-finalized sets on load
+  syncFinalizeUiFromState();
+  subscribe(syncFinalizeUiFromState);
 });
 
 function updateSetAccess() {
@@ -161,6 +173,23 @@ function recalculateMatchWinsFromSets() {
     }
   }
   updateState({ matchWins: totals });
+}
+
+async function persistFinalizedSets() {
+  const matchId = getActiveMatchId() ?? state.matchId;
+  const normalized = Number(matchId);
+  if (!Number.isFinite(normalized) || normalized <= 0) return;
+
+  const finalizedSets = {};
+  for (let set = 1; set <= 5; set++) {
+    finalizedSets[set] = Boolean(state.sets?.[set]?.finalized);
+  }
+
+  try {
+    await setIsFinal(normalized, JSON.stringify(finalizedSets));
+  } catch (_err) {
+    // noop
+  }
 }
 
 function setButtonState(btn, isActive) {
