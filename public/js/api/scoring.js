@@ -14,6 +14,10 @@ const pendingCreates = new Map();
 let hydratedMatchId = null;
 let hydratePromise = null;
 
+function padScore(score) {
+  return String(score ?? 0).padStart(2, '0');
+}
+
 function normalizeMatchId(raw) {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -121,6 +125,18 @@ function applyServerSetRow(row) {
   }
   if (oppInput && oppScore !== null && oppScore !== undefined) {
     oppInput.value = oppScore;
+  }
+
+  const modal = document.getElementById('scoreGameModal');
+  if (modal && modal.classList.contains('show') && modal.dataset.currentSet === String(setNumber)) {
+    const homeDisplay = document.getElementById('scoreGameHomeDisplay');
+    const oppDisplay = document.getElementById('scoreGameOppDisplay');
+    if (homeDisplay) {
+      homeDisplay.textContent = padScore(homeScore ?? 0);
+    }
+    if (oppDisplay) {
+      oppDisplay.textContent = padScore(oppScore ?? 0);
+    }
   }
 }
 
