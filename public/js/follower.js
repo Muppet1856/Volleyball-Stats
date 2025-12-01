@@ -12,8 +12,10 @@ const TIMEOUT_DURATION_SECONDS = 60;
 
 let activeSet = 1;
 let manualSelection = null;
+let suppressedManualSelection = null;
 let countdownInterval = null;
 let countdownKey = null;
+let matchModalInstance = null;
 
 const els = {
   wsIndicator: null,
@@ -106,12 +108,37 @@ function getSetState(setNumber) {
   };
 }
 
+function hasRecordedScores(setState) {
+  if (!setState || typeof setState !== 'object') return false;
+  const homeScore = setState.scores?.home;
+  const oppScore = setState.scores?.opp;
+
+  const hasValues = homeScore !== null && homeScore !== undefined && oppScore !== null && oppScore !== undefined;
+  if (!hasValues) return false;
+
+  const homeNumber = Number(homeScore);
+  const oppNumber = Number(oppScore);
+  if (!Number.isFinite(homeNumber) || !Number.isFinite(oppNumber)) return false;
+
+  return homeNumber !== 0 || oppNumber !== 0;
+}
+
 function computePreferredSet() {
-  for (let set = 1; set <= SET_COUNT; set++) {
-    if (!state.sets?.[set]?.finalized) {
+  for (let set = SET_COUNT; set >= 1; set--) {
+    const setState = state.sets?.[set];
+    if (setState && !setState.finalized && hasRecordedScores(setState)) {
       return set;
     }
   }
+
+  for (let set = 1; set <= SET_COUNT; set++) {
+    const setState = state.sets?.[set];
+    const finalized = Boolean(setState?.finalized);
+    if (!finalized && !hasRecordedScores(setState)) {
+      return set;
+    }
+  }
+
   return SET_COUNT;
 }
 
@@ -134,11 +161,23 @@ function refreshActiveSetFromState() {
   let targetSet = manualSelection ?? fallback;
 
   if (manualSelection !== null) {
-    const manualState = getSetState(manualSelection);
+    const manualState = state.sets?.[manualSelection];
     const shouldFallback = !manualState || (manualState.finalized && fallback !== manualSelection);
     if (shouldFallback) {
+      if (manualState?.finalized) {
+        suppressedManualSelection = manualSelection;
+      } else {
+        suppressedManualSelection = null;
+      }
       manualSelection = null;
       targetSet = fallback;
+    }
+  } else if (suppressedManualSelection !== null) {
+    const suppressedState = state.sets?.[suppressedManualSelection];
+    if (suppressedState && !suppressedState.finalized) {
+      manualSelection = suppressedManualSelection;
+      suppressedManualSelection = null;
+      targetSet = manualSelection;
     }
   }
 
@@ -331,6 +370,34 @@ function handleSwapToggle() {
   renderAll();
 }
 
+function configureMatchSelectionModal({ dismissible }) {
+  const modalEl = document.getElementById('matchIndexModal');
+  const bootstrapModal = window.bootstrap?.Modal;
+  if (!modalEl || !bootstrapModal) return null;
+
+  const closeBtn = modalEl.querySelector('.btn-close');
+  if (closeBtn) {
+    closeBtn.classList.toggle('d-none', !dismissible);
+    if (dismissible) {
+      closeBtn.setAttribute('data-bs-dismiss', 'modal');
+      closeBtn.removeAttribute('aria-hidden');
+      closeBtn.removeAttribute('tabindex');
+    } else {
+      closeBtn.removeAttribute('data-bs-dismiss');
+      closeBtn.setAttribute('aria-hidden', 'true');
+      closeBtn.setAttribute('tabindex', '-1');
+    }
+  }
+
+  matchModalInstance?.dispose();
+  matchModalInstance = new bootstrapModal(modalEl, {
+    backdrop: dismissible ? true : 'static',
+    keyboard: dismissible,
+  });
+
+  return matchModalInstance;
+}
+
 function renderAll() {
   updateNames();
   updateScores();
@@ -359,6 +426,10 @@ async function bootstrap() {
 
   await connect();
   const match = await loadMatchFromUrl();
+  const modal = configureMatchSelectionModal({ dismissible: Boolean(match) });
+  if (!match) {
+    modal?.show();
+  }
   await hydrateScores(getActiveMatchId());
   initMatchLiveSync();
   refreshActiveSetFromState();
