@@ -590,6 +590,7 @@ async function bootstrap() {
   initMatchLiveSync();
   initSavedMatchesModal();
 
+  const hadMatchQueryParam = hasMatchQueryParam();
   const initialMatch = await loadMatchFromUrl();
   if (initialMatch) {
     applyFinalizedMap(initialMatch.finalized_sets ?? initialMatch.finalizedSets);
@@ -597,7 +598,10 @@ async function bootstrap() {
     setStatus(`Loaded match #${initialMatch.id}.`, 'success');
   } else {
     await hydrateScores();
-    if (!hasMatchQueryParam()) {
+    if (hadMatchQueryParam) {
+      setStatus('Could not load that match. Please select another match.', 'danger');
+      openMatchSelectModal();
+    } else if (!hasMatchQueryParam()) {
       openMatchSelectModal();
     }
   }
