@@ -16,7 +16,7 @@ import {
   setIsFinal,
 } from './api/ws.js';
 import { initMatchLiveSync } from './api/matchLiveSync.js';
-import { applyFinalizedMap, recalcMatchWins } from './finalizedSets.js';
+import { applyFinalizedMap, recalcMatchWins } from './ui/finalizedSets.js';
 import { resetTimeoutCountdown } from './ui/timeOut.js';
 import { initSavedMatchesModal } from './api/matches.js';
 import { updateOpponentName } from './ui/opponentName.js';

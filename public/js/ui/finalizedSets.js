@@ -1,6 +1,6 @@
-// js/finalizedSets.js
+// ui/finalizedSets.js
 // Shared helpers for syncing finalized sets and recalculating match wins.
-import { state, updateState } from './state.js';
+import { state, updateState } from '../state.js';
 
 const DEFAULT_SET_COUNT = 5;
 

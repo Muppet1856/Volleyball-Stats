@@ -11,7 +11,7 @@ import {
 import { getMatch, onUpdate, subscribeToMatch, unsubscribeFromMatch } from './ws.js';
 import { getActiveMatchId, hydrateMatchMeta } from './matchMetaAutosave.js';
 import { hydrateScores } from './scoring.js';
-import { applyFinalizedMap } from '../finalizedSets.js';
+import { applyFinalizedMap } from '../ui/finalizedSets.js';
 
 const HYDRATE_DEBOUNCE_MS = 150;
 
