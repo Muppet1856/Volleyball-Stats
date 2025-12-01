@@ -16,6 +16,7 @@ import {
   setIsFinal,
 } from './api/ws.js';
 import { initMatchLiveSync } from './api/matchLiveSync.js';
+import { applyFinalizedMap, recalcMatchWins } from './finalizedSets.js';
 import { resetTimeoutCountdown } from './ui/timeOut.js';
 import { initSavedMatchesModal } from './api/matches.js';
 import { updateOpponentName } from './ui/opponentName.js';
@@ -309,42 +310,6 @@ function refreshActiveSetFromState() {
   if (changed && manualSelection === null) {
     queueScrollToActiveSet({ animate: true });
   }
-}
-
-function recalcMatchWins() {
-  const totals = { home: 0, opp: 0 };
-  for (let set = 1; set <= SET_COUNT; set++) {
-    const setState = state.sets?.[set];
-    if (setState?.finalized && setState.winner) {
-      totals[setState.winner] += 1;
-    }
-  }
-  updateState({ matchWins: totals });
-}
-
-function parseFinalizedMap(raw) {
-  if (!raw) return {};
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      return typeof parsed === 'object' && parsed !== null ? parsed : {};
-    } catch (_err) {
-      return {};
-    }
-  }
-  if (typeof raw === 'object') return raw;
-  return {};
-}
-
-function applyFinalizedMap(raw) {
-  const parsed = parseFinalizedMap(raw);
-  const patch = {};
-  for (let set = 1; set <= SET_COUNT; set++) {
-    const value = parsed[set] ?? parsed[String(set)] ?? false;
-    patch[set] = { finalized: Boolean(value) };
-  }
-  updateState({ sets: patch });
-  recalcMatchWins();
 }
 
 function renderBoard() {
