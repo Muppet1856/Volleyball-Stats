@@ -1,14 +1,21 @@
 // js/ui/finalizeButtons.js
-import { state, updateState } from '../state.js';
+import { state, subscribe, updateState } from '../state.js';
+
+function syncFinalizeUiFromState() {
+  document.querySelectorAll('.finalize-button').forEach((btn) => {
+    const setNumber = btn.dataset.set;
+    const isFinalized = Boolean(state.sets?.[setNumber]?.finalized);
+
+    applyFinalizedStyles(setNumber);
+    setButtonState(btn, isFinalized);
+  });
+
+  updateSetAccess();
+}
 
 window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.finalize-button').forEach(btn => {
     const setNumber = btn.dataset.set;
-    // Initial state sync (if loaded from saved match)
-    if (state.sets[setNumber].finalized) {
-      btn.classList.add('active');
-      applyFinalizedStyles(setNumber);
-    }
 
     btn.addEventListener('click', () => {
       // Derive desired state from our source of truth (state), not from Bootstrap's class toggling order.
@@ -47,8 +54,9 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  updateSetAccess();  // Initial access setup
   recalculateMatchWinsFromSets(); // Ensure totals align with any pre-finalized sets on load
+  syncFinalizeUiFromState();
+  subscribe(syncFinalizeUiFromState);
 });
 
 function updateSetAccess() {
