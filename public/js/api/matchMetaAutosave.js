@@ -13,7 +13,7 @@ import { debouncedOpponentUpdate, updateOpponentName } from '../ui/opponentName.
 import { state, updateState, loadMatchPlayers, setMatchPlayers } from '../state.js';
 import { collectMatchPayload } from './matchPayload.js';
 import { createMatch, getMatch } from './ws.js';
-import { updateUrlWithMatchId } from './matchUrl.js';
+import { removeMatchParamsFromUrl, updateUrlWithMatchId } from './matchUrl.js';
 import { setAutoSaveStatus } from '../ui/autoSaveStatus.js';
 
 function coerceMatchId(raw) {
@@ -324,9 +324,16 @@ export async function loadMatchFromUrl() {
     return null;
   }
 
+  const clearActiveMatch = () => {
+    setActiveMatchId(null);
+    removeMatchParamsFromUrl();
+    setMatchPlayers([]);
+  };
+
   try {
     const response = await getMatch(matchId);
     if (!response || response.status >= 300 || !response.body) {
+      clearActiveMatch();
       return null;
     }
     const match = response.body;
@@ -338,6 +345,7 @@ export async function loadMatchFromUrl() {
     loadMatchPlayers(mergedPlayers);
     return match;
   } catch (_error) {
+    clearActiveMatch();
     return null;
   }
 }
