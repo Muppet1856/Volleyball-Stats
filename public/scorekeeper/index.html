@@ -88,7 +88,17 @@
 
     <section class="scorekeeper-card scorekeeper-board">
       <div class="d-flex flex-column align-items-center gap-3 mb-3 text-center">
-        <button type="button" class="btn btn-success" id="finalizeSetBtn">Finalize set</button>
+        <button
+          type="button"
+          class="btn btn-success"
+          id="finalizeSetBtn"
+          data-bs-toggle="popover"
+          data-bs-placement="top"
+          data-bs-trigger="manual"
+          data-bs-content="Scores must differ to finalize the set."
+        >
+          Finalize set
+        </button>
       </div>
 
       <div id="scoreGameModal" class="score-modal" data-current-set="1">
