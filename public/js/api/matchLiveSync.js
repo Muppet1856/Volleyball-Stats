@@ -333,6 +333,12 @@ async function handleUpdate(message) {
   }
 
   if (message.resource === 'set') {
+    if (message.action === 'set-is-final') {
+      await syncFinalizedSets(activeMatchId, message.data ?? message.changes ?? {});
+      scheduleScoreHydrate(activeMatchId);
+      return;
+    }
+
     const applied = applyTimeoutChanges(message.id ?? message.data?.id ?? null, message.changes ?? message.data ?? {});
     if (!applied) {
       scheduleScoreHydrate(activeMatchId);
