@@ -7,6 +7,10 @@ const MODAL_ID = 'matchIndexModal';
 const CONFIRM_MODAL_ID = 'confirmDeleteModal';
 const CONFIRM_MESSAGE_ID = 'confirmDeleteModalMessage';
 const CONFIRM_BUTTON_ID = 'confirmDeleteModalConfirmBtn';
+const modalOptions = {
+  readOnly: false,
+  basePath: null,
+};
 
 let isLoading = false;
 let modalIsOpen = false;
@@ -144,6 +148,12 @@ function confirmDelete(message) {
 }
 
 function buildActions(match) {
+  if (modalOptions.readOnly) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'match-list-actions';
+    return placeholder;
+  }
+
   const matchId = getMatchId(match);
   const actions = document.createElement('div');
   actions.className = 'btn-group btn-group-sm flex-wrap';
@@ -199,7 +209,7 @@ function renderMatches(matches) {
     if (canLoad) {
       item.classList.add('match-list-link');
       item.tabIndex = 0;
-      const basePath = window.location.pathname || '/';
+      const basePath = modalOptions.basePath || window.location.pathname || '/';
       const navigateToMatch = () => {
         window.location.href = `${basePath}?match=${encodeURIComponent(id)}`;
       };
@@ -258,7 +268,9 @@ function scheduleRefresh() {
   refreshTimer = setTimeout(refreshMatches, 200);
 }
 
-export function initSavedMatchesModal() {
+export function initSavedMatchesModal(options = {}) {
+  Object.assign(modalOptions, options);
+
   const modal = document.getElementById(MODAL_ID);
   const body = getMatchListBody();
   if (!modal || !body) return;
