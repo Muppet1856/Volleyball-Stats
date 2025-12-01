@@ -4,12 +4,37 @@
 // and resolves with the parsed response from the Worker.
 
 const DEFAULT_WS_PATH = '/ws';
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_BASE_DELAY = 300;
+const RECONNECT_MAX_DELAY = 5000;
 
 let socket = null;
 let socketReadyPromise = null;
+let socketReadyResolve = null;
+let socketReadyReject = null;
 const pendingRequests = new Set();
 const updateListeners = new Set();
 const deleteListeners = new Set();
+const reconnectingListeners = new Set();
+const reconnectedListeners = new Set();
+const activeSubscriptions = new Set();
+
+let reconnectAttempts = 0;
+let reconnecting = false;
+let reconnectTimeout = null;
+let lastUrl = null;
+
+function createReadyPromise() {
+  socketReadyPromise = new Promise((resolve, reject) => {
+    socketReadyResolve = resolve;
+    socketReadyReject = reject;
+  });
+  return socketReadyPromise;
+}
+
+function notify(listeners) {
+  listeners.forEach((listener) => listener());
+}
 
 function getWsUrl() {
   if (typeof window === 'undefined') return DEFAULT_WS_PATH;
@@ -19,15 +44,71 @@ function getWsUrl() {
   return `${wsProtocol}//${host}${DEFAULT_WS_PATH}`;
 }
 
-function ensureSocket(url = getWsUrl()) {
-  if (socket && socket.readyState <= 1) {
-    return socketReadyPromise;
+function resubscribeActive() {
+  activeSubscriptions.forEach((matchId) => {
+    sendRequest('match', 'subscribe', { matchId }).catch(() => {
+      // Ignore failures; pending reconnection logic will retry if needed
+    });
+  });
+}
+
+function resetReconnectState() {
+  reconnectAttempts = 0;
+  reconnecting = false;
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+}
+
+function scheduleReconnect(url = lastUrl || getWsUrl()) {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
   }
 
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    if (socketReadyReject) {
+      socketReadyReject(new Error('Maximum reconnect attempts reached'));
+    }
+    reconnecting = false;
+    return;
+  }
+
+  reconnecting = true;
+  if (reconnectAttempts === 0) {
+    notify(reconnectingListeners);
+  }
+
+  reconnectAttempts += 1;
+  const delay = Math.min(RECONNECT_BASE_DELAY * 2 ** (reconnectAttempts - 1), RECONNECT_MAX_DELAY);
+  createReadyPromise();
+  reconnectTimeout = setTimeout(() => connectSocket(url), delay);
+}
+
+function connectSocket(url = getWsUrl()) {
+  lastUrl = url;
   socket = new WebSocket(url);
-  socketReadyPromise = new Promise((resolve, reject) => {
-    socket.addEventListener('open', () => resolve(socket));
-    socket.addEventListener('error', reject);
+
+  if (!socketReadyPromise) {
+    createReadyPromise();
+  }
+
+  socket.addEventListener('open', () => {
+    const wasReconnecting = reconnecting;
+    resetReconnectState();
+    socketReadyResolve(socket);
+    if (wasReconnecting) {
+      notify(reconnectedListeners);
+      resubscribeActive();
+    }
+  });
+
+  socket.addEventListener('error', (event) => {
+    if (socketReadyReject) {
+      socketReadyReject(event);
+    }
+    scheduleReconnect(url);
   });
 
   socket.addEventListener('message', (event) => {
@@ -37,9 +118,21 @@ function ensureSocket(url = getWsUrl()) {
   socket.addEventListener('close', () => {
     pendingRequests.forEach(({ reject }) => reject(new Error('WebSocket closed')));
     pendingRequests.clear();
+    if (socketReadyReject) {
+      socketReadyReject(new Error('WebSocket closed'));
+    }
+    scheduleReconnect(url);
   });
 
   return socketReadyPromise;
+}
+
+function ensureSocket(url = getWsUrl()) {
+  if (socket && socket.readyState <= 1) {
+    return socketReadyPromise;
+  }
+
+  return connectSocket(url);
 }
 
 function handleIncoming(data) {
@@ -121,8 +214,17 @@ export const setMatchOppColor = (matchId, jerseyColorOpp) =>
 export const setMatchFirstServer = (matchId, firstServer) =>
   sendRequest('match', 'set-first-server', { matchId, firstServer });
 export const setMatchDeleted = (matchId, deleted) => sendRequest('match', 'set-deleted', { matchId, deleted });
-export const subscribeToMatch = (matchId) => sendRequest('match', 'subscribe', { matchId });
-export const unsubscribeFromMatch = (matchId) => sendRequest('match', 'unsubscribe', { matchId });
+export const subscribeToMatch = (matchId) => {
+  activeSubscriptions.add(matchId);
+  return sendRequest('match', 'subscribe', { matchId }).catch((err) => {
+    activeSubscriptions.delete(matchId);
+    throw err;
+  });
+};
+export const unsubscribeFromMatch = (matchId) => {
+  activeSubscriptions.delete(matchId);
+  return sendRequest('match', 'unsubscribe', { matchId });
+};
 export const getMatch = (matchId) => sendRequest('match', 'get', { matchId });
 export const getMatches = () => sendRequest('match', 'get', {});
 export const deleteMatch = (id) => sendRequest('match', 'delete', { id });
@@ -156,10 +258,22 @@ export function connect(url) {
   return ensureSocket(url);
 }
 
+export function onReconnecting(listener) {
+  reconnectingListeners.add(listener);
+  return () => reconnectingListeners.delete(listener);
+}
+
+export function onReconnected(listener) {
+  reconnectedListeners.add(listener);
+  return () => reconnectedListeners.delete(listener);
+}
+
 export default {
   connect,
   onUpdate,
   onDelete,
+  onReconnecting,
+  onReconnected,
   // Matches
   createMatch,
   setMatchLocation,
