@@ -289,6 +289,11 @@ export function getConnectionState() {
   return connectionState;
 }
 
+export function restartConnection(url = lastUrl || getWsUrl()) {
+  resetReconnectState();
+  scheduleReconnect(url);
+}
+
 export default {
   connect,
   onUpdate,
@@ -297,6 +302,7 @@ export default {
   onReconnected,
   onConnectionStateChange,
   getConnectionState,
+  restartConnection,
   // Matches
   createMatch,
   setMatchLocation,
