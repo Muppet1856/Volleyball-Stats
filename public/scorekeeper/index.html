@@ -39,6 +39,18 @@
 </head>
   <body class="scorekeeper-page">
   <div class="scorekeeper-shell">
+    <div
+      id="wsConnectionIndicator"
+      class="ws-connection-indicator"
+      role="status"
+      aria-live="polite"
+      aria-label="WebSocket connection status"
+    >
+      <span class="ws-indicator-icon text-danger pulse" aria-hidden="true">
+        <i class="bi bi-dash-circle"></i>
+      </span>
+      <span class="ws-indicator-label">Disconnected</span>
+    </div>
     <div class="scorekeeper-top d-flex flex-column align-items-center gap-2 mb-3 text-center">
       <button
         type="button"
@@ -52,10 +64,6 @@
     </div>
 
     <section class="scorekeeper-card mb-3">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="mb-0">Sets</h6>
-        <span class="text-muted small">Swipe the wheel or tap a set</span>
-      </div>
       <div class="set-carousel" aria-label="Set selector">
         <button
           type="button"
@@ -76,7 +84,6 @@
         >
           <i class="bi bi-chevron-right"></i>
         </button>
-        <div class="set-carousel-hint text-muted small text-center mt-2">Swipe left or right to pick a set</div>
       </div>
     </section>
 

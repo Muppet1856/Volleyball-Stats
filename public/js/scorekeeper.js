@@ -8,7 +8,13 @@ import {
   getActiveMatchId,
 } from './api/matchMetaAutosave.js';
 import { hydrateScores, saveScore } from './api/scoring.js';
-import { getMatch, setIsFinal } from './api/ws.js';
+import {
+  connect,
+  getConnectionState,
+  getMatch,
+  onConnectionStateChange,
+  setIsFinal,
+} from './api/ws.js';
 import { initMatchLiveSync } from './api/matchLiveSync.js';
 import { resetTimeoutCountdown } from './ui/timeOut.js';
 import { initSavedMatchesModal } from './api/matches.js';
@@ -48,6 +54,7 @@ const els = {
   homeName: null,
   oppName: null,
   modalSwapBtn: null,
+  wsIndicator: null,
 };
 
 function cacheElements() {
@@ -64,6 +71,7 @@ function cacheElements() {
   els.homeName = document.getElementById('scorekeeperHomeName');
   els.oppName = document.getElementById('scorekeeperOppName');
   els.modalSwapBtn = document.getElementById('scoreModalSwapBtn');
+  els.wsIndicator = document.getElementById('wsConnectionIndicator');
 }
 
 function hasMatchQueryParam() {
@@ -87,6 +95,41 @@ function setStatus(message = '', tone = 'muted') {
   els.status.classList.remove('text-muted', 'text-success', 'text-danger');
   const toneClass = tone === 'success' ? 'text-success' : tone === 'danger' ? 'text-danger' : 'text-muted';
   els.status.classList.add(toneClass);
+}
+
+function setWsIndicator(state = 'disconnected') {
+  if (!els.wsIndicator) return;
+  const iconWrapper = els.wsIndicator.querySelector('.ws-indicator-icon');
+  const icon = iconWrapper?.querySelector('i');
+  const label = els.wsIndicator.querySelector('.ws-indicator-label');
+
+  els.wsIndicator.classList.remove('status-connected', 'status-reconnecting', 'status-disconnected');
+  els.wsIndicator.classList.add(`status-${state}`);
+
+  if (iconWrapper) {
+    iconWrapper.classList.remove('spin', 'pulse', 'text-danger', 'text-warning', 'text-success');
+  }
+  if (icon) {
+    icon.className = 'bi';
+  }
+
+  switch (state) {
+    case 'connected':
+      iconWrapper?.classList.add('pulse');
+      icon?.classList.add('bi-arrow-left-right');
+      if (label) label.textContent = 'Connected';
+      break;
+    case 'reconnecting':
+      iconWrapper?.classList.add('spin');
+      icon?.classList.add('bi-arrow-repeat');
+      if (label) label.textContent = 'Retrying...';
+      break;
+    default:
+      iconWrapper?.classList.add('pulse');
+      icon?.classList.add('bi-dash-circle');
+      if (label) label.textContent = 'Disconnected';
+      break;
+  }
 }
 
 function padScore(score) {
@@ -499,6 +542,9 @@ async function loadMatch(matchId, { forceScores = false } = {}) {
 
 async function bootstrap() {
   cacheElements();
+  setWsIndicator(getConnectionState());
+  onConnectionStateChange(setWsIndicator);
+  connect().catch(() => setWsIndicator('disconnected'));
   wireScoreZones();
   if (els.finalizeBtn) {
     els.finalizeBtn.addEventListener('click', handleFinalizeClick);
