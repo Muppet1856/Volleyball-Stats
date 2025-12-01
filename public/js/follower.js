@@ -108,17 +108,25 @@ function getSetState(setNumber) {
   };
 }
 
-function hasNonNullScores(setState) {
+function hasRecordedScores(setState) {
   if (!setState || typeof setState !== 'object') return false;
   const homeScore = setState.scores?.home;
   const oppScore = setState.scores?.opp;
-  return homeScore !== null && homeScore !== undefined && oppScore !== null && oppScore !== undefined;
+
+  const hasValues = homeScore !== null && homeScore !== undefined && oppScore !== null && oppScore !== undefined;
+  if (!hasValues) return false;
+
+  const homeNumber = Number(homeScore);
+  const oppNumber = Number(oppScore);
+  if (!Number.isFinite(homeNumber) || !Number.isFinite(oppNumber)) return false;
+
+  return homeNumber !== 0 || oppNumber !== 0;
 }
 
 function computePreferredSet() {
   for (let set = SET_COUNT; set >= 1; set--) {
     const setState = state.sets?.[set];
-    if (setState && !setState.finalized && hasNonNullScores(setState)) {
+    if (setState && !setState.finalized && hasRecordedScores(setState)) {
       return set;
     }
   }
@@ -126,7 +134,7 @@ function computePreferredSet() {
   for (let set = 1; set <= SET_COUNT; set++) {
     const setState = state.sets?.[set];
     const finalized = Boolean(setState?.finalized);
-    if (!finalized && !hasNonNullScores(setState)) {
+    if (!finalized && !hasRecordedScores(setState)) {
       return set;
     }
   }
