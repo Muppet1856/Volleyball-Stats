@@ -37,7 +37,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link rel="stylesheet" href="../css/volleyball_stats.css">
 </head>
-  <body class="scorekeeper-page">
+<body class="scorekeeper-page">
   <div class="scorekeeper-shell">
     <div
       id="wsConnectionIndicator"
@@ -51,7 +51,64 @@
       </span>
       <span class="ws-indicator-label">Disconnected</span>
     </div>
-    <div class="scorekeeper-top d-flex flex-column align-items-center gap-2 mb-3 text-center">
+    <div class="scorekeeper-top d-flex flex-column align-items-center gap-2 mb-3 text-center position-relative w-100">
+      <div class="scorekeeper-menu position-absolute top-0 end-0">
+        <div class="accordion accordion-flush" id="scorekeeperMenu">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="scorekeeperMenuHeading">
+              <button
+                type="button"
+                id="scorekeeperMenuToggle"
+                class="accordion-button collapsed scorekeeper-menu-toggle btn btn-outline-secondary p-2"
+                aria-expanded="false"
+                aria-controls="scorekeeperMenuCollapse"
+                aria-label="Toggle scorekeeper menu"
+              >
+                <i class="bi bi-list" aria-hidden="true"></i>
+                <span class="visually-hidden">Open scorekeeper menu</span>
+              </button>
+            </h2>
+            <div
+              id="scorekeeperMenuCollapse"
+              class="accordion-collapse collapse"
+              aria-labelledby="scorekeeperMenuHeading"
+              data-bs-parent="#scorekeeperMenu"
+            >
+              <div class="accordion-body pt-3 pb-2">
+                <div id="scorekeeperStatus" class="scorekeeper-status text-muted small mb-3"></div>
+                <section class="scorekeeper-card mb-0">
+                  <div class="set-carousel" aria-label="Set selector">
+                    <button
+                      type="button"
+                      class="set-carousel-nav btn btn-outline-secondary"
+                      id="setCarouselPrev"
+                      aria-label="Previous set"
+                    >
+                      <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <div class="set-carousel-viewport" id="setCarouselViewport">
+                      <div
+                        id="setCarouselTrack"
+                        class="set-carousel-track"
+                        role="listbox"
+                        aria-label="Swipe to choose a set"
+                      ></div>
+                    </div>
+                    <button
+                      type="button"
+                      class="set-carousel-nav btn btn-outline-secondary"
+                      id="setCarouselNext"
+                      aria-label="Next set"
+                    >
+                      <i class="bi bi-chevron-right"></i>
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <button
         type="button"
         class="btn btn-outline-secondary"
@@ -60,32 +117,7 @@
       >
         Select Match
       </button>
-      <div id="scorekeeperStatus" class="scorekeeper-status text-muted small"></div>
     </div>
-
-    <section class="scorekeeper-card mb-3">
-      <div class="set-carousel" aria-label="Set selector">
-        <button
-          type="button"
-          class="set-carousel-nav btn btn-outline-secondary"
-          id="setCarouselPrev"
-          aria-label="Previous set"
-        >
-          <i class="bi bi-chevron-left"></i>
-        </button>
-        <div class="set-carousel-viewport" id="setCarouselViewport">
-          <div id="setCarouselTrack" class="set-carousel-track" role="listbox" aria-label="Swipe to choose a set"></div>
-        </div>
-        <button
-          type="button"
-          class="set-carousel-nav btn btn-outline-secondary"
-          id="setCarouselNext"
-          aria-label="Next set"
-        >
-          <i class="bi bi-chevron-right"></i>
-        </button>
-      </div>
-    </section>
 
     <section class="scorekeeper-card scorekeeper-board">
       <div class="d-flex flex-column align-items-center gap-3 mb-3 text-center">

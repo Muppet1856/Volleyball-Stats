@@ -40,6 +40,8 @@ let manualSelection = null;
 let isBootstrapping = true;
 let carouselScrollTimeout = null;
 let pendingCarouselScrollOptions = null;
+let menuCollapseInstance = null;
+let menuCollapseTimeout = null;
 
 const els = {
   status: null,
@@ -56,6 +58,8 @@ const els = {
   oppName: null,
   modalSwapBtn: null,
   wsIndicator: null,
+  menuToggle: null,
+  menuCollapse: null,
 };
 
 function cacheElements() {
@@ -73,6 +77,8 @@ function cacheElements() {
   els.oppName = document.getElementById('scorekeeperOppName');
   els.modalSwapBtn = document.getElementById('scoreModalSwapBtn');
   els.wsIndicator = document.getElementById('wsConnectionIndicator');
+  els.menuToggle = document.getElementById('scorekeeperMenuToggle');
+  els.menuCollapse = document.getElementById('scorekeeperMenuCollapse');
 }
 
 function hasMatchQueryParam() {
@@ -96,6 +102,67 @@ function setStatus(message = '', tone = 'muted') {
   els.status.classList.remove('text-muted', 'text-success', 'text-danger');
   const toneClass = tone === 'success' ? 'text-success' : tone === 'danger' ? 'text-danger' : 'text-muted';
   els.status.classList.add(toneClass);
+}
+
+function toggleMenuAccordion() {
+  if (!menuCollapseInstance || !els.menuCollapse) return;
+  const isExpanded = els.menuCollapse.classList.contains('show');
+  if (isExpanded) {
+    menuCollapseInstance.hide();
+  } else {
+    menuCollapseInstance.show();
+  }
+}
+
+function initMenuAccordion() {
+  if (!els.menuToggle || !els.menuCollapse) return;
+  const Collapse = window.bootstrap?.Collapse;
+  if (!Collapse) return;
+
+  menuCollapseInstance = Collapse.getOrCreateInstance(els.menuCollapse, { toggle: false });
+
+  const clearMenuCollapseTimer = () => {
+    if (menuCollapseTimeout) {
+      window.clearTimeout(menuCollapseTimeout);
+      menuCollapseTimeout = null;
+    }
+  };
+
+  const syncExpanded = () => {
+    const expanded = els.menuCollapse.classList.contains('show');
+    els.menuToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  };
+
+  els.menuToggle.addEventListener('click', (event) => {
+    event.preventDefault();
+    toggleMenuAccordion();
+  });
+
+  els.menuToggle.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleMenuAccordion();
+    }
+  });
+
+  els.menuCollapse.addEventListener('show.bs.collapse', clearMenuCollapseTimer);
+  els.menuCollapse.addEventListener('shown.bs.collapse', syncExpanded);
+  els.menuCollapse.addEventListener('hidden.bs.collapse', () => {
+    clearMenuCollapseTimer();
+    syncExpanded();
+  });
+  syncExpanded();
+}
+
+function scheduleMenuCollapse(delayMs = 5000) {
+  if (!menuCollapseInstance || !els.menuCollapse?.classList.contains('show')) return;
+  if (menuCollapseTimeout) {
+    window.clearTimeout(menuCollapseTimeout);
+  }
+  menuCollapseTimeout = window.setTimeout(() => {
+    menuCollapseInstance?.hide();
+    menuCollapseTimeout = null;
+  }, delayMs);
 }
 
 function setWsIndicator(state = 'disconnected') {
@@ -471,8 +538,9 @@ function handleSetCarouselClick(event) {
   if (!button) return;
   const setNumber = normalizeSetNumber(button.dataset.set);
   if (!setNumber) return;
-  updateActiveSet(setNumber, { manual: true });
+  const changed = updateActiveSet(setNumber, { manual: true });
   rerenderAndCenterSet();
+  if (changed) scheduleMenuCollapse();
 }
 
 function handleSetCarouselScroll() {
@@ -490,19 +558,21 @@ function handleSetCarouselScroll() {
       syncCarouselActiveState();
       return;
     }
-    updateActiveSet(setNumber, { manual: true });
+    const changed = updateActiveSet(setNumber, { manual: true });
     renderAll();
     if (loopIndex !== MIDDLE_LOOP_INDEX) {
       requestAnimationFrame(() => scrollToSet(setNumber, { animate: false }));
     }
+    if (changed) scheduleMenuCollapse();
   }, 120);
 }
 
 function handleCarouselNav(direction) {
   const nextSet = normalizeSetNumber(((activeSet - 1 + direction + SET_COUNT) % SET_COUNT) + 1);
   if (!nextSet) return;
-  updateActiveSet(nextSet, { manual: true });
+  const changed = updateActiveSet(nextSet, { manual: true });
   rerenderAndCenterSet();
+  if (changed) scheduleMenuCollapse();
 }
 
 function handleScoreZone(event) {
@@ -557,6 +627,7 @@ async function loadMatch(matchId, { forceScores = false } = {}) {
 
 async function bootstrap() {
   cacheElements();
+  initMenuAccordion();
   setWsIndicator(getConnectionState());
   onConnectionStateChange(setWsIndicator);
   connect().catch(() => setWsIndicator('disconnected'));

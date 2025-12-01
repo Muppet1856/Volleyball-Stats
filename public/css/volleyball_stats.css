@@ -743,7 +743,7 @@ body.score-modal-open {
   position: relative;
 }
 
-.ws-connection-indicator {
+.ws-connection-indicator { 
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
@@ -756,6 +756,27 @@ body.score-modal-open {
   box-shadow: 0 0.35rem 1.1rem rgba(0, 0, 0, 0.08);
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+.scorekeeper-menu {
+  z-index: 2;
+  width: min(440px, 94vw);
+}
+
+.scorekeeper-menu .accordion-item {
+  border: 0;
+  background-color: transparent;
+}
+
+.scorekeeper-menu-toggle {
+  width: auto;
+  min-width: 0;
+  border-radius: 0.75rem;
+  box-shadow: 0 0.35rem 1.1rem rgba(0, 0, 0, 0.08);
+}
+
+.scorekeeper-menu-toggle::after {
+  display: none;
 }
 
 .ws-connection-indicator .ws-indicator-icon {
