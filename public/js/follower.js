@@ -123,9 +123,10 @@ function computePreferredSet() {
     }
   }
 
-  for (let set = SET_COUNT; set >= 1; set--) {
+  for (let set = 1; set <= SET_COUNT; set++) {
     const setState = state.sets?.[set];
-    if (setState && !setState.finalized) {
+    const finalized = Boolean(setState?.finalized);
+    if (!finalized && !hasNonNullScores(setState)) {
       return set;
     }
   }
