@@ -739,6 +739,72 @@ body.score-modal-open {
   margin-top: 1.5rem;
 }
 
+.scorekeeper-shell {
+  position: relative;
+}
+
+.ws-connection-indicator {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background-color: var(--bs-body-bg, #fff);
+  box-shadow: 0 0.35rem 1.1rem rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.ws-connection-indicator .ws-indicator-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ws-connection-indicator .ws-indicator-icon.spin {
+  animation: ws-spin 1s linear infinite;
+}
+
+.ws-connection-indicator .ws-indicator-icon.pulse {
+  animation: ws-pulse 1.4s ease-in-out infinite;
+}
+
+.ws-connection-indicator.status-disconnected {
+  color: var(--bs-danger);
+}
+
+.ws-connection-indicator.status-reconnecting {
+  color: var(--bs-warning);
+}
+
+.ws-connection-indicator.status-connected {
+  color: var(--bs-success);
+}
+
+@keyframes ws-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes ws-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .set-carousel {
   position: relative;
   display: flex;
@@ -808,7 +874,7 @@ body.score-modal-open {
   min-width: 180px;
   max-width: 240px;
   border-radius: 0.85rem;
-  padding: 0.9rem 1.1rem;
+  padding: 0.65rem 0.95rem;
   border: 1px solid var(--bs-border-color, #dee2e6);
   background-color: var(--bs-body-bg, #fff);
   color: inherit;

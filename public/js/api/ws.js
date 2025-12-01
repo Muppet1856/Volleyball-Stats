@@ -17,12 +17,14 @@ const updateListeners = new Set();
 const deleteListeners = new Set();
 const reconnectingListeners = new Set();
 const reconnectedListeners = new Set();
+const connectionStateListeners = new Set();
 const activeSubscriptions = new Set();
 
 let reconnectAttempts = 0;
 let reconnecting = false;
 let reconnectTimeout = null;
 let lastUrl = null;
+let connectionState = 'disconnected';
 
 function createReadyPromise() {
   socketReadyPromise = new Promise((resolve, reject) => {
@@ -34,6 +36,12 @@ function createReadyPromise() {
 
 function notify(listeners) {
   listeners.forEach((listener) => listener());
+}
+
+function setConnectionState(state) {
+  if (connectionState === state) return;
+  connectionState = state;
+  connectionStateListeners.forEach((listener) => listener(state));
 }
 
 function getWsUrl() {
@@ -72,6 +80,7 @@ function scheduleReconnect(url = lastUrl || getWsUrl()) {
       socketReadyReject(new Error('Maximum reconnect attempts reached'));
     }
     reconnecting = false;
+    setConnectionState('disconnected');
     return;
   }
 
@@ -79,6 +88,7 @@ function scheduleReconnect(url = lastUrl || getWsUrl()) {
   if (reconnectAttempts === 0) {
     notify(reconnectingListeners);
   }
+  setConnectionState('reconnecting');
 
   reconnectAttempts += 1;
   const delay = Math.min(RECONNECT_BASE_DELAY * 2 ** (reconnectAttempts - 1), RECONNECT_MAX_DELAY);
@@ -88,6 +98,7 @@ function scheduleReconnect(url = lastUrl || getWsUrl()) {
 
 function connectSocket(url = getWsUrl()) {
   lastUrl = url;
+  setConnectionState('reconnecting');
   socket = new WebSocket(url);
 
   if (!socketReadyPromise) {
@@ -98,6 +109,7 @@ function connectSocket(url = getWsUrl()) {
     const wasReconnecting = reconnecting;
     resetReconnectState();
     socketReadyResolve(socket);
+    setConnectionState('connected');
     if (wasReconnecting) {
       notify(reconnectedListeners);
       resubscribeActive();
@@ -268,12 +280,23 @@ export function onReconnected(listener) {
   return () => reconnectedListeners.delete(listener);
 }
 
+export function onConnectionStateChange(listener) {
+  connectionStateListeners.add(listener);
+  return () => connectionStateListeners.delete(listener);
+}
+
+export function getConnectionState() {
+  return connectionState;
+}
+
 export default {
   connect,
   onUpdate,
   onDelete,
   onReconnecting,
   onReconnected,
+  onConnectionStateChange,
+  getConnectionState,
   // Matches
   createMatch,
   setMatchLocation,
