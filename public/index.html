@@ -66,9 +66,32 @@
 </div>
 <form id="matchForm" class="needs-validation" novalidate>
   <div class="container mt-4">
-    <div class="section mb-3 d-flex flex-wrap gap-2">
+    <div class="section mb-4 d-flex flex-wrap align-items-center gap-2">
       <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matchIndexModal">Saved Matches</button>
       <button type="button" class="btn btn-outline-success" id="newGameButton">New Game</button>
+      <div id="shareControls" class="ms-auto d-none d-flex flex-column align-items-end gap-1">
+        <div class="d-flex align-items-center justify-content-end gap-2 flex-wrap">
+          <div class="dropdown">
+            <button class="btn btn-outline-primary dropdown-toggle" type="button" id="scorekeeperShareDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+              Scorekeeper
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="scorekeeperShareDropdown">
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="scorekeeper" data-action="share">Share link</button></li>
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="scorekeeper" data-action="copy">Copy link</button></li>
+            </ul>
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="followerShareDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+              Follow Along
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="followerShareDropdown">
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="follower" data-action="share">Share link</button></li>
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="follower" data-action="copy">Copy link</button></li>
+            </ul>
+          </div>
+        </div>
+        <div id="shareStatusMessage" class="text-muted small text-end" aria-live="polite"></div>
+      </div>
     </div>
     <div class="accordion mb-3" id="gameInfoAccordion">
       <div class="accordion-item">
