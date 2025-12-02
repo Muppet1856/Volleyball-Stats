@@ -70,6 +70,41 @@
       <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matchIndexModal">Saved Matches</button>
       <button type="button" class="btn btn-outline-success" id="newGameButton">New Game</button>
     </div>
+    <div id="shareControls" class="section mb-4 d-none">
+      <h2 class="h5 mb-2">Share &amp; Control</h2>
+      <p class="text-muted small mb-2">Send these links to collaborate or share live score updates.</p>
+      <div class="d-flex flex-column gap-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+            <span class="badge text-bg-primary">Scorekeeper</span>
+            <a id="scorekeeperLink" class="link-primary text-break" target="_blank" rel="noopener">Match link unavailable</a>
+          </div>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Scorekeeper link actions">
+            <button type="button" class="btn btn-outline-secondary share-control-btn" data-link-type="scorekeeper" data-action="share">
+              Share
+            </button>
+            <button type="button" class="btn btn-outline-secondary share-control-btn" data-link-type="scorekeeper" data-action="copy">
+              Copy
+            </button>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+            <span class="badge text-bg-info">Follower</span>
+            <a id="followerLink" class="link-primary text-break" target="_blank" rel="noopener">Match link unavailable</a>
+          </div>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Follower link actions">
+            <button type="button" class="btn btn-outline-secondary share-control-btn" data-link-type="follower" data-action="share">
+              Share
+            </button>
+            <button type="button" class="btn btn-outline-secondary share-control-btn" data-link-type="follower" data-action="copy">
+              Copy
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="shareStatusMessage" class="text-muted small mt-1" aria-live="polite"></div>
+    </div>
     <div class="accordion mb-3" id="gameInfoAccordion">
       <div class="accordion-item">
         <h2 class="accordion-header" id="headingGameInfo">
