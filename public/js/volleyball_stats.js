@@ -14,6 +14,7 @@ import './ui/finalizeButtons.js';
 import './ui/resultSummary.js';  // New import to load the result summary logic
 import './ui/players.js';
 import './ui/shareControls.js';
+import './ui/share.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   await initializeHomeTeam();
