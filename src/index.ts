@@ -25,6 +25,10 @@ export interface Env {
   HOME_TEAM?: string;
 }
 
+const BROADCAST_EVENT_TIMESTAMP_ACTIONS: Record<string, ReadonlySet<string>> = {
+  set: new Set(['set-home-score', 'set-opp-score', 'set-home-timeout', 'set-opp-timeout']),
+};
+
 /* -------------------------------------------------
    Durable Object – holds the SQLite DB
    ------------------------------------------------- */
@@ -46,6 +50,8 @@ export class MatchState {
     initMatchTable(sql);
     initPlayerTable(sql);
     initSetTable(sql);
+
+    this.restoreSubscriptionsFromAttachments();
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -69,13 +75,17 @@ export class MatchState {
       // Accept the WebSocket with clientId as tag
       this.state.acceptWebSocket(server, [clientId]);
 
+      // Persist base attachment so subscriptions survive hibernation
+      this.matchSubscriptions.set(clientId, new Set());
+      this.persistSubscriptionAttachment(server, clientId, new Set());
+
       // Send debug message if enabled (no initial data dump)
       if (this.isDebug) {
         const sql = this.state.storage.sql;
         const cursor = sql.exec('SELECT COUNT(*) FROM matches');
         const count = cursor.next().value['COUNT(*)'];
-        server.send(`Debug: ${count} matches in DB`);
-        server.send(`Debug: New client connected: ${clientId}`);
+        server.send(JSON.stringify({ debug: `${count} matches in DB` }));
+        server.send(JSON.stringify({ debug: `New client connected: ${clientId}` }));
       }
 
       return new Response(null, { status: 101, webSocket: client });
@@ -424,6 +434,7 @@ export class MatchState {
       const created = await this.getUpdated(resource, id);
       const payload: any = { type: 'update', resource, action, id, data: created };
       if (matchId !== undefined) payload.matchId = matchId;
+      this.maybeStampBroadcast(payload, resource, action);
       return JSON.stringify(payload);
     }
 
@@ -437,6 +448,7 @@ export class MatchState {
 
     const payload: any = { type: 'update', resource, action, id, changes: prunedChanges };
     if (matchId !== undefined) payload.matchId = matchId;
+    this.maybeStampBroadcast(payload, resource, action);
     return JSON.stringify(payload);
   }
 
@@ -658,6 +670,13 @@ export class MatchState {
     return new Date().toISOString();
   }
 
+  private maybeStampBroadcast(payload: any, resource: string, action: string): void {
+    const actions = BROADCAST_EVENT_TIMESTAMP_ACTIONS[resource];
+    if (actions?.has(action)) {
+      payload.eventTimestamp = new Date().toISOString();
+    }
+  }
+
   private parseJsonMaybe(raw: any): any {
     if (typeof raw === "string") {
       try {
@@ -715,14 +734,94 @@ export class MatchState {
     return { player_id: playerId, deleted: true };
   }
 
+  private restoreSubscriptionsFromAttachments(): void {
+    const sockets = this.state.getWebSockets ? this.state.getWebSockets() : [];
+    for (const socket of sockets) {
+      const clientId = this.getClientId(socket);
+      if (!clientId) continue;
+      const restored = this.extractMatchIdsFromAttachment(socket);
+      if (restored) {
+        this.matchSubscriptions.set(clientId, restored);
+      }
+    }
+  }
+
+  private safeDeserializeAttachment(ws: WebSocket): any | null {
+    const socketAny = ws as any;
+    if (!socketAny || typeof socketAny.deserializeAttachment !== "function") {
+      return null;
+    }
+    try {
+      return socketAny.deserializeAttachment();
+    } catch (error) {
+      if (this.isDebug) {
+        console.error("Failed to deserialize WebSocket attachment", error);
+      }
+      return null;
+    }
+  }
+
+  private extractMatchIdsFromAttachment(ws: WebSocket): Set<number> | undefined {
+    const attachment = this.safeDeserializeAttachment(ws);
+    if (!attachment || typeof attachment !== "object") {
+      return undefined;
+    }
+    const rawIds = Array.isArray((attachment as any).matchIds)
+      ? (attachment as any).matchIds
+      : Array.isArray((attachment as any).match_ids)
+        ? (attachment as any).match_ids
+        : null;
+    if (!rawIds) return undefined;
+    const normalized: number[] = [];
+    for (const raw of rawIds) {
+      const id = this.normalizeMatchId(raw);
+      if (id !== null) {
+        normalized.push(id);
+      }
+    }
+    if (normalized.length === 0) return undefined;
+    // Enforce single-subscription rule: keep only the most recent entry.
+    const last = normalized[normalized.length - 1];
+    return new Set<number>([last]);
+  }
+
+  private persistSubscriptionAttachment(ws: WebSocket, clientId: string, matchIds: Set<number>): void {
+    const socketAny = ws as any;
+    if (!socketAny || typeof socketAny.serializeAttachment !== "function") {
+      return;
+    }
+    try {
+      socketAny.serializeAttachment({ clientId, matchIds: Array.from(matchIds) });
+    } catch (error) {
+      if (this.isDebug) {
+        console.error("Failed to serialize WebSocket attachment", error);
+      }
+    }
+  }
+
+  private getSubscriptionsForSocket(ws: WebSocket): { clientId: string | null; subscriptions?: Set<number> } {
+    const clientId = this.getClientId(ws);
+    if (!clientId) {
+      const restored = this.extractMatchIdsFromAttachment(ws);
+      return { clientId: null, subscriptions: restored };
+    }
+    const cached = this.matchSubscriptions.get(clientId);
+    if (cached) {
+      return { clientId, subscriptions: cached };
+    }
+    const restored = this.extractMatchIdsFromAttachment(ws);
+    if (restored) {
+      this.matchSubscriptions.set(clientId, restored);
+      return { clientId, subscriptions: restored };
+    }
+    return { clientId, subscriptions: undefined };
+  }
+
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
   private broadcast(message: string, exclude?: WebSocket) {
     console.log('websocket broadcast =>', message);
-    let sentCount = 0;
-    const total = this.state.getWebSockets()?.length ?? 0;
     const targetMatchId = this.extractMatchIdForBroadcast(message);
     for (const conn of this.state.getWebSockets() || []) {
-      const connId = this.getClientId(conn) ?? 'undefined';
       if (conn === exclude) {
         continue;
       }
@@ -730,31 +829,37 @@ export class MatchState {
         continue;
       }
       conn.send(message);
-      sentCount++;
     }
   }
 
   private addMatchSubscription(ws: WebSocket, matchId: number) {
-    const clientId = this.getClientId(ws);
+    const { clientId } = this.getSubscriptionsForSocket(ws);
     if (!clientId) return;
-    const existing = this.matchSubscriptions.get(clientId) ?? new Set<number>();
-    existing.add(matchId);
-    this.matchSubscriptions.set(clientId, existing);
+    // Only one active subscription per client: replace any existing set.
+    const next = new Set<number>([matchId]);
+    this.matchSubscriptions.set(clientId, next);
+    this.persistSubscriptionAttachment(ws, clientId, next);
   }
 
   private removeMatchSubscription(ws: WebSocket, matchId?: number) {
-    const clientId = this.getClientId(ws);
+    const { clientId, subscriptions } = this.getSubscriptionsForSocket(ws);
     if (!clientId) return;
     if (matchId === undefined) {
       this.matchSubscriptions.delete(clientId);
+      this.persistSubscriptionAttachment(ws, clientId, new Set());
       return;
     }
-    const existing = this.matchSubscriptions.get(clientId);
-    if (!existing) return;
-    existing.delete(matchId);
-    if (existing.size === 0) {
-      this.matchSubscriptions.delete(clientId);
+    if (!subscriptions) {
+      this.persistSubscriptionAttachment(ws, clientId, new Set());
+      return;
     }
+    subscriptions.delete(matchId);
+    if (subscriptions.size === 0) {
+      this.matchSubscriptions.delete(clientId);
+    } else {
+      this.matchSubscriptions.set(clientId, subscriptions);
+    }
+    this.persistSubscriptionAttachment(ws, clientId, subscriptions);
   }
 
   private normalizeMatchId(raw: any): number | null {
@@ -779,8 +884,7 @@ export class MatchState {
   }
 
   private shouldDeliverBroadcast(conn: WebSocket, targetMatchId: number | null): boolean {
-    const clientId = this.getClientId(conn);
-    const subscriptions = clientId ? this.matchSubscriptions.get(clientId) : undefined;
+    const { subscriptions } = this.getSubscriptionsForSocket(conn);
     // No subscriptions -> legacy behaviour: receive everything.
     if (!subscriptions || subscriptions.size === 0) return true;
     if (targetMatchId === null) return true;
@@ -789,9 +893,11 @@ export class MatchState {
 
   private getClientId(ws: WebSocket): string | null {
     const tags = this.state.getTags(ws);
-    if (!tags || tags.length === 0) return null;
-    const id = tags[0];
-    return typeof id === 'string' ? id : null;
+    const tagId = tags && tags.length > 0 && typeof tags[0] === "string" ? (tags[0] as string) : null;
+    if (tagId) return tagId;
+    const attachment = this.safeDeserializeAttachment(ws);
+    const attachedId = attachment?.clientId ?? attachment?.client_id ?? attachment?.id;
+    return typeof attachedId === "string" ? attachedId : null;
   }
 }
 
