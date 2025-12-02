@@ -3,11 +3,6 @@ import { getActiveMatchId } from '../api/matchMetaAutosave.js';
 
 const shareSection = document.getElementById('shareControls');
 const shareStatus = document.getElementById('shareStatusMessage');
-const linkElements = {
-  scorekeeper: document.getElementById('scorekeeperLink'),
-  follower: document.getElementById('followerLink'),
-};
-
 const statusClasses = ['text-muted', 'text-success', 'text-danger', 'text-warning'];
 let cachedUrls = { scorekeeper: '', follower: '' };
 let lastMatchId = null;
@@ -77,14 +72,6 @@ function syncShareControls() {
 
   cachedUrls = getMatchUrls(matchId);
   shareSection.classList.remove('d-none');
-
-  Object.entries(linkElements).forEach(([key, element]) => {
-    const nextUrl = cachedUrls[key];
-    if (element && nextUrl) {
-      element.href = nextUrl;
-      element.textContent = nextUrl;
-    }
-  });
 
   setStatus('');
 }
