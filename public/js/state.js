@@ -20,18 +20,28 @@ function createDefaultSets() {
   return sets;
 }
 
-export let state = {
-  homeTeam: 'Home Team',
-  opponent: 'Opponent',
-  matchId: null,
-  matchWins: { home: 0, opp: 0 },
-  overallWinner: null,
-  players: [],
-  matchPlayers: [],
-  sets: createDefaultSets(),
-  isDisplaySwapped: false,
-  isTimeoutColorSwapped: false,
-};
+export function createDefaultState() {
+  return {
+    homeTeam: 'Home Team',
+    opponent: 'Opponent',
+    matchId: null,
+    matchWins: { home: 0, opp: 0 },
+    overallWinner: null,
+    players: [],
+    matchPlayers: [],
+    sets: createDefaultSets(),
+    isDisplaySwapped: false,
+    isTimeoutColorSwapped: false,
+    location: null,
+    date: null,
+    matchTypes: {},
+    firstServer: null,
+    jerseyColorHome: null,
+    jerseyColorOpp: null,
+  };
+}
+
+export let state = createDefaultState();
 
 const STORAGE_KEY = 'volleyball-stats-state';
 const listeners = new Set();
@@ -296,18 +306,12 @@ export function serializeMatchPlayersJson() {
 }
 
 export function resetMatchState() {
-  state.matchId = null;
-  state.matchWins = { home: 0, opp: 0 };
-  state.overallWinner = null;
-  state.opponent = 'Opponent';
-  state.location = null;
-  state.date = null;
-  state.matchTypes = {};
-  state.firstServer = null;
-  state.jerseyColorHome = null;
-  state.jerseyColorOpp = null;
-  state.matchPlayers = [];
-  state.sets = createDefaultSets();
+  const defaults = createDefaultState();
+
+  Object.keys(state).forEach((key) => delete state[key]);
+  Object.assign(state, defaults);
+
+  window.state = state;
   saveStateToStorage();
   notifyListeners();
   return state;
