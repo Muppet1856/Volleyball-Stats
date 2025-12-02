@@ -1,4 +1,4 @@
-// init.js
+// js/init/homeTeam.js
 export async function initializeHomeTeam() {
   const HOME_TEAM_FALLBACK = 'Home Team';
   const pattern = /\{homeTeam\}/g;
@@ -12,9 +12,11 @@ export async function initializeHomeTeam() {
         homeName = data.homeTeam.trim();
       }
     }
-  } catch (e) {
-    console.warn('Could not load home team config', e);
+  } catch (_e) {
+    // noop
   }
+
+  updateState({ homeTeam: homeName });
 
   document.querySelectorAll('[data-home-team-template]').forEach(el => {
     const tmpl = el.getAttribute('data-home-team-template');
@@ -25,4 +27,5 @@ export async function initializeHomeTeam() {
   if (typeof window.updateOpponentName === 'function') {
     window.updateOpponentName();
   }
+    
 }

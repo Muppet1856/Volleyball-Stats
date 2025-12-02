@@ -1,22 +1,52 @@
-// ui/scoreModals.js
-import { startTimeoutCountdown, resetTimeoutCountdown } from './timeOut.js'; // Adjust path if needed
-// Function to pad scores to two digits
+// js/ui/scoreModals.js (updated)
+import { state, subscribe, updateState } from '../state.js';  // Add this import
+import { saveScore } from '../api/scoring.js';
+import { resetTimeoutCountdown } from './timeOut.js';
+
 function padScore(score) {
   return String(score).padStart(2, '0');
 }
 
-// Handle modal show event to load scores from the calling set
+function ensurePairedScore(setNum, team) {
+  const otherTeam = team === 'home' ? 'opp' : 'home';
+  const otherInputId = otherTeam === 'home' ? `set${setNum}Home` : `set${setNum}Opp`;
+  const otherDisplayId = otherTeam === 'home' ? 'scoreGameHomeDisplay' : 'scoreGameOppDisplay';
+  const otherInput = document.getElementById(otherInputId);
+
+  if (!otherInput) return;
+  const raw = otherInput.value;
+  const parsed = parseInt(raw, 10);
+  if (raw === '' || Number.isNaN(parsed)) {
+    otherInput.value = 0;
+    updateState({
+      sets: {
+        [setNum]: {
+          scores: { [otherTeam]: 0 },
+        },
+      },
+    });
+    saveScore(otherTeam, Number(setNum), 0);
+
+    const modal = document.getElementById('scoreGameModal');
+    if (modal && modal.classList.contains('show') && modal.dataset.currentSet === String(setNum)) {
+      const otherDisplay = document.getElementById(otherDisplayId);
+      if (otherDisplay) {
+        otherDisplay.textContent = padScore(0);
+      }
+    }
+  }
+}
+
 const scoreGameModal = document.getElementById('scoreGameModal');
 if (scoreGameModal) {
   scoreGameModal.addEventListener('show.bs.modal', (event) => {
-    const button = event.relatedTarget; // The button that triggered the modal
+    const button = event.relatedTarget;
     const setNumber = button.getAttribute('data-set');
     if (!setNumber) return;
 
-    // Store the current set on the modal for later reference
     scoreGameModal.dataset.currentSet = setNumber;
 
-    // Load scores from the table inputs
+    // Keep loading scores from DOM (table inputs)
     const homeInput = document.getElementById(`set${setNumber}Home`);
     const oppInput = document.getElementById(`set${setNumber}Opp`);
     const homeDisplay = document.getElementById('scoreGameHomeDisplay');
@@ -27,31 +57,9 @@ if (scoreGameModal) {
       oppDisplay.textContent = padScore(oppInput.value || 0);
     }
 
-    // Initialize global state if not present
-    if (!window.setTimeouts) window.setTimeouts = {};
-    if (!window.setTimeouts[setNumber]) {
-      window.setTimeouts[setNumber] = {
-        home: [false, false],
-        opp: [false, false]
-      };
-    }
+    // Remove window.setTimeouts init (migrated to timeOut.js)
+    // Load timeouts UI from state (minimal init; see timeOut.js for details)
 
-    // Load timeout states
-    const timeoutBoxes = scoreGameModal.querySelectorAll('.timeout-box');
-    timeoutBoxes.forEach((box) => {
-      const team = box.dataset.team;
-      const index = parseInt(box.dataset.timeoutIndex);
-      const used = window.setTimeouts[setNumber][team][index];
-      box.setAttribute('aria-pressed', used ? 'true' : 'false');
-      box.classList.toggle('used', used);
-      box.classList.toggle('available', !used);
-      box.classList.remove('active'); // active only during timer
-      const teamName = team === 'home' ? 'Home Team' : 'Opponent';
-      const ord = index + 1 === 1 ? 'first' : 'second';
-      box.setAttribute('aria-label', `${teamName} ${ord} timeout ${used ? 'used' : 'available'}`);
-    });
-
-    // Optional: Reset timeout display
     const timeoutDisplay = document.getElementById('scoreGameTimeoutDisplay');
     if (timeoutDisplay) {
       timeoutDisplay.textContent = '';
@@ -63,7 +71,21 @@ if (scoreGameModal) {
   });
 }
 
-// Handle score changes via increment/decrement zones
+function hideScoreModalIfFinalized() {
+  const modal = document.getElementById('scoreGameModal');
+  if (!modal || !modal.classList.contains('show')) return;
+
+  const setNumber = modal.dataset.currentSet;
+  const setState = setNumber ? state.sets?.[setNumber] : null;
+  if (!setNumber || !setState?.finalized) return;
+
+  const bootstrapModal = window.bootstrap?.Modal;
+  if (!bootstrapModal) return;
+
+  const instance = bootstrapModal.getOrCreateInstance(modal);
+  instance.hide();
+}
+
 function handleScoreChange(event) {
   const zone = event.currentTarget;
   const team = zone.dataset.team;
@@ -88,18 +110,26 @@ function handleScoreChange(event) {
     score -= 1;
   }
 
+  // Keep direct UI updates
   display.textContent = padScore(score);
   input.value = score;
-
-  // Optional: Trigger input event for any bound listeners (e.g., validation or auto-save)
   input.dispatchEvent(new Event('input', { bubbles: true }));
+
+  // Add: Sync to state (no UI change here)
+  updateState({
+    sets: {
+      [setNumber]: {
+        scores: { [team]: score }
+      }
+    }
+  });
+  ensurePairedScore(setNumber, team);
 }
 
-// Attach event listeners to score zones
+// Attach event listeners (unchanged)
 const scoreZones = document.querySelectorAll('.score-zone');
 scoreZones.forEach((zone) => {
   zone.addEventListener('click', handleScoreChange);
-  // Optional: Add keydown for accessibility (e.g., Enter/Space to trigger)
   zone.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -108,17 +138,39 @@ scoreZones.forEach((zone) => {
   });
 });
 
-// Note: Timeout click handlers are now in timeOut.js
+// Sync table inputs to state on direct edit or modal update
+window.addEventListener('DOMContentLoaded', () => {
+  const allSetInputs = document.querySelectorAll('input[id^="set"][id$="Home"], input[id^="set"][id$="Opp"]');
+  allSetInputs.forEach(input => {
+    input.addEventListener('input', () => {
+      const inputId = input.id;
+      const match = inputId.match(/set(\d+)(Home|Opp)/);
+      if (!match) return;
+      const setNum = match[1];
+      const side = match[2];
+      const team = side.toLowerCase() === 'home' ? 'home' : 'opp';
+      const score = parseInt(input.value, 10) || 0;
+      input.value = score;  // Normalize input to integer
+      updateState({
+        sets: {
+          [setNum]: {
+            scores: { [team]: score }
+          }
+        }
+      });
+      saveScore(team, Number(setNum), score);
+      ensurePairedScore(setNum, team);
+      // If modal is open for this set, sync display
+      const modal = document.getElementById('scoreGameModal');
+      if (modal && modal.classList.contains('show') && modal.dataset.currentSet === setNum) {
+        const displayId = side === 'Home' ? 'scoreGameHomeDisplay' : 'scoreGameOppDisplay';
+        const display = document.getElementById(displayId);
+        if (display) {
+          display.textContent = padScore(score);
+        }
+      }
+    });
+  });
 
-// Note: If timeouts need to be persisted per set (e.g., which ones are used), 
-// you can extend this by storing state in a global object or using state.js.
-// For example, on modal show, load pressed states from data attributes on the set row.
-
-// To integrate: Add the following line to volleyball_stats.js inside the DOMContentLoaded listener:
-// import './ui/scoreModals.js';
-
-// Regarding Cloudflare Workers integration:
-// This client-side logic runs in the browser and doesn't directly interact with the Workers or Durable Objects.
-// To persist match data (including scores), you'll need to add save/load logic that sends data to your Worker endpoint,
-// using atomic operations (e.g., transactions in SQLite via D1) to avoid clobbering updates.
-// For example, on score change, debounce and send a PATCH request to update the specific set's score in the DO.
+  subscribe(hideScoreModalIfFinalized);
+});

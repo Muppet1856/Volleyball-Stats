@@ -1,18 +1,33 @@
 // src/index.ts
+import { Hono } from 'hono'
+import { z } from 'zod'
+import { zValidator } from '@hono/zod-validator'
+import {
+  generateRegistrationOptions,
+  generateAuthenticationOptions,
+  verifyRegistrationResponse,
+  verifyAuthenticationResponse,
+} from '@simplewebauthn/server'
 import { initMatchTable, initPlayerTable, initSetTable } from "./utils/init";
-import { jsonResponse, errorResponse } from "./utils/responses";  // Add this import
+import { jsonResponse, errorResponse } from "./utils/responses";
 
 import * as matchApi from "./api/match";
 import * as playerApi from "./api/player";
 import * as setApi from "./api/set";
-import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
 export interface Env {
   ASSETS: any;
+  DB: D1Database;
+  MATCH_DO: DurableObjectNamespace;
+  RESEND_API_KEY: string;
+  APP_URL: string;
   debug?: string;
   HOME_TEAM?: string;
-  // Let the runtime find the DO
 }
+
+const BROADCAST_EVENT_TIMESTAMP_ACTIONS: Record<string, ReadonlySet<string>> = {
+  set: new Set(['set-home-score', 'set-opp-score', 'set-home-timeout', 'set-opp-timeout']),
+};
 
 /* -------------------------------------------------
    Durable Object – holds the SQLite DB
@@ -21,6 +36,9 @@ export class MatchState {
   state: DurableObjectState;
   env: Env;
   isDebug: boolean;
+  // Track WebSocket clients that explicitly subscribe to match IDs.
+  // Missing or empty subscription set means the client receives all broadcasts.
+  private matchSubscriptions: Map<string, Set<number>> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -29,14 +47,11 @@ export class MatchState {
 
     // Init all tables the first time the DO is created
     const sql = this.state.storage.sql;
-    const matchInit = initMatchTable(sql);
-    const playerInit = initPlayerTable(sql);
-    const setInit = initSetTable(sql);
-    if (this.isDebug) {
-      console.log(`Match table init: ${matchInit}`);
-      console.log(`Player table init: ${playerInit}`);
-      console.log(`Set table init: ${setInit}`);
-    }
+    initMatchTable(sql);
+    initPlayerTable(sql);
+    initSetTable(sql);
+
+    this.restoreSubscriptionsFromAttachments();
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -56,137 +71,32 @@ export class MatchState {
 
       // Generate unique client ID
       const clientId = Math.random().toString(36).slice(2);
-      if (this.isDebug) console.log(`New client connected: ${clientId}`);
 
       // Accept the WebSocket with clientId as tag
       this.state.acceptWebSocket(server, [clientId]);
+
+      // Persist base attachment so subscriptions survive hibernation
+      this.matchSubscriptions.set(clientId, new Set());
+      this.persistSubscriptionAttachment(server, clientId, new Set());
 
       // Send debug message if enabled (no initial data dump)
       if (this.isDebug) {
         const sql = this.state.storage.sql;
         const cursor = sql.exec('SELECT COUNT(*) FROM matches');
         const count = cursor.next().value['COUNT(*)'];
-        if (this.isDebug) console.log(`Sending debug count to client ${clientId}: ${count} matches`);
-        server.send(`Debug: ${count} matches in DB`);
-        server.send(`Debug: New client connected: ${clientId}`);
+        server.send(JSON.stringify({ debug: `${count} matches in DB` }));
+        server.send(JSON.stringify({ debug: `New client connected: ${clientId}` }));
       }
 
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    /* ---------- /api/* routing ---------- */
-    if (path.startsWith("/api/")) {
-      const parts = path.slice(5).split("/"); // remove "/api"
-      const resource = parts[0];
-      const action = parts[1] ?? "";
-      const id = parts[2] ? parseInt(parts[2]) : undefined;  // Optional ID for updates/gets
-
-      switch (resource) {
-        case "match":
-          if (request.method === "POST" && action === "create") {
-            return matchApi.createMatch(storage, request);
-          } else if (request.method === "POST" && action === "set-location") {
-            const body = await request.json();
-            return matchApi.setLocation(storage, body.matchId, body.location);
-          } else if (request.method === "POST" && action === "set-date-time") {
-            const body = await request.json();
-            return matchApi.setDateTime(storage, body.matchId, body.date);
-          } else if (request.method === "POST" && action === "set-opp-name") {
-            const body = await request.json();
-            return matchApi.setOppName(storage, body.matchId, body.opponent);
-          } else if (request.method === "POST" && action === "set-type") {
-            const body = await request.json();
-            return matchApi.setType(storage, body.matchId, body.types);
-          } else if (request.method === "POST" && action === "set-result") {
-            const body = await request.json();
-            return matchApi.setResult(storage, body.matchId, body.resultHome, body.resultOpp);
-          } else if (request.method === "POST" && action === "set-players") {
-            const body = await request.json();
-            return matchApi.setPlayers(storage, body.matchId, body.players);
-          } else if (request.method === "POST" && action === "set-home-color") {
-            const body = await request.json();
-            return matchApi.setHomeColor(storage, body.matchId, body.jerseyColorHome);
-          } else if (request.method === "POST" && action === "set-opp-color") {
-            const body = await request.json();
-            return matchApi.setOppColor(storage, body.matchId, body.jerseyColorOpp);
-          } else if (request.method === "POST" && action === "set-first-server") {
-            const body = await request.json();
-            return matchApi.setFirstServer(storage, body.matchId, body.firstServer);
-          } else if (request.method === "POST" && action === "set-deleted") {
-            const body = await request.json();
-            return matchApi.setDeleted(storage, body.matchId, body.deleted);
-          } else if (request.method === "GET" && action === "get" && id) {
-            return matchApi.getMatch(storage, id);
-          } else if (request.method === "GET") {
-            return matchApi.getMatches(storage);
-          } else if (request.method === "DELETE" && action === "delete" && id) {
-            return matchApi.deleteMatch(storage, id);
-          }
-          break;
-
-        case "player":
-          if (request.method === "POST" && action === "create") {
-            return playerApi.createPlayer(storage, request);
-          } else if (request.method === "POST" && action === "set-lname") {
-            const body = await request.json();
-            return playerApi.setPlayerLName(storage, body.playerId, body.lastName);
-          } else if (request.method === "POST" && action === "set-fname") {
-            const body = await request.json();
-            return playerApi.setPlayerFName(storage, body.playerId, body.initial);
-          } else if (request.method === "POST" && action === "set-number") {
-            const body = await request.json();
-            return playerApi.setPlayerNumber(storage, body.playerId, body.number);
-          } else if (request.method === "GET" && action === "get" && id) {
-            return playerApi.getPlayer(storage, id);
-          } else if (request.method === "GET") {
-            return playerApi.getPlayers(storage);
-          } else if (request.method === "DELETE" && action === "delete" && id) {
-            return playerApi.deletePlayer(storage, id);
-          }
-          break;
-
-        case "set":
-          if (request.method === "POST" && action === "create") {
-            return setApi.createSet(storage, request);
-          } else if (request.method === "POST" && action === "set-home-score") {
-            const body = await request.json();
-            return setApi.setHomeScore(storage, body.setId, body.homeScore);
-          } else if (request.method === "POST" && action === "set-opp-score") {
-            const body = await request.json();
-            return setApi.setOppScore(storage, body.setId, body.oppScore);
-          } else if (request.method === "POST" && action === "set-home-timeout") {
-            const body = await request.json();
-            return setApi.setHomeTimeout(storage, body.setId, body.timeoutNumber, body.value);
-          } else if (request.method === "POST" && action === "set-opp-timeout") {
-            const body = await request.json();
-            return setApi.setOppTimeout(storage, body.setId, body.timeoutNumber, body.value);
-          } else if (request.method === "POST" && action === "set-is-final") {
-            const body = await request.json();
-            return setApi.setIsFinal(storage, body.matchId, body.finalizedSets);
-          } else if (request.method === "GET" && action === "get" && id) {
-            return setApi.getSet(storage, id);
-          } else if (request.method === "GET") {
-            const matchIdQuery = url.searchParams.get("matchId");
-            const parsedMatchId = matchIdQuery ? parseInt(matchIdQuery, 10) : undefined;
-            const matchIdParam = Number.isNaN(parsedMatchId ?? NaN) ? undefined : parsedMatchId;
-            return setApi.getSets(storage, matchIdParam);
-          } else if (request.method === "DELETE" && action === "delete" && id) {
-            return setApi.deleteSet(storage, id);
-          }
-          break;
-      }
-
-      return errorResponse("API endpoint not found", 404);  // Updated with responses.ts
-    }
-
-    return errorResponse("Method not allowed", 405);  // Updated with responses.ts
+      return errorResponse("Method not allowed", 405);  // Updated with responses.ts
   }
 
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    const tags = this.state.getTags(ws);
-    const clientId = tags.length > 0 ? tags[0] : 'undefined';
-    if (this.isDebug) console.log(`Received WS message from client ${clientId}: ${message instanceof ArrayBuffer ? '[ArrayBuffer]' : message}`);
+    const clientId = this.getClientId(ws) ?? 'undefined';
     const storage = this.state.storage;
     try {
       // Handle potential ArrayBuffer (safe for text/binary; Miniflare might send text as buffer)
@@ -196,7 +106,6 @@ export class MatchState {
       } else {
         msgStr = message;
       }
-      if (this.isDebug) console.log(`Parsed message string from client ${clientId}: ${msgStr}`);
       const payload = JSON.parse(msgStr);
       const resource = Object.keys(payload)[0];
       if (!resource) throw new Error('Invalid payload: missing resource');
@@ -213,6 +122,27 @@ export class MatchState {
       switch (resource) {
         case 'match':
           switch (action) {
+            case 'subscribe': {
+              const normalized = this.normalizeMatchId(data.matchId ?? data.id);
+              if (!normalized) {
+                throw new Error('Invalid matchId for subscribe');
+              }
+              this.addMatchSubscription(ws, normalized);
+              res = jsonResponse({ matchId: normalized });
+              matchId = normalized;
+              break;
+            }
+            case 'unsubscribe': {
+              const normalized = this.normalizeMatchId(data.matchId ?? data.id);
+              if (normalized) {
+                this.removeMatchSubscription(ws, normalized);
+              } else {
+                this.removeMatchSubscription(ws);
+              }
+              res = jsonResponse({ matchId: normalized ?? null });
+              matchId = normalized ?? undefined;
+              break;
+            }
             case 'create':
               // Mock Request for create
               const mockReq = {
@@ -243,6 +173,30 @@ export class MatchState {
               break;
             case 'set-players':
               res = await matchApi.setPlayers(storage, data.matchId, data.players);
+              matchId = data.matchId;
+              break;
+            case 'add-player':
+              res = await matchApi.addPlayer(storage, data.matchId, data.player);
+              matchId = data.matchId;
+              break;
+            case 'remove-player':
+              res = await matchApi.removePlayer(storage, data.matchId, data.player);
+              matchId = data.matchId;
+              break;
+            case 'update-player':
+              res = await matchApi.updatePlayer(storage, data.matchId, data.player);
+              matchId = data.matchId;
+              break;
+            case 'add-temp-number':
+              res = await matchApi.addTempNumber(storage, data.matchId, data.tempNumber ?? data.temp_number ?? data.temp);
+              matchId = data.matchId;
+              break;
+            case 'update-temp-number':
+              res = await matchApi.updateTempNumber(storage, data.matchId, data.tempNumber ?? data.temp_number ?? data.temp);
+              matchId = data.matchId;
+              break;
+            case 'remove-temp-number':
+              res = await matchApi.removeTempNumber(storage, data.matchId, data.tempNumber ?? data.temp_number ?? data.temp);
               matchId = data.matchId;
               break;
             case 'set-home-color':
@@ -313,11 +267,23 @@ export class MatchState {
         case 'set':
           switch (action) {
             case 'create':
+              const normalizedSetData = {
+                ...data,
+                match_id: data.match_id ?? data.matchId,
+                set_number: data.set_number ?? data.setNumber,
+                home_score: data.home_score ?? data.homeScore,
+                opp_score: data.opp_score ?? data.oppScore,
+                home_timeout_1: data.home_timeout_1 ?? data.homeTimeout1 ?? data.homeTimeout_1,
+                home_timeout_2: data.home_timeout_2 ?? data.homeTimeout2 ?? data.homeTimeout_2,
+                opp_timeout_1: data.opp_timeout_1 ?? data.oppTimeout1 ?? data.oppTimeout_1,
+                opp_timeout_2: data.opp_timeout_2 ?? data.oppTimeout2 ?? data.oppTimeout_2,
+                timeout_started_at: data.timeout_started_at ?? data.timeoutStartedAt ?? null,
+              };
               const mockReq = {
-                json: async () => data,
+                json: async () => normalizedSetData,
               } as Request;
               res = await setApi.createSet(storage, mockReq);
-              matchId = data.matchId; // Assume provided; fallback if needed
+              matchId = normalizedSetData.match_id; // Assume provided; fallback if needed
               break;
             case 'set-home-score':
               res = await setApi.setHomeScore(storage, data.setId, data.homeScore);
@@ -327,14 +293,20 @@ export class MatchState {
               res = await setApi.setOppScore(storage, data.setId, data.oppScore);
               matchId = data.matchId;
               break;
-            case 'set-home-timeout':
-              res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value);
+            case 'set-home-timeout': {
+              const timeoutStartedAt = this.normalizeTimeoutTimestamp(data.value, data);
+              res = await setApi.setHomeTimeout(storage, data.setId, data.timeoutNumber, data.value, timeoutStartedAt);
+              data.timeoutStartedAt = timeoutStartedAt;
               matchId = data.matchId;
               break;
-            case 'set-opp-timeout':
-              res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value);
+            }
+            case 'set-opp-timeout': {
+              const timeoutStartedAt = this.normalizeTimeoutTimestamp(data.value, data);
+              res = await setApi.setOppTimeout(storage, data.setId, data.timeoutNumber, data.value, timeoutStartedAt);
+              data.timeoutStartedAt = timeoutStartedAt;
               matchId = data.matchId;
               break;
+            }
             case 'set-is-final':
               res = await setApi.setIsFinal(storage, data.matchId, data.finalizedSets);
               matchId = data.matchId;
@@ -378,65 +350,47 @@ export class MatchState {
         status: res.status,
         body,
       });
-      if (this.isDebug) console.log(`Sending response to client ${clientId}: ${responseMsg.substring(0, 100)}...`);
       ws.send(responseMsg);
-
-      console.log(`Response status: ${res.status}`);
 
       // If successful write action, broadcast update/delete to other clients
       if (res.status < 300 && action !== 'get') {
         const id = this.getIdFromData(resource, action, data, body);
-        if (this.isDebug) console.log(`Write success (status ${res.status}) from client ${clientId}. ID for broadcast: ${id}, matchId: ${matchId}`);
-        if (id || (resource === 'set' && action === 'set-is-final' && matchId)) {
-          let broadcastMsg: string;
 
-          if (action === 'delete') {
-            broadcastMsg = JSON.stringify({ type: 'delete', resource, id, matchId });
-          } else if (resource === 'set' && action === 'set-is-final') {
-            // Special: Broadcast all sets for the match
-            const setsRes = await setApi.getSets(storage, matchId!);
-            const setsData = await setsRes.json();
-            broadcastMsg = JSON.stringify({ type: 'update', resource: 'sets', matchId, data: setsData });
-          } else {
-            // Standard: Broadcast updated entity
-            const updated = await this.getUpdated(resource, id!);
-            broadcastMsg = JSON.stringify({ type: 'update', resource, id, matchId, data: updated });
-          }
-          if (this.isDebug) console.log(`Broadcast message prepared from client ${clientId}: ${broadcastMsg.substring(0, 100)}...`);
+        const broadcastMsg = await this.prepareBroadcastMessage({
+          resource,
+          action,
+          id,
+          matchId,
+          data,
+        });
 
+        if (broadcastMsg) {
           this.broadcast(broadcastMsg, ws);  // Exclude sender
-        } else if (this.isDebug) {
-          console.log(`No ID found - skipping broadcast for client ${clientId}`);
         }
-      } else if (this.isDebug) {
-        console.log(`No broadcast: status=${res.status}, action=${action} for client ${clientId}`);
       }
 
-      if (this.isDebug) console.log(`Sent response to client ${clientId}`);
-
     } catch (e) {
-      console.error(`WS message error for client ${clientId}: ${e.message}`);
       ws.send(JSON.stringify({
         error: {
           message: (e as Error).message,
         }
       }));
-      if (this.isDebug) console.error(e);
     }
   }
 
   // Clean up closed connections
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    const tags = this.state.getTags(ws);
-    const clientId = tags.length > 0 ? tags[0] : 'undefined';
-    if (this.isDebug) console.log(`WS closed for client ${clientId}: ${code} - ${reason}. Total attached now: ${this.state.getWebSockets()?.length ?? 0 - 1}`);
+    const clientId = this.getClientId(ws);
+    if (clientId) {
+      this.matchSubscriptions.delete(clientId);
+    }
+    const label = clientId ?? 'undefined';
   }
 
   // Handle errors (optional, but cleans up)
   async webSocketError(ws: WebSocket, error: any) {
     const tags = this.state.getTags(ws);
     const clientId = tags.length > 0 ? tags[0] : 'undefined';
-    if (this.isDebug) console.error(`WS error for client ${clientId}: ${error}. Total attached now: ${this.state.getWebSockets()?.length ?? 0}`);
   }
 
   // Helper: Extract ID from data or body
@@ -453,6 +407,163 @@ export class MatchState {
         return data.setId || data.id;
       default:
         return undefined;
+    }
+  }
+
+  // Build a minimal broadcast payload for the given action
+  private async prepareBroadcastMessage(params: { resource: string; action: string; id?: number; matchId?: number; data: any; }): Promise<string | undefined> {
+    const { resource, action, id, matchId, data } = params;
+
+    if (action === 'delete') {
+      if (id === undefined) return undefined;
+      const payload: any = { type: 'delete', resource, id };
+      if (matchId !== undefined) payload.matchId = matchId;
+      return JSON.stringify(payload);
+    }
+
+    if (resource === 'set' && action === 'set-is-final' && matchId) {
+      // Special: Broadcast all sets for the match
+      const setsRes = await setApi.getSets(this.state.storage, matchId);
+      const setsData = await setsRes.json();
+      return JSON.stringify({ type: 'update', resource: 'sets', action, matchId, data: setsData });
+    }
+
+    if (action === 'create') {
+      if (id === undefined) return undefined;
+      // Creation still sends the full record to allow clients to render new items
+      const created = await this.getUpdated(resource, id);
+      const payload: any = { type: 'update', resource, action, id, data: created };
+      if (matchId !== undefined) payload.matchId = matchId;
+      this.maybeStampBroadcast(payload, resource, action);
+      return JSON.stringify(payload);
+    }
+
+    if (id === undefined) return undefined;
+
+    const changes = await this.getChanges(resource, action, id, data, matchId);
+    if (!changes) return undefined;
+
+    const prunedChanges = Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined));
+    if (Object.keys(prunedChanges).length === 0) return undefined;
+
+    const payload: any = { type: 'update', resource, action, id, changes: prunedChanges };
+    if (matchId !== undefined) payload.matchId = matchId;
+    this.maybeStampBroadcast(payload, resource, action);
+    return JSON.stringify(payload);
+  }
+
+  private async getChanges(resource: string, action: string, id: number, data: any, matchId?: number): Promise<Record<string, any> | null> {
+    switch (resource) {
+      case 'match':
+        return this.getMatchChanges(action, id, data);
+      case 'player':
+        return this.getPlayerChanges(action, id, data);
+      case 'set':
+        return this.getSetChanges(action, id, data, matchId);
+      default:
+        return null;
+    }
+  }
+
+  private async getMatchChanges(action: string, matchId: number, data: any): Promise<Record<string, any> | null> {
+    switch (action) {
+      case 'set-location':
+        return { location: data.location ?? null };
+      case 'set-date-time':
+        return { date: data.date ?? null };
+      case 'set-opp-name':
+        return { opponent: data.opponent ?? null };
+      case 'set-type':
+        return { types: this.coerceJsonString(data.types, {}) };
+      case 'set-result':
+        return {
+          result_home: this.normalizeScore(data.resultHome),
+          result_opp: this.normalizeScore(data.resultOpp),
+        };
+      case 'set-players':
+        return {
+          players: this.coerceJsonString(data.players, []),
+          temp_numbers: await this.getMatchColumn(matchId, 'temp_numbers'),
+        };
+      case 'add-player':
+      case 'update-player': {
+        const playerDelta = this.normalizePlayerDelta(data.player);
+        const tempDelta = this.normalizeTempDelta(data.player);
+        if (!playerDelta && !tempDelta) return null;
+        return {
+          player_delta: playerDelta,
+          temp_number_delta: tempDelta ?? undefined,
+        };
+      }
+      case 'remove-player': {
+        const playerDelta = this.normalizePlayerRemoval(data.player);
+        if (!playerDelta) return null;
+        return {
+          player_delta: playerDelta,
+          temp_number_delta: { player_id: playerDelta.player_id, deleted: true },
+        };
+      }
+      case 'add-temp-number':
+      case 'update-temp-number': {
+        const tempDelta = this.normalizeTempDelta(data.tempNumber ?? data.temp_number ?? data.temp);
+        if (!tempDelta) return null;
+        return { temp_number_delta: tempDelta };
+      }
+      case 'remove-temp-number': {
+        const tempDelta = this.normalizeTempRemoval(data.tempNumber ?? data.temp_number ?? data.temp);
+        if (!tempDelta) return null;
+        return { temp_number_delta: tempDelta };
+      }
+      case 'set-home-color':
+        return { jersey_color_home: data.jerseyColorHome ?? null };
+      case 'set-opp-color':
+        return { jersey_color_opp: data.jerseyColorOpp ?? null };
+      case 'set-first-server':
+        return { first_server: data.firstServer ?? null };
+      case 'set-deleted':
+        return { deleted: this.normalizeDeletedFlag(data.deleted) };
+      default:
+        return null;
+    }
+  }
+
+  private getPlayerChanges(action: string, _playerId: number, data: any): Record<string, any> | null {
+    switch (action) {
+      case 'set-lname':
+        return { last_name: data.lastName ?? null };
+      case 'set-fname':
+        return { initial: data.initial ?? null };
+      case 'set-number':
+        return { number: data.number ?? null };
+      default:
+        return null;
+    }
+  }
+
+  private getSetChanges(action: string, _setId: number, data: any, matchId?: number): Record<string, any> | null {
+    switch (action) {
+      case 'set-home-score':
+        return { home_score: this.normalizeScore(data.homeScore) };
+      case 'set-opp-score':
+        return { opp_score: this.normalizeScore(data.oppScore) };
+      case 'set-home-timeout': {
+        const field = data.timeoutNumber === 2 || data.timeoutNumber === '2' ? 'home_timeout_2' : 'home_timeout_1';
+        return {
+          [field]: this.normalizeTimeoutFlag(data.value),
+          timeout_started_at: this.normalizeTimeoutTimestamp(data.value, data),
+        };
+      }
+      case 'set-opp-timeout': {
+        const field = data.timeoutNumber === 2 || data.timeoutNumber === '2' ? 'opp_timeout_2' : 'opp_timeout_1';
+        return {
+          [field]: this.normalizeTimeoutFlag(data.value),
+          timeout_started_at: this.normalizeTimeoutTimestamp(data.value, data),
+        };
+      }
+      case 'set-is-final':
+        return matchId ? { finalized_sets: data.finalizedSets } : null;
+      default:
+        return null;
     }
   }
 
@@ -474,22 +585,319 @@ export class MatchState {
     }
   }
 
+  private async getMatchColumn(matchId: number, column: string): Promise<any> {
+    const sql = this.state.storage.sql;
+    const cursor = sql.exec(`SELECT ${column} FROM matches WHERE id = ?`, matchId);
+    const row = cursor.toArray()[0];
+    return row ? row[column] : undefined;
+  }
+
+  private normalizeScore(value: any): number | null {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return parsed;
+  }
+
+  private normalizeDeletedFlag(value: any): number {
+    if (typeof value === "string") {
+      const lower = value.trim().toLowerCase();
+      if (lower === "true" || lower === "1") {
+        return 1;
+      }
+      return 0;
+    }
+    if (typeof value === "number") {
+      return value !== 0 ? 1 : 0;
+    }
+    return value ? 1 : 0;
+  }
+
+  private coerceJsonString(value: any, fallback: any = {}): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    try {
+      return JSON.stringify(value ?? fallback);
+    } catch (error) {
+      return JSON.stringify(fallback);
+    }
+  }
+
+  private normalizeTimeoutFlag(value: any): number {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+    if (typeof value === "boolean") {
+      return value ? 1 : 0;
+    }
+    if (typeof value === "string") {
+      if (value.trim() === "") return 0;
+      const parsed = Number(value);
+      if (Number.isNaN(parsed)) {
+        return value ? 1 : 0;
+      }
+      return parsed ? 1 : 0;
+    }
+    if (typeof value === "number") {
+      return value ? 1 : 0;
+    }
+    return 0;
+  }
+
+  private normalizeTimeoutTimestamp(value: any, data?: any): string | null {
+    const normalizedValue = this.normalizeTimeoutFlag(value);
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const hasProvidedTimestamp = data && ("timeoutStartedAt" in data || "timeout_started_at" in data);
+    if (hasProvidedTimestamp) {
+      const rawTimestamp = data.timeoutStartedAt ?? data.timeout_started_at;
+      if (rawTimestamp === null || rawTimestamp === undefined) {
+        return null;
+      }
+      const parsed = new Date(rawTimestamp);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString();
+      }
+    }
+
+    return new Date().toISOString();
+  }
+
+  private maybeStampBroadcast(payload: any, resource: string, action: string): void {
+    const actions = BROADCAST_EVENT_TIMESTAMP_ACTIONS[resource];
+    if (actions?.has(action)) {
+      payload.eventTimestamp = new Date().toISOString();
+    }
+  }
+
+  private parseJsonMaybe(raw: any): any {
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  }
+
+  private normalizePlayerDelta(raw: any): { player_id: number; appeared?: boolean; temp_number?: number | null } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    if (typeof playerId !== "number") return null;
+
+    const appearedRaw = parsed?.appeared ?? parsed?.active ?? parsed?.selected;
+    const appeared = appearedRaw === undefined ? undefined : !!appearedRaw;
+
+    const tempRaw = parsed?.temp_number ?? parsed?.tempNumber;
+    const tempParsed = tempRaw === undefined || tempRaw === null || tempRaw === "" ? null : Number(tempRaw);
+    const hasTemp = tempRaw !== undefined;
+
+    const payload: any = { player_id: playerId };
+    if (appeared !== undefined) payload.appeared = appeared;
+    if (hasTemp && !Number.isNaN(tempParsed)) {
+      payload.temp_number = tempParsed;
+    }
+    return payload;
+  }
+
+  private normalizePlayerRemoval(raw: any): { player_id: number; deleted: true } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    if (typeof playerId !== "number") return null;
+    return { player_id: playerId, deleted: true };
+  }
+
+  private normalizeTempDelta(raw: any): { player_id: number; temp_number: number | null } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    const tempRaw = parsed?.temp_number ?? parsed?.tempNumber;
+    if (typeof playerId !== "number" || tempRaw === undefined) return null;
+    const tempParsed = tempRaw === null || tempRaw === "" ? null : Number(tempRaw);
+    if (tempParsed === null || Number.isFinite(tempParsed)) {
+      return { player_id: playerId, temp_number: tempParsed };
+    }
+    return null;
+  }
+
+  private normalizeTempRemoval(raw: any): { player_id: number; deleted: true } | null {
+    const parsed = this.parseJsonMaybe(raw);
+    const playerId = parsed?.player_id ?? parsed?.playerId ?? parsed?.id;
+    if (typeof playerId !== "number") return null;
+    return { player_id: playerId, deleted: true };
+  }
+
+  private restoreSubscriptionsFromAttachments(): void {
+    const sockets = this.state.getWebSockets ? this.state.getWebSockets() : [];
+    for (const socket of sockets) {
+      const clientId = this.getClientId(socket);
+      if (!clientId) continue;
+      const restored = this.extractMatchIdsFromAttachment(socket);
+      if (restored) {
+        this.matchSubscriptions.set(clientId, restored);
+      }
+    }
+  }
+
+  private safeDeserializeAttachment(ws: WebSocket): any | null {
+    const socketAny = ws as any;
+    if (!socketAny || typeof socketAny.deserializeAttachment !== "function") {
+      return null;
+    }
+    try {
+      return socketAny.deserializeAttachment();
+    } catch (error) {
+      if (this.isDebug) {
+        console.error("Failed to deserialize WebSocket attachment", error);
+      }
+      return null;
+    }
+  }
+
+  private extractMatchIdsFromAttachment(ws: WebSocket): Set<number> | undefined {
+    const attachment = this.safeDeserializeAttachment(ws);
+    if (!attachment || typeof attachment !== "object") {
+      return undefined;
+    }
+    const rawIds = Array.isArray((attachment as any).matchIds)
+      ? (attachment as any).matchIds
+      : Array.isArray((attachment as any).match_ids)
+        ? (attachment as any).match_ids
+        : null;
+    if (!rawIds) return undefined;
+    const normalized: number[] = [];
+    for (const raw of rawIds) {
+      const id = this.normalizeMatchId(raw);
+      if (id !== null) {
+        normalized.push(id);
+      }
+    }
+    if (normalized.length === 0) return undefined;
+    // Enforce single-subscription rule: keep only the most recent entry.
+    const last = normalized[normalized.length - 1];
+    return new Set<number>([last]);
+  }
+
+  private persistSubscriptionAttachment(ws: WebSocket, clientId: string, matchIds: Set<number>): void {
+    const socketAny = ws as any;
+    if (!socketAny || typeof socketAny.serializeAttachment !== "function") {
+      return;
+    }
+    try {
+      socketAny.serializeAttachment({ clientId, matchIds: Array.from(matchIds) });
+    } catch (error) {
+      if (this.isDebug) {
+        console.error("Failed to serialize WebSocket attachment", error);
+      }
+    }
+  }
+
+  private getSubscriptionsForSocket(ws: WebSocket): { clientId: string | null; subscriptions?: Set<number> } {
+    const clientId = this.getClientId(ws);
+    if (!clientId) {
+      const restored = this.extractMatchIdsFromAttachment(ws);
+      return { clientId: null, subscriptions: restored };
+    }
+    const cached = this.matchSubscriptions.get(clientId);
+    if (cached) {
+      return { clientId, subscriptions: cached };
+    }
+    const restored = this.extractMatchIdsFromAttachment(ws);
+    if (restored) {
+      this.matchSubscriptions.set(clientId, restored);
+      return { clientId, subscriptions: restored };
+    }
+    return { clientId, subscriptions: undefined };
+  }
+
   // Helper: Broadcast to all attached WS except exclude (e.g., sender)
   private broadcast(message: string, exclude?: WebSocket) {
-    let sentCount = 0;
-    const total = this.state.getWebSockets()?.length ?? 0;
+    console.log('websocket broadcast =>', message);
+    const targetMatchId = this.extractMatchIdForBroadcast(message);
     for (const conn of this.state.getWebSockets() || []) {
-      const tags = this.state.getTags(conn);
-      const connId = tags.length > 0 ? tags[0] : 'undefined';
       if (conn === exclude) {
-        if (this.isDebug) console.log(`Excluding sender client ${connId} from broadcast`);
         continue;
       }
-      if (this.isDebug) console.log(`Broadcasting to client ${connId}`);
+      if (!this.shouldDeliverBroadcast(conn, targetMatchId)) {
+        continue;
+      }
       conn.send(message);
-      sentCount++;
     }
-    if (this.isDebug) console.log(`Broadcasted to ${sentCount} clients (total attached: ${total})`);
+  }
+
+  private addMatchSubscription(ws: WebSocket, matchId: number) {
+    const { clientId } = this.getSubscriptionsForSocket(ws);
+    if (!clientId) return;
+    // Only one active subscription per client: replace any existing set.
+    const next = new Set<number>([matchId]);
+    this.matchSubscriptions.set(clientId, next);
+    this.persistSubscriptionAttachment(ws, clientId, next);
+  }
+
+  private removeMatchSubscription(ws: WebSocket, matchId?: number) {
+    const { clientId, subscriptions } = this.getSubscriptionsForSocket(ws);
+    if (!clientId) return;
+    if (matchId === undefined) {
+      this.matchSubscriptions.delete(clientId);
+      this.persistSubscriptionAttachment(ws, clientId, new Set());
+      return;
+    }
+    if (!subscriptions) {
+      this.persistSubscriptionAttachment(ws, clientId, new Set());
+      return;
+    }
+    subscriptions.delete(matchId);
+    if (subscriptions.size === 0) {
+      this.matchSubscriptions.delete(clientId);
+    } else {
+      this.matchSubscriptions.set(clientId, subscriptions);
+    }
+    this.persistSubscriptionAttachment(ws, clientId, subscriptions);
+  }
+
+  private normalizeMatchId(raw: any): number | null {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  private extractMatchIdForBroadcast(message: string): number | null {
+    try {
+      const parsed = JSON.parse(message);
+      const rawMatchId = parsed?.matchId ?? parsed?.data?.matchId ?? parsed?.data?.match_id;
+      const normalized = this.normalizeMatchId(rawMatchId);
+      if (normalized !== null) return normalized;
+      // Fallback: allow match create/delete messages that omit explicit matchId.
+      if (parsed?.resource === 'match') {
+        return this.normalizeMatchId(parsed?.id);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private shouldDeliverBroadcast(conn: WebSocket, targetMatchId: number | null): boolean {
+    const { subscriptions } = this.getSubscriptionsForSocket(conn);
+    // No subscriptions -> legacy behaviour: receive everything.
+    if (!subscriptions || subscriptions.size === 0) return true;
+    if (targetMatchId === null) return true;
+    return subscriptions.has(targetMatchId);
+  }
+
+  private getClientId(ws: WebSocket): string | null {
+    const tags = this.state.getTags(ws);
+    const tagId = tags && tags.length > 0 && typeof tags[0] === "string" ? (tags[0] as string) : null;
+    if (tagId) return tagId;
+    const attachment = this.safeDeserializeAttachment(ws);
+    const attachedId = attachment?.clientId ?? attachment?.client_id ?? attachment?.id;
+    return typeof attachedId === "string" ? attachedId : null;
   }
 }
 
@@ -511,8 +919,8 @@ export default {
     let asset: Response | undefined;
     try {
       asset = await env.ASSETS.fetch(request.clone());  // Clone request to preserve body
-    } catch (e) {
-      if (env.debug === "true") console.log("Assets fetch failed; skipping: " + (e as Error).message);
+    } catch (_e) {
+      // noop
     }
     if (asset && asset.status < 400) return asset; // 2xx/3xx → file served
 
@@ -534,7 +942,8 @@ export default {
     const doStub = (env as any)[doBindingName].get(doId);
 
     /* 4. Route /ws and /api/* to the Durable Object's fetch */
-    if (path.startsWith("/ws") || path.startsWith("/api/")) {
+//    if (path.startsWith("/ws") || path.startsWith("/api/")) {
+    if (path.startsWith("/ws")) {
       try {
         return await doStub.fetch(request);
       } catch (e) {

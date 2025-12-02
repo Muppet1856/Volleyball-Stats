@@ -1,11 +1,16 @@
-// swap.js
+// js/ui/swap.js
+import './timeOut.js';
+import { state } from '../state.js';
 export function mainSwap(config) {
+  state.isDisplaySwapped = !state.isDisplaySwapped;
+  state.isTimeoutColorSwapped = state.isDisplaySwapped;
   swapColumnsGeneric(config);
   swapModal();
 }
 
 function swapColumnsGeneric(config) {
   const table = document.getElementById('scoring-table');
+  if (!table) return;
   const rows = table.rows;
   
   for (let i = 0; i < rows.length; i++) {
@@ -54,8 +59,6 @@ function swapColumnsGeneric(config) {
           target2.parentNode.replaceChild(clonedTarget3, target2);
           target3.parentNode.replaceChild(clonedTarget2, target3);
         }
-      } else {
-        console.warn(`No target found for selector "${rule.selector}" in row ${i}`);
       }
     });
   }
@@ -170,6 +173,13 @@ function swapModal() {
         rightBox.classList.remove('used');
       }
     }
+  }
+
+  // If a timeout countdown is running, recompute its color based on the active team
+  const container = document.getElementById('timeoutContainer');
+  const activeBox = document.querySelector('.timeout-box.active');
+  if (container && container.style.display !== 'none' && activeBox) {
+    applyTimeoutTeamColor(activeBox.dataset.team, getTimeoutTeamColorMap());
   }
 
   // If timeout display text is visible, swap team names in it

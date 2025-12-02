@@ -1,4 +1,6 @@
+// js/ui/opponentName.js
 import { debounce } from '../utils/debounce.js';
+import { state, updateState } from '../state.js';
 
 export const debouncedOpponentUpdate = debounce(() => {
   updateOpponentName();
@@ -8,11 +10,16 @@ export function updateOpponentName() {
   const OPP_TEAM_FALLBACK = 'Opponent';
   const pattern = /\{oppTeam\}/g;
   const opponentInput = document.getElementById('opponent');
-  const currentValue = opponentInput ? opponentInput.value : 'No input';  // Snapshot here
-  let oppName = opponentInput ? opponentInput.value.trim() : OPP_TEAM_FALLBACK;
-  if (!oppName) oppName = OPP_TEAM_FALLBACK;
+  const rawInput = opponentInput ? opponentInput.value : undefined;
+  const trimmed = rawInput ? rawInput.trim() : '';
+  const nextOpponent = trimmed || state.opponent || OPP_TEAM_FALLBACK;
+
   document.querySelectorAll('[data-opp-team-template]').forEach(el => {
     const tmpl = el.getAttribute('data-opp-team-template');
-    if (tmpl) el.textContent = tmpl.replace(pattern, oppName);
+    if (tmpl) el.textContent = tmpl.replace(pattern, nextOpponent);
   });
+
+  if (state.opponent !== nextOpponent) {
+    updateState({ opponent: nextOpponent });
+  }
 }
