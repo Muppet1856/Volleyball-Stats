@@ -10,7 +10,7 @@ import {
   writeType,
 } from './matchMetaWrite.js';
 import { debouncedOpponentUpdate, updateOpponentName } from '../ui/opponentName.js';
-import { state, updateState, loadMatchPlayers, setMatchPlayers } from '../state.js';
+import { state, updateState, loadMatchPlayers, resetMatchState, setMatchPlayers } from '../state.js';
 import { collectMatchPayload } from './matchPayload.js';
 import { createMatch, getMatch } from './ws.js';
 import { removeMatchParamsFromUrl, updateUrlWithMatchId } from './matchUrl.js';
@@ -318,13 +318,16 @@ function mergePlayersWithTemps(players = [], tempNumbers = []) {
 export async function loadMatchFromUrl() {
   const matchId = getActiveMatchId();
   if (!matchId) {
-    // No match selected; clear any stale matchId in state.
+    // No match selected; reset to defaults and clear any stale match params.
+    resetMatchState();
     setActiveMatchId(null);
+    removeMatchParamsFromUrl();
     setMatchPlayers([]);
     return null;
   }
 
   const clearActiveMatch = () => {
+    resetMatchState();
     setActiveMatchId(null);
     removeMatchParamsFromUrl();
     setMatchPlayers([]);
