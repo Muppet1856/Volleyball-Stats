@@ -70,19 +70,25 @@
       <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matchIndexModal">Saved Matches</button>
       <button type="button" class="btn btn-outline-success" id="newGameButton">New Game</button>
       <div id="shareControls" class="ms-auto d-none">
-        <div class="dropdown">
-          <button class="btn btn-outline-primary rounded-pill dropdown-toggle" type="button" id="shareDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            Share &amp; Control
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="shareDropdown">
-            <li><h6 class="dropdown-header">Scorekeeper</h6></li>
-            <li><button class="dropdown-item share-control-btn" type="button" data-link-type="scorekeeper" data-action="share">Share link</button></li>
-            <li><button class="dropdown-item share-control-btn" type="button" data-link-type="scorekeeper" data-action="copy">Copy link</button></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Follower</h6></li>
-            <li><button class="dropdown-item share-control-btn" type="button" data-link-type="follower" data-action="share">Share link</button></li>
-            <li><button class="dropdown-item share-control-btn" type="button" data-link-type="follower" data-action="copy">Copy link</button></li>
-          </ul>
+        <div class="d-flex align-items-center justify-content-end gap-2">
+          <div class="dropdown">
+            <button class="btn btn-outline-primary rounded-pill dropdown-toggle" type="button" id="scorekeeperShareDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+              Scorekeeper
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="scorekeeperShareDropdown">
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="scorekeeper" data-action="share">Share link</button></li>
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="scorekeeper" data-action="copy">Copy link</button></li>
+            </ul>
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary rounded-pill dropdown-toggle" type="button" id="followerShareDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+              Follow Along
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="followerShareDropdown">
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="follower" data-action="share">Share link</button></li>
+              <li><button class="dropdown-item share-control-btn" type="button" data-link-type="follower" data-action="copy">Copy link</button></li>
+            </ul>
+          </div>
         </div>
         <div id="shareStatusMessage" class="text-muted small mt-1 text-end" aria-live="polite"></div>
       </div>
