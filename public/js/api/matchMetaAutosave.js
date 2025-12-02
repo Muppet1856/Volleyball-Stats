@@ -15,6 +15,7 @@ import { collectMatchPayload } from './matchPayload.js';
 import { createMatch, getMatch } from './ws.js';
 import { removeMatchParamsFromUrl, updateUrlWithMatchId } from './matchUrl.js';
 import { setAutoSaveStatus } from '../ui/autoSaveStatus.js';
+import { applyFinalizedMap } from '../ui/finalizedSets.js';
 
 function coerceMatchId(raw) {
   const parsed = Number(raw);
@@ -67,6 +68,8 @@ let activeMatchId = coerceMatchId(initialMatchId) ?? null;
 if (activeMatchId !== null) {
   updateState({ matchId: activeMatchId });
 }
+// Track which match we last hydrated so we can fully reset state when switching.
+let lastHydratedMatchId = null;
 
 let suppressMetaWrites = false;
 let matchCreationPromise = null;
@@ -331,7 +334,10 @@ export async function loadMatchFromUrl() {
     setActiveMatchId(null);
     removeMatchParamsFromUrl();
     setMatchPlayers([]);
+    lastHydratedMatchId = null;
   };
+
+  const switchingMatch = lastHydratedMatchId === null || lastHydratedMatchId !== matchId;
 
   try {
     const response = await getMatch(matchId);
@@ -340,12 +346,30 @@ export async function loadMatchFromUrl() {
       return null;
     }
     const match = response.body;
+
+    // When switching between matches in the same session, start from a clean slate
+    // so stale set scores or player lists don't linger in local state.
+    if (switchingMatch) {
+      const preserved = {
+        homeTeam: state.homeTeam,
+        players: state.players,
+        isDisplaySwapped: state.isDisplaySwapped,
+        isTimeoutColorSwapped: state.isTimeoutColorSwapped,
+      };
+      resetMatchState();
+      updateState(preserved);
+      setActiveMatchId(matchId);
+    }
+
     // Reset and repopulate match players explicitly to avoid stale/local data.
     setMatchPlayers([]);
     hydrateMatchMeta(match);
     const mergedPlayers = mergePlayersWithTemps(match.players ?? [], match.temp_numbers ?? match.tempNumbers);
     setMatchPlayers(mergedPlayers);
     loadMatchPlayers(mergedPlayers);
+    // Sync finalized sets from the server payload so state reflects the DB immediately.
+    applyFinalizedMap(match.finalized_sets ?? match.finalizedSets);
+    lastHydratedMatchId = matchId;
     return match;
   } catch (_error) {
     clearActiveMatch();

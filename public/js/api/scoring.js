@@ -238,6 +238,12 @@ export async function hydrateScores(matchId = null, { force = false } = {}) {
   return hydrateSetsForMatch(targetMatchId, { force });
 }
 
+export function resetScoreHydration() {
+  hydratedMatchId = null;
+  hydratePromise = null;
+  pendingCreates.clear();
+}
+
 export async function ensureSetIdForMatch(matchId, setNumber) {
   return ensureSetId(matchId, setNumber);
 }
@@ -245,5 +251,6 @@ export async function ensureSetIdForMatch(matchId, setNumber) {
 export default {
   hydrateScores,
   saveScore,
+  resetScoreHydration,
   ensureSetIdForMatch,
 };
