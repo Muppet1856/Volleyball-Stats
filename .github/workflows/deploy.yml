@@ -1,14 +1,17 @@
-name: Deploy & Update Preview Comment
+name: Deploy & Update Preview Badge
 
 on:
   push:
     branches: [ main ]
-#    branches: '**'
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   pull_request:
     types: [ opened, synchronize ]
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   workflow_dispatch:
+    inputs:
+      badge_label:
+        description: 'Override badge label (defaults to branch/PR name or "production")'
+        required: false
 
 concurrency:
   group: deploy-${{ github.event_name }}-${{ github.ref }}
@@ -30,34 +33,22 @@ jobs:
       USE_PRODUCTION_DB_ON_PREVIEW: ${{ vars.USE_PRODUCTION_DB_ON_PREVIEW }}
 
     steps:
-      # ————————————————————————
-      # Checkout
-      # ————————————————————————
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
           persist-credentials: true
 
-      # ————————————————————————
-      # Verify that the entry point is available
-      # ————————————————————————
       - name: Verify src/index.ts
         run: |
           [ -f "src/index.ts" ] || (echo "Error: src/index.ts missing" >&2; exit 1)
 
-      # ————————————————————————
-      # Install Tools
-      # ————————————————————————
       - name: Install tools
         run: |
           npm install wrangler@4 --save-dev
           sudo apt update -qq && sudo apt install -y jq -qq
 
-      # ————————————————————————
-      # Determine Deploy Type
-      # ————————————————————————
-      - name: Determine Deploy Type
+      - name: Determine Deploy Type & Badge Label
         id: cfg
         run: |
           sanitize() {
@@ -72,48 +63,36 @@ jobs:
           BRANCH_REF="${{ github.ref }}"
           BRANCH_NAME=$(echo "$BRANCH_REF" | sed 's|^refs/heads/||' | sed 's|^refs/pull/[0-9]*/merge$||')
           EVENT="${{ github.event_name }}"
+          BADGE_OVERRIDE="${{ inputs.badge_label }}"
 
-          if [ "$EVENT" = "push" ]; then
-            if [ "$BRANCH_NAME" = "main" ]; then
-              echo "type=prod" >> $GITHUB_OUTPUT
-              echo "env_name=" >> $GITHUB_OUTPUT
-            else
-              ENV=$(sanitize "$BRANCH_NAME")
-              # Check if this branch has an open PR (to avoid duplicate runs with pull_request trigger)
-              API_URL="https://api.github.com/repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${BRANCH_NAME}&state=open"
-              PR_COUNT=$(curl -s -H "Authorization: token ${{ github.token }}" -H "Accept: application/vnd.github.v3+json" "$API_URL" | jq 'length')
-              if [ "$PR_COUNT" -gt 0 ]; then
-                echo "type=skip" >> $GITHUB_OUTPUT
-                echo "Skipping push deployment for branch $BRANCH_NAME (open PR exists; handled by pull_request trigger)"
-              else
-                echo "type=branch" >> $GITHUB_OUTPUT
-                echo "env_name=$ENV" >> $GITHUB_OUTPUT
-              fi
-            fi
+          if [ "$EVENT" = "push" ] && [ "$BRANCH_NAME" = "main" ]; then
+            echo "type=prod" >> $GITHUB_OUTPUT
+            echo "env_name=" >> $GITHUB_OUTPUT
+            echo "badge_label=production" >> $GITHUB_OUTPUT
 
           elif [ "$EVENT" = "pull_request" ]; then
             PR_NUM="${{ github.event.pull_request.number }}"
             ENV=$(sanitize "pr-${PR_NUM}")
             echo "type=pr" >> $GITHUB_OUTPUT
             echo "env_name=$ENV" >> $GITHUB_OUTPUT
+            echo "badge_label=${BADGE_OVERRIDE:-$ENV}" >> $GITHUB_OUTPUT
 
           elif [ "$EVENT" = "workflow_dispatch" ]; then
             if [ "$BRANCH_NAME" = "main" ]; then
               echo "type=prod" >> $GITHUB_OUTPUT
               echo "env_name=" >> $GITHUB_OUTPUT
+              echo "badge_label=production" >> $GITHUB_OUTPUT
             else
               ENV=$(sanitize "$BRANCH_NAME")
               echo "type=manual" >> $GITHUB_OUTPUT
               echo "env_name=$ENV" >> $GITHUB_OUTPUT
+              echo "badge_label=${BADGE_OVERRIDE:-$ENV}" >> $GITHUB_OUTPUT
             fi
 
           else
             echo "type=skip" >> $GITHUB_OUTPUT
           fi
 
-      # ————————————————————————
-      # Validate Cloudflare credentials early
-      # ————————————————————————
       - name: Validate Cloudflare credentials
         if: steps.cfg.outputs.type != 'skip'
         run: |
@@ -124,42 +103,23 @@ jobs:
             exit 1
           }
 
-      # ————————————————————————
-      # Setup wrangler.toml + Smart Assets Detection
-      # ————————————————————————
       - name: Setup wrangler.toml with smart assets
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
 
           if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-            # When previews intentionally share the production database, point them at the
-            # production Worker script name so Cloudflare reuses the same Durable Object.
-            if [ "${{ env.USE_PRODUCTION_DB_ON_PREVIEW }}" = "true" ]; then
-              FINAL_NAME="${{ env.WORKER_NAME }}"
-            else
-              FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
-            fi
+            FINAL_NAME="${{ steps.cfg.outputs.env_name }}-${{ env.WORKER_NAME }}"
           else
             FINAL_NAME="${{ env.WORKER_NAME }}"
           fi
           COMPAT_DATE=$(date +%Y-%m-%d)
 
-          echo "name = \"${FINAL_NAME}\"" > wrangler.toml
-          echo "main = \"src/index.ts\"" >> wrangler.toml
-          echo "compatibility_date = \"${COMPAT_DATE}\"" >> wrangler.toml
-
-          {
-            echo "" >> wrangler.toml
-            echo "[durable_objects]" >> wrangler.toml
-            echo "bindings = [" >> wrangler.toml
-            echo "  { name = \"${FINAL_NAME}\", class_name = \"MatchState\" }" >> wrangler.toml
-            echo "]" >> wrangler.toml
-            echo "" >> wrangler.toml
-            echo "[[migrations]]" >> wrangler.toml
-            echo "tag = \"v1\"" >> wrangler.toml
-            echo "new_sqlite_classes = [ \"MatchState\" ]" >> wrangler.toml
-          }
+          cat > wrangler.toml <<EOF
+          name = "${FINAL_NAME}"
+          main = "src/index.ts"
+          compatibility_date = "${COMPAT_DATE}"
+EOF
 
           # ——— Detect assets: public → dist → build (only ONE allowed) ———
           CANDIDATES=("public" "dist" "build")
@@ -187,14 +147,21 @@ jobs:
             echo "No assets directory found (public/dist/build) – skipping assets binding."
           fi
 
+          # Add DO binding
+          echo "[durable_objects]" >> wrangler.toml
+          echo "bindings = [" >> wrangler.toml
+          echo "  { name = \"MATCH_DO\", class_name = \"MatchState\" }" >> wrangler.toml
+          echo "]" >> wrangler.toml
+
+          echo "[[migrations]]" >> wrangler.toml
+          echo "tag = \"v1\"" >> wrangler.toml
+          echo "new_sqlite_classes = [ \"MatchState\" ]" >> wrangler.toml
+
           echo "FINAL_WORKER_NAME=$FINAL_NAME" >> $GITHUB_ENV
           if [ -n "$SELECTED" ]; then
             echo "ASSETS_DIR=$SELECTED" >> $GITHUB_ENV
-          fi          
+          fi
 
-      # ————————————————————————
-      # Resolve Worker Host
-      # ————————————————————————
       - name: Resolve Worker Host
         if: steps.cfg.outputs.type != 'skip'
         run: |
@@ -207,12 +174,6 @@ jobs:
               -H "Content-Type: application/json"
           }
 
-          # Always fetch the workers.dev subdomain
-          SUB_JSON=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain")
-          SUBDOMAIN=$(echo "$SUB_JSON" | jq -r '.result.subdomain // empty')
-          [ -n "$SUBDOMAIN" ] || { echo "Error: cannot get workers.dev subdomain" >&2; exit 1; }
-
-          # Fetch custom domain (if any)
           DOMAIN_HOST=""
           DOMAINS_JSON=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains")
           DOMAIN_HOST=$(echo "$DOMAINS_JSON" | jq -r '.result[]? | select(.hostname != null and .hostname != "") | .hostname' | head -n1 || true)
@@ -221,19 +182,24 @@ jobs:
             DOMAIN_HOST=$(echo "$DOMAIN_HOST" | tr -d '[:space:]')
             echo "Custom domain found: $DOMAIN_HOST"
           else
-            echo "No custom domain found – using workers.dev for all"
+            echo "No custom domain – falling back to workers.dev"
           fi
 
           BASE_NAME="${{ env.WORKER_NAME }}"
 
-          # For previews: Always use workers.dev
-          if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
-            HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.${SUBDOMAIN}.workers.dev"
-          
-          # For production: Use custom domain if available, else workers.dev
-          else
-            if [ -n "$DOMAIN_HOST" ]; then
+          if [ -n "$DOMAIN_HOST" ]; then
+            if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
+              HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.preview.${DOMAIN_HOST}"
+            else
               HOST="${DOMAIN_HOST}"
+            fi
+          else
+            SUB_JSON=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain")
+            SUBDOMAIN=$(echo "$SUB_JSON" | jq -r '.result.subdomain // empty')
+            [ -n "$SUBDOMAIN" ] || { echo "Error: cannot get workers.dev subdomain" >&2; exit 1; }
+
+            if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
+              HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.${SUBDOMAIN}.workers.dev"
             else
               HOST="${BASE_NAME}.${SUBDOMAIN}.workers.dev"
             fi
@@ -244,49 +210,84 @@ jobs:
           echo "PREVIEW_URL=$PREVIEW_URL" >> $GITHUB_ENV
           echo "Resolved host: $HOST"
 
-      # ————————————————————————
-      # Load env vars from cloudflare/vars.json → wrangler.toml
-      # ————————————————————————
-      - name: Inject cloudflare/vars.json into wrangler.toml
+      - name: Create/Get D1 + Bind
         if: steps.cfg.outputs.type != 'skip'
         run: |
           set -euo pipefail
 
-          VARS_JSON="cloudflare/vars.json"
+          DEPLOY_ENV="${{ steps.cfg.outputs.env_name }}"
+          DB_NAME=$(if [ -z "$DEPLOY_ENV" ] || [ "$USE_PRODUCTION_DB_ON_PREVIEW" = "true" ]; then
+            echo "volleyball-stats-db"
+          else
+            echo "${DEPLOY_ENV}-volleyball-stats-db"
+          fi)
+
+          DB_ID=$(npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name == $n) | .id // empty')
+
+          if [ -z "$DB_ID" ]; then
+            CREATE_OUT=$(npx wrangler d1 create "$DB_NAME")
+            DB_ID=$(echo "$CREATE_OUT" | grep "id =" | awk '{print $3}')
+          fi
+
+          cat >> wrangler.toml <<EOF
+
+[[d1_databases]]
+binding = "DB"
+database_name = "$DB_NAME"
+database_id = "$DB_ID"
+EOF
+
+          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+
+      - name: Apply Schema/Migrations
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
+          # Apply schema.sql if exists
+          if [ -f "schema.sql" ]; then
+            npx wrangler d1 execute "${{ env.DB_NAME }}" --file=schema.sql --remote
+          fi
+
+          # Apply migrations if directory exists
+          if [ -d "migrations" ]; then
+            shopt -s nullglob
+            for f in migrations/*.sql; do
+              npx wrangler d1 execute "${{ env.DB_NAME }}" --file="$f" --remote
+            done
+          fi
+
+      - name: Inject .cloudflare/vars.json into wrangler.toml
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
+          VARS_JSON=".cloudflare/vars.json"
           TOML="wrangler.toml"
 
-          # -----------------------------------------------------------------
-          # 1. Bail out early if the file does not exist
-          # -----------------------------------------------------------------
           if [[ ! -f "$VARS_JSON" ]]; then
             echo "No $VARS_JSON found – nothing to inject."
             exit 0
           fi
 
-          # -----------------------------------------------------------------
-          # 2. Validate JSON
-          # -----------------------------------------------------------------
           if ! jq empty "$VARS_JSON" >/dev/null 2>&1; then
             echo "Error: $VARS_JSON contains invalid JSON" >&2
             exit 1
           fi
 
-          # -----------------------------------------------------------------
-          # 3. Append the new block
-          # -----------------------------------------------------------------
+          sed -i '/^# --- BEGIN INJECTED VARS ---$/,/^# --- END INJECTED VARS ---$/d' "$TOML" 2>/dev/null || true
+
           {
+            echo "# --- BEGIN INJECTED VARS ---"
             echo "[vars]"
-            # Quote every value and escape inner quotes
             jq -r 'to_entries[] |
                    "\(.key) = \"\(.value | gsub("\""; "\\\""))\""' "$VARS_JSON"
+            echo "# --- END INJECTED VARS ---"
           } >> "$TOML"
 
           COUNT=$(jq 'keys | length' "$VARS_JSON")
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
-          
-      # ————————————————————————
-      # Deploy Worker
-      # ————————————————————————
+
       - name: Deploy Worker
         if: steps.cfg.outputs.type != 'skip'
         uses: cloudflare/wrangler-action@v3
@@ -295,9 +296,6 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy ${{ steps.vars.outputs.var_flags }}
 
-      # ————————————————————————
-      # Comment on PR
-      # ————————————————————————
       - name: Comment on PR
         if: steps.cfg.outputs.type == 'pr'
         uses: actions/github-script@v6
@@ -309,3 +307,67 @@ jobs:
               repo: context.repo.repo,
               body: `Preview: ${{ env.PREVIEW_URL }}`
             });
+
+      - name: Update README Preview Badge
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
+          URL="${{ env.PREVIEW_URL }}"
+          LABEL="${{ steps.cfg.outputs.badge_label }}"
+          CLEAN_LABEL=$(echo "$LABEL" | tr -d '-')
+          SHIELD_URL="https://img.shields.io/badge/preview-${CLEAN_LABEL}-purple?label=preview"
+          BADGE="[![preview](${SHIELD_URL})](${URL})"
+
+          START="<!-- PREVIEW_BADGE_START -->"
+          END="<!-- PREVIEW_BADGE_END -->"
+          FILE="README.md"
+
+          grep -qF "$START" "$FILE" && grep -qF "$END" "$FILE" || {
+            echo "Error: Missing badge markers in $FILE" >&2
+            exit 1
+          }
+
+          ESCAPED_START=$(printf '%s\n' "$START" | sed 's/[&/\]/\\&/g')
+          ESCAPED_END=$(printf '%s\n' "$END" | sed 's/[&/\]/\\&/g')
+          ESCAPED_BADGE=$(printf '%s\n' "$BADGE" | sed 's/[&/\]/\\&/g')
+
+          cp "$FILE" "$FILE.tmp"
+          sed -i "s|${ESCAPED_START}.*${ESCAPED_END}|${ESCAPED_START}${ESCAPED_BADGE}${ESCAPED_END}|" "$FILE.tmp"
+
+          if ! cmp -s "$FILE" "$FILE.tmp"; then
+            mv "$FILE.tmp" "$FILE"
+            echo "Badge updated: preview-${CLEAN_LABEL} to $URL"
+          else
+            rm "$FILE.tmp"
+            echo "Badge already up-to-date"
+          fi
+
+          grep -qF "$BADGE" "$FILE" || {
+            echo "Error: Badge not inserted!" >&2; cat "$FILE"; exit 1
+          }
+
+      - name: Commit README Update
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet README.md; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+            echo "Pushing to PR branch: $BRANCH_NAME"
+            git add README.md
+            git commit -m "docs: update preview badge for ${{ steps.cfg.outputs.badge_label }}"
+            git push origin HEAD:refs/heads/$BRANCH_NAME --force
+          else
+            git add README.md
+            git commit -m "docs: update preview badge for ${{ steps.cfg.outputs.badge_label }}"
+            git push
+          fi
