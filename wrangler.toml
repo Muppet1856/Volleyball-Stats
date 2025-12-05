@@ -1,6 +1,6 @@
 name = "volleyball-stats"
 main = "src/index.ts"
-compatibility_date = "2025-11-13"
+compatibility_date = "2025-12-5"
 
 [assets]
 directory = "public"
@@ -14,6 +14,11 @@ HOME_TEAM = "Stoney Creek"
 bindings = [
   { name = "Match-DO", class_name = "MatchState" }
 ]
+
+[[d1_databases]]
+binding = "VOLLEYBALL_STATS"
+database_name = "volleyball_stats"
+database_id = "00000000-0000-0000-0000-000000000000"
 
 [[migrations]]
 tag = "v1"

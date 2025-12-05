@@ -15,6 +15,13 @@ import * as matchApi from "./api/match";
 import * as playerApi from "./api/player";
 import * as setApi from "./api/set";
 
+import auth from './api/auth';
+import orgs from './api/orgs';
+import teams from './api/teams';
+import { authMiddleware } from './api/helpers';
+
+import jwt from '@tsndr/cloudflare-worker-jwt';
+
 export interface Env {
   ASSETS: any;
   DB: D1Database;
@@ -23,6 +30,14 @@ export interface Env {
   APP_URL: string;
   debug?: string;
   HOME_TEAM?: string;
+  JWT_SECRET: string;
+}
+
+async function getUserWithRoles(db: D1Database, userId: string) {
+  const user = await db.prepare('SELECT id, email, name, verified FROM users WHERE id = ?').bind(userId).first();
+  if (!user) return null;
+  const { results: roles } = await db.prepare('SELECT role, org_id, team_id FROM user_roles WHERE user_id = ?').bind(userId).all();
+  return { ...user, roles };
 }
 
 const BROADCAST_EVENT_TIMESTAMP_ACTIONS: Record<string, ReadonlySet<string>> = {
@@ -61,37 +76,56 @@ export class MatchState {
 
     // Handle WebSocket upgrades for /ws inside the DO
     if (path.startsWith("/ws")) {
-      const upgradeHeader = request.headers.get("Upgrade");
-      if (upgradeHeader !== "websocket") {
-        return new Response("Expected Upgrade: websocket", { status: 426 });
+      // Authentication logic
+      const auth = request.headers.get('Authorization');
+      if (!auth?.startsWith('Bearer ')) {
+        return new Response('Unauthorized', { status: 401 });
       }
+      const token = auth.slice(7);
+      try {
+        if (!await jwt.verify(token, this.env.JWT_SECRET)) {
+          throw new Error();
+        }
+        const payload = jwt.decode(token).payload as { id: string };
+        const user = await getUserWithRoles(this.env.DB, payload.id);
+        if (!user) {
+          throw new Error();
+        }
+        // Proceed with WebSocket upgrade
+        const upgradeHeader = request.headers.get("Upgrade");
+        if (upgradeHeader !== "websocket") {
+          return new Response("Expected Upgrade: websocket", { status: 426 });
+        }
 
-      const pair = new WebSocketPair();
-      const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+        const pair = new WebSocketPair();
+        const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
-      // Generate unique client ID
-      const clientId = Math.random().toString(36).slice(2);
+        // Generate unique client ID
+        const clientId = Math.random().toString(36).slice(2);
 
-      // Accept the WebSocket with clientId as tag
-      this.state.acceptWebSocket(server, [clientId]);
+        // Accept the WebSocket with clientId as tag
+        this.state.acceptWebSocket(server, [clientId]);
 
-      // Persist base attachment so subscriptions survive hibernation
-      this.matchSubscriptions.set(clientId, new Set());
-      this.persistSubscriptionAttachment(server, clientId, new Set());
+        // Persist base attachment so subscriptions survive hibernation
+        this.matchSubscriptions.set(clientId, new Set());
+        this.persistSubscriptionAttachment(server, clientId, new Set());
 
-      // Send debug message if enabled (no initial data dump)
-      if (this.isDebug) {
-        const sql = this.state.storage.sql;
-        const cursor = sql.exec('SELECT COUNT(*) FROM matches');
-        const count = cursor.next().value['COUNT(*)'];
-        server.send(JSON.stringify({ debug: `${count} matches in DB` }));
-        server.send(JSON.stringify({ debug: `New client connected: ${clientId}` }));
+        // Send debug message if enabled (no initial data dump)
+        if (this.isDebug) {
+          const sql = this.state.storage.sql;
+          const cursor = sql.exec('SELECT COUNT(*) FROM matches');
+          const count = cursor.next().value['COUNT(*)'];
+          server.send(JSON.stringify({ debug: `${count} matches in DB` }));
+          server.send(JSON.stringify({ debug: `New client connected: ${clientId}` }));
+        }
+
+        return new Response(null, { status: 101, webSocket: client });
+      } catch {
+        return new Response('Invalid token', { status: 401 });
       }
-
-      return new Response(null, { status: 101, webSocket: client });
     }
 
-      return errorResponse("Method not allowed", 405);  // Updated with responses.ts
+    return errorResponse("Method not allowed", 405);  // Updated with responses.ts
   }
 
   // Handle WebSocket messages (dispatched by runtime after acceptWebSocket)
@@ -901,70 +935,61 @@ export class MatchState {
   }
 }
 
+const app = new Hono<{ Bindings: Env }>();
+
+const api = new Hono<{ Bindings: Env }>();
+
+// Apply auth middleware to protect everything (except login/verify) before mounting routers
+api.use('*', authMiddleware);
+
+// Auth routes
+api.route('/', auth);
+
+// Mount other routers
+api.route('/', orgs);
+api.route('/', teams);
+
+// Handle /api/config inside api router to apply auth
+api.get('/config', (c) => {
+  const homeTeam = c.env.HOME_TEAM || "Home Team";
+  return c.json({ homeTeam });
+});
+
+// Mount API to app
+app.route('/api', api);
+
+// Silence Chrome DevTools probe
+app.get('/.well-known/appspecific/com.chrome.devtools.json', (c) => c.json({}));
+
+// Static assets fallback
+app.get('*', async (c) => {
+  try {
+    const res = await c.env.ASSETS.fetch(c.req);
+    return res;
+  } catch {
+    // Asset fetch errors bubble so Cloudflare still reports them
+    return c.text('Internal Server Error', 500);
+  }
+});
+
 /* -------------------------------------------------
    Top-level fetch – static files + DO routing
    ------------------------------------------------- */
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-
     const url = new URL(request.url);
     const path = url.pathname;
-    
-    /* 1. Chrome DevTools probe – silence 500 */
-    if (path === "/.well-known/appspecific/com.chrome.devtools.json") {
-      return new Response("{}", { headers: { "Content-Type": "application/json" } });
-    }
 
-    /* 2. Serve everything from public/ (including / → index.html) */
-    let asset: Response | undefined;
-    try {
-      asset = await env.ASSETS.fetch(request.clone());  // Clone request to preserve body
-    } catch (_e) {
-      // noop
-    }
-    if (asset && asset.status < 400) return asset; // 2xx/3xx → file served
-
-    /* 3. Handle /api/config directly (no DB needed) */
-    if (path === "/api/config") {
-      if (request.method !== "GET") {
-        return errorResponse("Method not allowed", 405);
-      }
-      const homeTeam = env.HOME_TEAM || "Home Team";
-      return jsonResponse({ homeTeam });
-    }
-
-    const doBindingName = findDurableObjectBinding(env);
-    if (!doBindingName) {
-      return errorResponse("Durable Object binding not found in env", 500);
-    }
-
-    const doId = (env as any)[doBindingName].idFromName("global");
-    const doStub = (env as any)[doBindingName].get(doId);
-
-    /* 4. Route /ws and /api/* to the Durable Object's fetch */
-//    if (path.startsWith("/ws") || path.startsWith("/api/")) {
     if (path.startsWith("/ws")) {
       try {
+        const doId = env.MATCH_DO.idFromName("global");
+        const doStub = env.MATCH_DO.get(doId);
         return await doStub.fetch(request);
       } catch (e) {
         return errorResponse(`DO fetch failed: ${(e as Error).message}`, 500);
       }
     }
 
-    /* 5. Fallback for unhandled paths */
-    return new Response("Not Found", { status: 404 });
+    return app.fetch(request, env, ctx);
   },
 };
-
-/**
- * Finds the first key in `env` that is a DurableObjectNamespace.
- * This works because only DO bindings have the `idFromName` method.
- */
-function findDurableObjectBinding(env: Record<string, any>): string | null {
-  for (const [key, value] of Object.entries(env)) {
-    if (value && typeof value === 'object' && typeof (value as any).idFromName === 'function') {
-      return key;
-    }
-  }
-  return null;
-}
