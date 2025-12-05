@@ -2,7 +2,7 @@ name: Deploy & Update Preview Comment
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, partition ]
 #    branches: '**'
     paths-ignore: [ '**/.github/**', '**/README.md' ]
   pull_request:
