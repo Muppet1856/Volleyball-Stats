@@ -182,7 +182,6 @@ jobs:
             echo "[assets]" >> wrangler.toml
             echo "directory = \"$SELECTED\"" >> wrangler.toml
             echo "binding = \"ASSETS\"" >> wrangler.toml
-            echo "serve_static = false" >> wrangler.toml
             echo "Using assets directory: $SELECTED"
           else
             echo "No assets directory found (public/dist/build) - skipping assets binding."
