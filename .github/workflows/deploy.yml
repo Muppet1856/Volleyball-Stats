@@ -323,6 +323,14 @@ jobs:
                    "\(.key) = \"\(.value | gsub("\""; "\\\""))\""' "$VARS_JSON"
           } >> "$TOML"
 
+          # -----------------------------------------------------------------
+          # 3. Append URL
+          # -----------------------------------------------------------------
+          echo  "APP_URL=$HOST" >> "$TOML"
+
+
+
+          
           COUNT=$(jq 'keys | length' "$VARS_JSON")
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
 
