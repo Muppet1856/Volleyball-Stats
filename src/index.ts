@@ -25,7 +25,7 @@ import jwt from '@tsndr/cloudflare-worker-jwt';
 export interface Env {
   ASSETS: any;
   VOLLEYBALL_STATS_DB: D1Database;
-  MATCH_DO: DurableObjectNamespace;
+  Match_DO: DurableObjectNamespace;
   RESEND_API_KEY: string;
   APP_URL: string;
   debug?: string;
@@ -982,8 +982,8 @@ export default {
 
     if (path.startsWith("/ws")) {
       try {
-        const doId = env.MATCH_DO.idFromName("global");
-        const doStub = env.MATCH_DO.get(doId);
+        const doId = env.Match_DO.idFromName("global");
+        const doStub = env.Match_DO.get(doId);
         return await doStub.fetch(request);
       } catch (e) {
         return errorResponse(`DO fetch failed: ${(e as Error).message}`, 500);
