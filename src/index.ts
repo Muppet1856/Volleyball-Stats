@@ -46,6 +46,7 @@ const BROADCAST_EVENT_TIMESTAMP_ACTIONS: Record<string, ReadonlySet<string>> = {
 
 const PROTECTED_PREFIXES = ['/main', '/scorekeeper', '/follower'];
 type AuthedUser = Awaited<ReturnType<typeof getUserWithRoles>>;
+const AUTH_DEBUG_PREFIX = '[auth-guard]';
 
 function pathRequiresAuth(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -67,30 +68,60 @@ function buildLoginRedirectResponse(request: Request) {
   return Response.redirect(location, 302);
 }
 
+function logAuth(event: string, details: Record<string, unknown> = {}) {
+  try {
+    console.log(AUTH_DEBUG_PREFIX, event, JSON.stringify(details));
+  } catch {
+    console.log(AUTH_DEBUG_PREFIX, event, details);
+  }
+}
+
 async function fetchProtectedAsset(c: any, env: Env) {
   const user = await getAuthorizedUser(c.req.raw, env);
-  if (!user) return redirectToLogin(c);
+  if (!user) {
+    logAuth('asset-redirect', { path: c.req.path, reason: 'no-user' });
+    return redirectToLogin(c);
+  }
   const res = await env.ASSETS.fetch(c.req);
-  const response = new Response(res.body, res);
-  response.headers.set('Cache-Control', 'private, no-store');
-  return response;
+  const headers = new Headers(res.headers);
+  headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Auth-Checked', 'true');
+  headers.set('X-Auth-Status', 'ok');
+  headers.set('X-Auth-User', user.id || 'unknown');
+  logAuth('asset-serve', { path: c.req.path, user: user.id || 'unknown' });
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
 }
 
 async function getAuthorizedUser(request: Request, env: Env): Promise<AuthedUser | null> {
   const token = extractTokenFromRequest(request, AUTH_COOKIE_NAME);
-  if (!token) return null;
+  if (!token) {
+    logAuth('missing-token', { path: new URL(request.url).pathname });
+    return null;
+  }
 
   try {
     if (!await jwt.verify(token, env.JWT_SECRET)) {
+      logAuth('invalid-token', { path: new URL(request.url).pathname });
       return null;
     }
     const payload = jwt.decode(token).payload as { id?: string };
     if (!payload?.id) {
+      logAuth('missing-id', { path: new URL(request.url).pathname });
       return null;
     }
     const user = await getUserWithRoles(env.DB, payload.id);
-    return user ?? null;
+    if (!user) {
+      logAuth('user-not-found', { userId: payload.id, path: new URL(request.url).pathname });
+      return null;
+    }
+    logAuth('user-authenticated', { userId: payload.id, path: new URL(request.url).pathname });
+    return user;
   } catch {
+    logAuth('auth-error', { path: new URL(request.url).pathname });
     return null;
   }
 }
@@ -988,6 +1019,7 @@ app.use('*', async (c, next) => {
 
   const token = extractTokenFromRequest(c.req.raw, AUTH_COOKIE_NAME);
   if (!token) {
+    logAuth('middleware-redirect', { path: c.req.path, reason: 'no-token' });
     return redirectToLogin(c);
   }
 
@@ -1003,9 +1035,11 @@ app.use('*', async (c, next) => {
     if (!user) {
       throw new Error();
     }
+    logAuth('middleware-pass', { path: c.req.path, user: payload.id });
     c.set('user', user);
     return next();
   } catch {
+    logAuth('middleware-redirect', { path: c.req.path, reason: 'verify-failed' });
     return redirectToLogin(c);
   }
 });
@@ -1059,8 +1093,10 @@ export default {
     if (pathRequiresAuth(path)) {
       const user = await getAuthorizedUser(request, env);
       if (!user) {
+        logAuth('top-level-redirect', { path });
         return buildLoginRedirectResponse(request);
       }
+      logAuth('top-level-pass', { path, user: user.id || 'unknown' });
     }
 
     if (path.startsWith("/ws")) {

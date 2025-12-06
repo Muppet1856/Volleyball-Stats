@@ -520,6 +520,17 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
   <script type="module" src="../js/volleyball_stats.js" defer></script>
+  <script type="module">
+    (async () => {
+      console.info('[auth-debug] main page reached', window.location.href);
+      try {
+        const res = await fetch('/api/me', { headers: { Accept: 'application/json' } });
+        console.info('[auth-debug] /api/me status', res.status);
+      } catch (error) {
+        console.error('[auth-debug] /api/me error', error);
+      }
+    })();
+  </script>
 </div>
 </body>
 </html>
