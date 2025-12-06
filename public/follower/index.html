@@ -178,8 +178,16 @@
       try {
         const res = await fetch('/api/me', { headers: { Accept: 'application/json' } });
         console.info('[auth-debug] /api/me status', res.status);
+        if (res.status === 401) {
+          const target = `${window.location.pathname}${window.location.search}`;
+          const redirect = `/?redirect=${encodeURIComponent(target || '/')}`;
+          console.info('[auth-debug] redirecting to login', redirect);
+          window.location.replace(redirect);
+        }
       } catch (error) {
         console.error('[auth-debug] /api/me error', error);
+        const target = `${window.location.pathname}${window.location.search}`;
+        window.location.replace(`/?redirect=${encodeURIComponent(target || '/')}`);
       }
     })();
   </script>
