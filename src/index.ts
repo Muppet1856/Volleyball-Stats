@@ -79,8 +79,23 @@ function logAuth(event: string, details: Record<string, unknown> = {}) {
 async function fetchProtectedAsset(c: any, env: Env) {
   const user = await getAuthorizedUser(c.req.raw, env);
   if (!user) {
-    logAuth('asset-redirect', { path: c.req.path, reason: 'no-user' });
-    return redirectToLogin(c);
+    logAuth('asset-deny', { path: c.req.path, reason: 'no-user' });
+    const url = new URL(c.req.url);
+    const target = `${url.pathname}${url.search}`;
+    const redirect = encodeURIComponent(target || '/');
+    const location = new URL(`/?redirect=${redirect}`, url.origin).toString();
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized', redirect: location }),
+      {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'private, no-store',
+          'X-Auth-Checked': 'true',
+          'X-Auth-Status': 'unauthorized',
+        },
+      },
+    );
   }
   const res = await env.ASSETS.fetch(c.req);
   const headers = new Headers(res.headers);
@@ -88,6 +103,8 @@ async function fetchProtectedAsset(c: any, env: Env) {
   headers.set('X-Auth-Checked', 'true');
   headers.set('X-Auth-Status', 'ok');
   headers.set('X-Auth-User', user.id || 'unknown');
+    // Strip noisy permission headers added upstream
+  headers.delete('Permissions-Policy');
   logAuth('asset-serve', { path: c.req.path, user: user.id || 'unknown' });
   return new Response(res.body, {
     status: res.status,
@@ -1094,7 +1111,17 @@ export default {
       const user = await getAuthorizedUser(request, env);
       if (!user) {
         logAuth('top-level-redirect', { path });
-        return buildLoginRedirectResponse(request);
+        // Return hard 401 to avoid accidental cached HTML leakage
+        const redirect = buildLoginRedirectResponse(request).headers.get('location') || '/';
+        return new Response(JSON.stringify({ error: 'Unauthorized', redirect }), {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'private, no-store',
+            'X-Auth-Checked': 'true',
+            'X-Auth-Status': 'unauthorized',
+          },
+        });
       }
       logAuth('top-level-pass', { path, user: user.id || 'unknown' });
     }
