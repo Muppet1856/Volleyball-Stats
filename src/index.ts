@@ -67,6 +67,15 @@ function buildLoginRedirectResponse(request: Request) {
   return Response.redirect(location, 302);
 }
 
+async function fetchProtectedAsset(c: any, env: Env) {
+  const user = await getAuthorizedUser(c.req.raw, env);
+  if (!user) return redirectToLogin(c);
+  const res = await env.ASSETS.fetch(c.req);
+  const response = new Response(res.body, res);
+  response.headers.set('Cache-Control', 'private, no-store');
+  return response;
+}
+
 async function getAuthorizedUser(request: Request, env: Env): Promise<AuthedUser | null> {
   const token = extractTokenFromRequest(request, AUTH_COOKIE_NAME);
   if (!token) return null;
@@ -1002,21 +1011,12 @@ app.use('*', async (c, next) => {
 });
 
 // Explicit guards for protected static paths (defensive in case middleware is bypassed)
-app.get('/main/*', async (c, next) => {
-  const user = await getAuthorizedUser(c.req.raw, c.env);
-  if (!user) return redirectToLogin(c);
-  return next();
-});
-app.get('/scorekeeper/*', async (c, next) => {
-  const user = await getAuthorizedUser(c.req.raw, c.env);
-  if (!user) return redirectToLogin(c);
-  return next();
-});
-app.get('/follower/*', async (c, next) => {
-  const user = await getAuthorizedUser(c.req.raw, c.env);
-  if (!user) return redirectToLogin(c);
-  return next();
-});
+app.get('/main', (c) => fetchProtectedAsset(c, c.env));
+app.get('/main/*', (c) => fetchProtectedAsset(c, c.env));
+app.get('/scorekeeper', (c) => fetchProtectedAsset(c, c.env));
+app.get('/scorekeeper/*', (c) => fetchProtectedAsset(c, c.env));
+app.get('/follower', (c) => fetchProtectedAsset(c, c.env));
+app.get('/follower/*', (c) => fetchProtectedAsset(c, c.env));
 
 // Auth routes
 api.route('/', auth);
