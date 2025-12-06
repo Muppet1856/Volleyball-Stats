@@ -87,7 +87,7 @@ export class MatchState {
           throw new Error();
         }
         const payload = jwt.decode(token).payload as { id: string };
-        const user = await getUserWithRoles(this.env.DB, payload.id);
+        const user = await getUserWithRoles(this.env.VOLLEYBALL_STATS_DB, payload.id);
         if (!user) {
           throw new Error();
         }
