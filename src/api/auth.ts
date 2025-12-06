@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import jwt from '@tsndr/cloudflare-worker-jwt';
 import { Resend } from 'resend';
-import { getUserWithRoles } from './helpers'; // Adjust path if needed
+import { AUTH_COOKIE_NAME, getUserWithRoles } from './helpers'; // Adjust path if needed
 
 type Bindings = {
   DB: D1Database;
@@ -13,6 +13,35 @@ type Bindings = {
 };
 
 const auth = new Hono<{ Bindings: Bindings }>();
+const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+function buildSessionCookie(requestUrl: string, token: string) {
+  const secure = requestUrl.startsWith('https://');
+  const parts = [
+    `${AUTH_COOKIE_NAME}=${token}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${SESSION_MAX_AGE}`,
+  ];
+  if (secure) {
+    parts.push('Secure');
+  }
+  return parts.join('; ');
+}
+
+function clearSessionCookie(requestUrl: string) {
+  const secure = requestUrl.startsWith('https://');
+  const parts = [
+    `${AUTH_COOKIE_NAME}=; Path=/; Max-Age=0`,
+    'HttpOnly',
+    'SameSite=Lax',
+  ];
+  if (secure) {
+    parts.push('Secure');
+  }
+  return parts.join('; ');
+}
 
 auth.post('/login', async (c) => {
   const body = await c.req.json();
@@ -58,11 +87,13 @@ auth.get('/verify', async (c) => {
 
   const invitation = await c.env.DB.prepare('SELECT * FROM invitations WHERE token = ?').bind(token).first();
   if (!invitation) {
+    c.header('Set-Cookie', clearSessionCookie(c.req.url));
     return c.json({ error: 'Invalid/expired token' }, 401);
   }
 
   if (new Date(invitation.expires_at).getTime() < Date.now()) {
     await c.env.DB.prepare('DELETE FROM invitations WHERE token = ?').bind(token).run();
+    c.header('Set-Cookie', clearSessionCookie(c.req.url));
     return c.json({ error: 'Invalid/expired token' }, 401);
   }
 
@@ -74,11 +105,13 @@ auth.get('/verify', async (c) => {
     payload = jwt.decode(token).payload;
   } catch (err) {
     await c.env.DB.prepare('DELETE FROM invitations WHERE token = ?').bind(token).run();
+    c.header('Set-Cookie', clearSessionCookie(c.req.url));
     return c.json({ error: 'Invalid/expired token' }, 401);
   }
 
   if (payload.email !== invitation.email || (payload.role && payload.role !== invitation.role)) {
     await c.env.DB.prepare('DELETE FROM invitations WHERE token = ?').bind(token).run();
+    c.header('Set-Cookie', clearSessionCookie(c.req.url));
     return c.json({ error: 'Invalid/expired token' }, 401);
   }
 
@@ -107,6 +140,7 @@ auth.get('/verify', async (c) => {
   );
 
   await c.env.DB.prepare('DELETE FROM invitations WHERE token = ?').bind(token).run();
+  c.header('Set-Cookie', buildSessionCookie(c.req.url, sessionToken));
   return c.json({ token: sessionToken });
 });
 

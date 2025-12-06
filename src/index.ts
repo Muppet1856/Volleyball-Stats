@@ -18,7 +18,7 @@ import * as setApi from "./api/set";
 import auth from './api/auth';
 import orgs from './api/orgs';
 import teams from './api/teams';
-import { authMiddleware } from './api/helpers';
+import { AUTH_COOKIE_NAME, authMiddleware, extractTokenFromRequest } from './api/helpers';
 
 import jwt from '@tsndr/cloudflare-worker-jwt';
 
@@ -44,8 +44,21 @@ const BROADCAST_EVENT_TIMESTAMP_ACTIONS: Record<string, ReadonlySet<string>> = {
   set: new Set(['set-home-score', 'set-opp-score', 'set-home-timeout', 'set-opp-timeout']),
 };
 
+const PROTECTED_PREFIXES = ['/main', '/scorekeeper', '/follower'];
+
+function pathRequiresAuth(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function redirectToLogin(c: any) {
+  const url = new URL(c.req.url);
+  const target = `${url.pathname}${url.search}`;
+  const redirect = encodeURIComponent(target || '/');
+  return c.redirect(`/?redirect=${redirect}`, 302);
+}
+
 /* -------------------------------------------------
-   Durable Object – holds the SQLite DB
+   Durable Object - holds the SQLite DB
    ------------------------------------------------- */
 export class MatchState {
   state: DurableObjectState;
@@ -77,11 +90,10 @@ export class MatchState {
     // Handle WebSocket upgrades for /ws inside the DO
     if (path.startsWith("/ws")) {
       // Authentication logic
-      const auth = request.headers.get('Authorization');
-      if (!auth?.startsWith('Bearer ')) {
+      const token = extractTokenFromRequest(request, AUTH_COOKIE_NAME);
+      if (!token) {
         return new Response('Unauthorized', { status: 401 });
       }
-      const token = auth.slice(7);
       try {
         if (!await jwt.verify(token, this.env.JWT_SECRET)) {
           throw new Error();
@@ -941,6 +953,36 @@ const api = new Hono<{ Bindings: Env }>();
 
 // Apply auth middleware to protect everything (except login/verify) before mounting routers
 api.use('*', authMiddleware);
+
+// Require auth for UI pages that should not be publicly accessible
+app.use('*', async (c, next) => {
+  if (!pathRequiresAuth(c.req.path)) {
+    return next();
+  }
+
+  const token = extractTokenFromRequest(c.req.raw, AUTH_COOKIE_NAME);
+  if (!token) {
+    return redirectToLogin(c);
+  }
+
+  try {
+    if (!await jwt.verify(token, c.env.JWT_SECRET)) {
+      throw new Error();
+    }
+    const payload = jwt.decode(token).payload as { id?: string };
+    if (!payload?.id) {
+      throw new Error();
+    }
+    const user = await getUserWithRoles(c.env.DB, payload.id);
+    if (!user) {
+      throw new Error();
+    }
+    c.set('user', user);
+    return next();
+  } catch {
+    return redirectToLogin(c);
+  }
+});
 
 // Auth routes
 api.route('/', auth);

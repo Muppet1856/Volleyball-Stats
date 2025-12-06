@@ -2,12 +2,36 @@ import { Context } from 'hono';
 import { z } from 'zod';
 import jwt from '@tsndr/cloudflare-worker-jwt';
 
+export const AUTH_COOKIE_NAME = 'auth_token';
+
 type Bindings = {
   DB: D1Database;
   JWT_SECRET: string;
   RESEND_API_KEY: string;
   ASSETS: Fetcher;
 };
+
+function getCookieToken(cookieHeader: string | null, name: string = AUTH_COOKIE_NAME): string | null {
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(`${name}=`)) {
+      return decodeURIComponent(trimmed.slice(name.length + 1));
+    }
+  }
+  return null;
+}
+
+export function extractTokenFromRequest(req: Request, cookieName: string = AUTH_COOKIE_NAME): string | null {
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice(7);
+  }
+  const cookieToken = getCookieToken(req.headers.get('Cookie'), cookieName);
+  if (cookieToken) return cookieToken;
+  return null;
+}
 
 export async function getUserWithRoles(db: D1Database, userId: string) {
   const user = await db.prepare('SELECT id, email, name, verified FROM users WHERE id = ?').bind(userId).first();
@@ -34,11 +58,10 @@ export async function authMiddleware(c: Context<{ Bindings: Bindings }>, next: (
     return await next();
   }
 
-  const auth = c.req.header('Authorization');
-  if (!auth?.startsWith('Bearer ')) {
+  const token = extractTokenFromRequest(c.req.raw);
+  if (!token) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
-  const token = auth.slice(7);
   try {
     if (!await jwt.verify(token, c.env.JWT_SECRET)) {
       throw new Error();
