@@ -1047,6 +1047,7 @@ app.use('*', async (c, next) => {
 });
 
 // Explicit guards for protected static paths (defensive in case middleware is bypassed)
+/*
 app.get('/main', (c) => fetchProtectedAsset(c, c.env));
 app.get('/main/*', (c) => fetchProtectedAsset(c, c.env));
 app.get('/scorekeeper', (c) => fetchProtectedAsset(c, c.env));
@@ -1056,7 +1057,7 @@ app.get('/follower/*', (c) => fetchProtectedAsset(c, c.env));
 app.get('/main/', (c) => fetchProtectedAsset(c, c.env));
 app.get('/scorekeeper/', (c) => fetchProtectedAsset(c, c.env));
 app.get('/follower/', (c) => fetchProtectedAsset(c, c.env));
-
+*/
 // Auth routes
 api.route('/', auth);
 
