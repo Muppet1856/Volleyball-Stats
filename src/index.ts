@@ -55,14 +55,16 @@ function redirectToLogin(c: any) {
   const url = new URL(c.req.url);
   const target = `${url.pathname}${url.search}`;
   const redirect = encodeURIComponent(target || '/');
-  return c.redirect(`/?redirect=${redirect}`, 302);
+  const location = new URL(`/?redirect=${redirect}`, url.origin).toString();
+  return c.redirect(location, 302);
 }
 
 function buildLoginRedirectResponse(request: Request) {
   const url = new URL(request.url);
   const target = `${url.pathname}${url.search}`;
   const redirect = encodeURIComponent(target || '/');
-  return Response.redirect(`/?redirect=${redirect}`, 302);
+  const location = new URL(`/?redirect=${redirect}`, url.origin).toString();
+  return Response.redirect(location, 302);
 }
 
 async function getAuthorizedUser(request: Request, env: Env): Promise<AuthedUser | null> {
@@ -997,6 +999,23 @@ app.use('*', async (c, next) => {
   } catch {
     return redirectToLogin(c);
   }
+});
+
+// Explicit guards for protected static paths (defensive in case middleware is bypassed)
+app.get('/main/*', async (c, next) => {
+  const user = await getAuthorizedUser(c.req.raw, c.env);
+  if (!user) return redirectToLogin(c);
+  return next();
+});
+app.get('/scorekeeper/*', async (c, next) => {
+  const user = await getAuthorizedUser(c.req.raw, c.env);
+  if (!user) return redirectToLogin(c);
+  return next();
+});
+app.get('/follower/*', async (c, next) => {
+  const user = await getAuthorizedUser(c.req.raw, c.env);
+  if (!user) return redirectToLogin(c);
+  return next();
 });
 
 // Auth routes
