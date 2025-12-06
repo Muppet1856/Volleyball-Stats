@@ -24,7 +24,7 @@ import jwt from '@tsndr/cloudflare-worker-jwt';
 
 export interface Env {
   ASSETS: any;
-  VOLLEYBALL_STATS_DB: D1Database;
+  DB: D1Database;
   Match_DO: DurableObjectNamespace;
   RESEND_API_KEY: string;
   APP_URL: string;
@@ -87,7 +87,7 @@ export class MatchState {
           throw new Error();
         }
         const payload = jwt.decode(token).payload as { id: string };
-        const user = await getUserWithRoles(this.env.VOLLEYBALL_STATS_DB, payload.id);
+        const user = await getUserWithRoles(this.env.DB, payload.id);
         if (!user) {
           throw new Error();
         }
