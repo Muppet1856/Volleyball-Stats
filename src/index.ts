@@ -24,7 +24,7 @@ import jwt from '@tsndr/cloudflare-worker-jwt';
 
 export interface Env {
   ASSETS: any;
-  DB: D1Database;
+  VOLLEYBALL_STATS_DB: D1Database;
   MATCH_DO: DurableObjectNamespace;
   RESEND_API_KEY: string;
   APP_URL: string;
