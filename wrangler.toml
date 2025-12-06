@@ -9,6 +9,7 @@ binding = "ASSETS"
 [vars]
 debug = "true"
 HOME_TEAM = "Stoney Creek"
+APP_URL = "localhost"
 
 [durable_objects]
 bindings = [
