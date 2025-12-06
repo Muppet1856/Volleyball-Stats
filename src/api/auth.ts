@@ -34,7 +34,7 @@ auth.post('/login', async (c) => {
     'INSERT INTO invitations (id, token, email, role, org_id, team_id, expires_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(crypto.randomUUID(), token, email, 'login', null, null, expiresAt, user!.id).run();
 
-  const loginUrl = `https://partition-volleyball-stats.zellen.workers.dev/?token=${token}`;
+  const loginUrl = `https://volleyballscore.app/?token=${token}`;
 
   const resend = new Resend(c.env.RESEND_API_KEY);
   await resend.emails.send({
