@@ -52,20 +52,23 @@ function pathRequiresAuth(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-function redirectToLogin(c: any) {
-  const url = new URL(c.req.url);
-  const target = `${url.pathname}${url.search}`;
-  const redirect = encodeURIComponent(target || '/');
-  const location = new URL(`/?redirect=${redirect}`, url.origin).toString();
-  return c.redirect(location, 302);
+function buildUnauthorizedResponse(target: string, origin: string): Response {
+  const redirect = `/?redirect=${encodeURIComponent(target || '/')}`;
+  return new Response(JSON.stringify({ error: 'Unauthorized', redirect }), {
+    status: 401,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, no-store',
+      'X-Auth-Checked': 'true',
+      'X-Auth-Status': 'unauthorized',
+    },
+  });
 }
 
 function buildLoginRedirectResponse(request: Request) {
   const url = new URL(request.url);
   const target = `${url.pathname}${url.search}`;
-  const redirect = encodeURIComponent(target || '/');
-  const location = new URL(`/?redirect=${redirect}`, url.origin).toString();
-  return Response.redirect(location, 302);
+  return buildUnauthorizedResponse(target, url.origin);
 }
 
 function logAuth(event: string, details: Record<string, unknown> = {}) {
@@ -80,7 +83,9 @@ async function fetchProtectedAsset(c: any, env: Env) {
   const user = await getAuthorizedUser(c.req.raw, env);
   if (!user) {
     logAuth('asset-deny', { path: c.req.path, reason: 'no-user' });
-    return redirectToLogin(c);
+    const url = new URL(c.req.url);
+    const target = `${url.pathname}${url.search}`;
+    return buildUnauthorizedResponse(target, url.origin);
   }
   const res = await env.ASSETS.fetch(c.req);
   const headers = new Headers(res.headers);
@@ -1022,7 +1027,9 @@ app.use('*', async (c, next) => {
   const token = extractTokenFromRequest(c.req.raw, AUTH_COOKIE_NAME);
   if (!token) {
     logAuth('middleware-redirect', { path: c.req.path, reason: 'no-token' });
-    return redirectToLogin(c);
+    const url = new URL(c.req.url);
+    const target = `${url.pathname}${url.search}`;
+    return buildUnauthorizedResponse(target, url.origin);
   }
 
   try {
@@ -1042,7 +1049,9 @@ app.use('*', async (c, next) => {
     return next();
   } catch {
     logAuth('middleware-redirect', { path: c.req.path, reason: 'verify-failed' });
-    return redirectToLogin(c);
+    const url = new URL(c.req.url);
+    const target = `${url.pathname}${url.search}`;
+    return buildUnauthorizedResponse(target, url.origin);
   }
 });
 
@@ -1099,7 +1108,8 @@ export default {
       const user = await getAuthorizedUser(request, env);
       if (!user) {
         logAuth('top-level-redirect', { path });
-        return buildLoginRedirectResponse(request);
+        const target = `${url.pathname}${url.search}`;
+        return buildUnauthorizedResponse(target, url.origin);
       }
       logAuth('top-level-pass', { path, user: user.id || 'unknown' });
     }
