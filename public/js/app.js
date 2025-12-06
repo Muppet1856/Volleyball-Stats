@@ -91,7 +91,7 @@ async function loadDashboard() {
   }
 
   // Activate the first visible tab
-  const firstVisibleTab = document.querySelector('.nav-link:not(.d-none)');
+  const firstVisibleTab = document.querySelector('#adminTabs .nav-item:not(.d-none) .nav-link');
   if (firstVisibleTab) {
     new bootstrap.Tab(firstVisibleTab).show();
   }
