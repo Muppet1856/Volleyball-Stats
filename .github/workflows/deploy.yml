@@ -325,6 +325,18 @@ jobs:
 
           COUNT=$(jq 'keys | length' "$VARS_JSON")
           echo "Injected $COUNT variable(s) from $VARS_JSON into $TOML"
+
+      # ————————————————————————
+      # Add Secrets
+      # ————————————————————————
+      - name: Add secrets programmatically
+        if: steps.cfg.outputs.type != 'skip'
+        run: |
+          FINAL_NAME="${{ env.FINAL_WORKER_NAME }}"
+          echo "Putting secrets into Worker: $FINAL_NAME"
+
+          echo "${{ secrets.JWT_SECRET }}" | npx wrangler secret put JWT_SECRET --name "$FINAL_NAME"
+          echo "${{ secrets.RESEND_API_KEY }}" | npx wrangler secret put RESEND_API_KEY --name "$FINAL_NAME"
           
       # ————————————————————————
       # Deploy Worker
