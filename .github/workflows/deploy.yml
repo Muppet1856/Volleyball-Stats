@@ -212,25 +212,24 @@ jobs:
           SUBDOMAIN=$(echo "$SUB_JSON" | jq -r '.result.subdomain // empty')
           [ -n "$SUBDOMAIN" ] || { echo "Error: cannot get workers.dev subdomain" >&2; exit 1; }
 
-          # Fetch custom domain (if any)
+          # Fetch custom domain for this specific worker (if any)
           DOMAIN_HOST=""
+          BASE_NAME="${{ env.WORKER_NAME }}"
           DOMAINS_JSON=$(cf_get "accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains")
-          DOMAIN_HOST=$(echo "$DOMAINS_JSON" | jq -r '.result[]? | select(.hostname != null and .hostname != "") | .hostname' | head -n1 || true)
+          DOMAIN_HOST=$(echo "$DOMAINS_JSON" | jq -r --arg worker "$BASE_NAME" '.result[]? | select(.service == $worker and .hostname != null and .hostname != "") | .hostname' | head -n1 || true)
 
           if [ -n "$DOMAIN_HOST" ]; then
             DOMAIN_HOST=$(echo "$DOMAIN_HOST" | tr -d '[:space:]')
-            echo "Custom domain found: $DOMAIN_HOST"
+            echo "Custom domain found for worker $BASE_NAME: $DOMAIN_HOST"
           else
-            echo "No custom domain found – using workers.dev for all"
+            echo "No custom domain found for worker $BASE_NAME – using workers.dev for all"
           fi
 
-          BASE_NAME="${{ env.WORKER_NAME }}"
-
-          # For previews: Always use workers.dev
+          # For previews (non-main branches): Always use workers.dev
           if [ -n "${{ steps.cfg.outputs.env_name }}" ]; then
             HOST="${{ steps.cfg.outputs.env_name }}-${BASE_NAME}.${SUBDOMAIN}.workers.dev"
           
-          # For production: Use custom domain if available, else workers.dev
+          # For production (main branch): Use custom domain if available for this worker, else workers.dev
           else
             if [ -n "$DOMAIN_HOST" ]; then
               HOST="${DOMAIN_HOST}"
@@ -243,7 +242,7 @@ jobs:
           echo "WORKER_HOST=$HOST" >> $GITHUB_ENV
           echo "PREVIEW_URL=$PREVIEW_URL" >> $GITHUB_ENV
           echo "Resolved host: $HOST"
-
+          
       # ————————————————————————
       # D1: Create / Bind
       # ————————————————————————
