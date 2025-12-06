@@ -45,6 +45,7 @@ const BROADCAST_EVENT_TIMESTAMP_ACTIONS: Record<string, ReadonlySet<string>> = {
 };
 
 const PROTECTED_PREFIXES = ['/main', '/scorekeeper', '/follower'];
+type AuthedUser = Awaited<ReturnType<typeof getUserWithRoles>>;
 
 function pathRequiresAuth(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -55,6 +56,32 @@ function redirectToLogin(c: any) {
   const target = `${url.pathname}${url.search}`;
   const redirect = encodeURIComponent(target || '/');
   return c.redirect(`/?redirect=${redirect}`, 302);
+}
+
+function buildLoginRedirectResponse(request: Request) {
+  const url = new URL(request.url);
+  const target = `${url.pathname}${url.search}`;
+  const redirect = encodeURIComponent(target || '/');
+  return Response.redirect(`/?redirect=${redirect}`, 302);
+}
+
+async function getAuthorizedUser(request: Request, env: Env): Promise<AuthedUser | null> {
+  const token = extractTokenFromRequest(request, AUTH_COOKIE_NAME);
+  if (!token) return null;
+
+  try {
+    if (!await jwt.verify(token, env.JWT_SECRET)) {
+      return null;
+    }
+    const payload = jwt.decode(token).payload as { id?: string };
+    if (!payload?.id) {
+      return null;
+    }
+    const user = await getUserWithRoles(env.DB, payload.id);
+    return user ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------
@@ -90,51 +117,39 @@ export class MatchState {
     // Handle WebSocket upgrades for /ws inside the DO
     if (path.startsWith("/ws")) {
       // Authentication logic
-      const token = extractTokenFromRequest(request, AUTH_COOKIE_NAME);
-      if (!token) {
+      const user = await getAuthorizedUser(request, this.env);
+      if (!user) {
         return new Response('Unauthorized', { status: 401 });
       }
-      try {
-        if (!await jwt.verify(token, this.env.JWT_SECRET)) {
-          throw new Error();
-        }
-        const payload = jwt.decode(token).payload as { id: string };
-        const user = await getUserWithRoles(this.env.DB, payload.id);
-        if (!user) {
-          throw new Error();
-        }
-        // Proceed with WebSocket upgrade
-        const upgradeHeader = request.headers.get("Upgrade");
-        if (upgradeHeader !== "websocket") {
-          return new Response("Expected Upgrade: websocket", { status: 426 });
-        }
-
-        const pair = new WebSocketPair();
-        const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
-
-        // Generate unique client ID
-        const clientId = Math.random().toString(36).slice(2);
-
-        // Accept the WebSocket with clientId as tag
-        this.state.acceptWebSocket(server, [clientId]);
-
-        // Persist base attachment so subscriptions survive hibernation
-        this.matchSubscriptions.set(clientId, new Set());
-        this.persistSubscriptionAttachment(server, clientId, new Set());
-
-        // Send debug message if enabled (no initial data dump)
-        if (this.isDebug) {
-          const sql = this.state.storage.sql;
-          const cursor = sql.exec('SELECT COUNT(*) FROM matches');
-          const count = cursor.next().value['COUNT(*)'];
-          server.send(JSON.stringify({ debug: `${count} matches in DB` }));
-          server.send(JSON.stringify({ debug: `New client connected: ${clientId}` }));
-        }
-
-        return new Response(null, { status: 101, webSocket: client });
-      } catch {
-        return new Response('Invalid token', { status: 401 });
+      // Proceed with WebSocket upgrade
+      const upgradeHeader = request.headers.get("Upgrade");
+      if (upgradeHeader !== "websocket") {
+        return new Response("Expected Upgrade: websocket", { status: 426 });
       }
+
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+      // Generate unique client ID
+      const clientId = Math.random().toString(36).slice(2);
+
+      // Accept the WebSocket with clientId as tag
+      this.state.acceptWebSocket(server, [clientId]);
+
+      // Persist base attachment so subscriptions survive hibernation
+      this.matchSubscriptions.set(clientId, new Set());
+      this.persistSubscriptionAttachment(server, clientId, new Set());
+
+      // Send debug message if enabled (no initial data dump)
+      if (this.isDebug) {
+        const sql = this.state.storage.sql;
+        const cursor = sql.exec('SELECT COUNT(*) FROM matches');
+        const count = cursor.next().value['COUNT(*)'];
+        server.send(JSON.stringify({ debug: `${count} matches in DB` }));
+        server.send(JSON.stringify({ debug: `New client connected: ${clientId}` }));
+      }
+
+      return new Response(null, { status: 101, webSocket: client });
     }
 
     return errorResponse("Method not allowed", 405);  // Updated with responses.ts
@@ -1021,6 +1036,13 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    if (pathRequiresAuth(path)) {
+      const user = await getAuthorizedUser(request, env);
+      if (!user) {
+        return buildLoginRedirectResponse(request);
+      }
+    }
 
     if (path.startsWith("/ws")) {
       try {
