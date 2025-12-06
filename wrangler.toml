@@ -16,7 +16,7 @@ bindings = [
 ]
 
 [[d1_databases]]
-binding = "VOLLEYBALL_STATS_DB"
+binding = "DB"
 database_name = "volleyball_stats"
 database_id = "00000000-0000-0000-0000-000000000000"
 
